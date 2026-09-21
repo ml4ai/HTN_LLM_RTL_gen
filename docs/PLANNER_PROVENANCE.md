@@ -158,15 +158,37 @@ This is **progression search** over partially ordered HTN networks:
   * The README's warning about "infinite recursive/looping tasks" matches
     Alford et al.'s (2012) observation that progression need not terminate on
     recursive domains without extra checks.
-* **Method preconditions follow HDDL semantics.** A method's state
-  precondition is compiled at load time into a fresh effect-free primitive
-  action, ordered before all of the method's subtasks (Höller et al. 2020a), so
-  it is evaluated when that action is scheduled rather than when the method is
-  decomposed. The two semantics agree for totally ordered domains; with
+* **Method preconditions follow HDDL semantics.** HDDL the *language* does
+  allow `:precondition` on a method — its grammar has `[:precondition <gd>]` in
+  the method definition — and defines what it means by compilation: a fresh
+  primitive task holding the precondition is "added to the method and placed
+  before all other tasks in the subtask network". Höller et al. (2020a) adopt
+  that as the official reading, writing that "to make the burden of supporting
+  it as small as possible, we assume the compilation semantics as given above".
+  So a domain author writes method preconditions normally; the planner is what
+  turns them into hidden actions. That is what the loader does at load time, so
+  a precondition is evaluated when its action is scheduled rather than when the
+  method is decomposed. The two semantics agree for totally ordered domains; with
   interleaving they differ, because other unconstrained tasks may run between
   the decomposition and the check. This planner previously used SHOP timing —
   checking in the current state at decomposition — and §2.3.1 records what
-  changing it cost. `:constraints` stay on the method: they are (in)equalities
+  changing it cost.
+* **What the compilation does and does not pin down.** Höller et al. (2020a)
+  are candid that this semantics is loose on partially ordered problems. In a
+  totally ordered domain the synthesised action runs directly before the
+  method's other subtasks, so "the position where the preconditions are checked
+  is fine". In a partially ordered one it "is not necessarily placed directly
+  before the other subtasks, but we just know that it is placed somewhere
+  before, i.e., the condition did hold at some point before the other tasks are
+  executed, but may have changed meanwhile". That applies here: the synthesised
+  action precedes its own method's subtasks, but tasks from elsewhere in the
+  network may still interleave between the check and the subtasks it guards.
+  `transport_domain`, `p18` and `problem_gather_wake_evacuate` all use
+  `:ordering`, so this is the regime they are in. The tighter alternative —
+  checking exactly before the first action arising from a subtask of the method
+  — is one the HDDL authors explicitly leave to "future extensions", noting a
+  system has to support it natively "because a compilation is not easily
+  possible". `:constraints` stay on the method: they are (in)equalities
   over variables and constants only, so their truth cannot change in between.
   Unlike SHOP, the code does **not** implement SHOP's ordered if-then-else
   method lists. HDDL drops those too, and here every applicable method becomes
