@@ -1,0 +1,46 @@
+; Exercises two things no other domain in domains/ does:
+;
+;   1. zero-arity predicates (propositional atoms) -- (armed), (safe).
+;      SMT-LIB has no nullary application, so these are emitted as plain Bool
+;      constants and referenced by bare name rather than as "(armed)".
+;      They appear here in preconditions, in positive and negative effects,
+;      and in the initial state.
+;
+;   2. an empty "(and)" precondition, the conventional PDDL spelling of
+;      "no precondition".
+(define (domain atom_test)
+	(:requirements :negative-preconditions :typing :hierarchy)
+	(:types
+		device - object
+	)
+	(:predicates
+		(armed)
+		(safe)
+		(checked ?d - device)
+	)
+
+	(:task secure :parameters (?d - device))
+
+	(:method m_secure
+		:parameters (?d - device)
+		:task (secure ?d)
+		:ordered-subtasks (and
+			(task0 (inspect ?d))
+			(task1 (disarm ?d))
+		)
+	)
+
+	; empty (and) precondition: should mean "no precondition"
+	(:action inspect
+		:parameters (?d - device)
+		:precondition (and)
+		:effect (and (checked ?d))
+	)
+
+	; zero-arity atom in a precondition, and in both a delete and an add effect
+	(:action disarm
+		:parameters (?d - device)
+		:precondition (and (armed) (checked ?d))
+		:effect (and (not (armed)) (safe))
+	)
+)

@@ -107,6 +107,13 @@ std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
   }
   if (sentence.which() == 1) {
     auto s = boost::get<Literal<Term>>(sentence);
+    //A zero-arity predicate is a propositional atom, declared as a plain Bool
+    //constant by KnowledgeBase::update_state. SMT-LIB has no nullary
+    //application, so it has to be referenced by bare name: "(done)" is
+    //rejected as a function application with its arguments missing.
+    if (s.args.empty()) {
+      return s.predicate;
+    }
     std::string lt = "("+s.predicate;
     for (auto const& a : s.args) {
       if (a.which() == 0) {

@@ -92,6 +92,9 @@ state and plan rather than minimizing cost.
   * This is the **closed-world assumption** (Reiter 1978) written as a
     **predicate completion** (Clark 1978). Each predicate is true exactly on the
     listed tuples.
+  * A **zero-arity predicate** is the degenerate case: there is nothing to
+    quantify over, so it becomes a plain `Bool` constant asserted true or
+    negated, and is referenced by bare name rather than as `(p)` (§4.1 note 15).
 * **Satisfiability and bindings.** A ground formula is checked with one Z3 call
   (`kb.h` 503–509; Z3: de Moura & Bjørner 2008). A formula with free parameters
   is solved by declaring each parameter as an `__Object__` constant constrained
@@ -453,24 +456,31 @@ current.
     process ignored their `seed`. No effect on a single run; it matters for
     harnesses that call the planner more than once.
 
+15. **Zero-arity predicates made every query fail.** A propositional atom such
+    as `(armed)`, which HDDL allows, broke the knowledge base outright:
+    `update_state` emitted `(assert (forall () ...))` for it and the loader's
+    `sentence_to_SMT` emitted `(armed)` as a nullary application, and Z3
+    rejects both — "invalid quantifier, list of sorted variables is empty" and
+    "invalid function application, arguments missing". SMT-LIB has no nullary
+    application, so an atom is now declared as a plain `Bool` constant and
+    referenced by bare name. Only those two sites emit SMT; the `(armed)`
+    spelling is still what the knowledge base stores internally as a fact, and
+    `parse_predicate` already handled it.
+16. **An empty `(and)` precondition was rejected.** `:precondition (and)`, the
+    conventional PDDL spelling of "no precondition", was parsed as a literal
+    whose predicate is `and` and reached Z3 as a nullary `(and)`.
+    `connected_sentence` already accepted zero operands and `sentence_to_SMT`
+    already mapped an all-empty conjunction to `__NONE__` — the fault was
+    purely alternation order in `sentence_def`, where `literal_terms` was tried
+    first. A non-empty `(and ...)` was unaffected, since its nested parens do
+    not parse as terms and it backtracked into `connected_sentence` anyway.
+
+`domains/atom_test.hddl` covers both: two atoms used in a precondition, a
+delete effect, an add effect and the initial state, plus an action carrying an
+empty `(and)` precondition. `test_MCTS_planner` asserts the resulting state.
+
 ### 4.2 Open
 
-15. **Zero-arity predicates are not supported.** A propositional atom such as
-    `(done)`, which HDDL allows, makes every query fail. `update_state` emits
-    `(assert (forall () ...))` for it and the loader's `sentence_to_SMT` emits
-    `(done)` as a nullary application; Z3 rejects both — "invalid quantifier,
-    list of sorted variables is empty" and "invalid function application,
-    arguments missing". Supporting them means emitting a bare constant rather
-    than a quantified application in both places. No shipped domain declares
-    one, so this is a limitation rather than a live fault, but it fails loudly
-    and immediately for anyone who writes one.
-16. **An empty `(and)` precondition is rejected.** `:precondition (and)`, the
-    conventional PDDL spelling of "no precondition", does not match the
-    and-sentence rule and falls through to being parsed as a literal with
-    predicate `and`, which reaches Z3 as a nullary `(and)` and is rejected.
-    `sentence_to_SMT` already maps a conjunction whose operands are all empty
-    to `__NONE__`, so the gap is in the grammar. Workaround: state a real
-    precondition, or omit the keyword.
 17. **Semantics to document.**
     * Goals are ignored by the HTN planner (§2.1).
     * Method preconditions follow SHOP-style timing, not HDDL's (§2.3).
@@ -528,6 +538,15 @@ differ — on `transport` the new one delivers the two packages in the opposite
 order, with the same eight actions and the same three drives, so the same
 `delivery_one` score. That is the expected shape of the change: corrected UCT
 values break ties differently among equally good plans.
+
+Notes 15 and 16 carry the same risk as note 13 — neither zero-arity predicates
+nor an empty `(and)` appears in any shipped domain — and note 16 changes the
+grammar, which every parse goes through. `domains/atom_test.hddl` covers the
+new behaviour, and the old behaviour was checked to be genuinely broken: the
+preceding commit's binary exits 1 on that domain with Z3's "invalid quantifier"
+error. For the parses that already worked, all five shipped domain/problem
+pairs still produce byte-identical output against that same binary, and
+`test_parser`'s AST assertions still hold.
 
 Note 13 could not be checked against the shipped domains at all, since none of
 them use `forall`. `domains/forall_test.hddl` exists for that: three rooms, two

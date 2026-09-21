@@ -234,6 +234,21 @@ class KnowledgeBase {
         }
         this->smt_state += "))\n";
         for (auto const& p : this->predicates) {
+          //A zero-arity predicate is a propositional atom. It gets a plain Bool
+          //constant and a bare assert: running it through the quantified path
+          //below would emit "(forall () ...)" and "(and)", both of which Z3
+          //rejects, which made any domain declaring one unusable.
+          if (p.second.empty()) {
+            this->smt_state += "(declare-fun "+p.first+" () Bool)\n";
+            auto pf = this->facts.find(p.first);
+            if (pf != this->facts.end() && !pf->second.empty()) {
+              this->smt_state += "(assert "+p.first+")\n";
+            }
+            else {
+              this->smt_state += "(assert (not "+p.first+"))\n";
+            }
+            continue;
+          }
           if (this->facts.find(p.first) != this->facts.end()) {
             if (!this->facts[p.first].empty()) {
               this->smt_state += "(declare-fun "+p.first+" (";

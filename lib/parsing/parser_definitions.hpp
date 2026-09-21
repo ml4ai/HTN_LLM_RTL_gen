@@ -254,10 +254,18 @@ namespace parser {
     struct TNotEqualsSentence: x3::annotate_on_success {};
 
 
+    //connected_sentence must be tried before literal_terms. Both start with
+    //'(' followed by a name, and literal_terms would otherwise match an empty
+    //"(and)" -- the conventional PDDL spelling of "no precondition" -- as a
+    //literal whose predicate is "and", which reaches Z3 as a nullary (and) and
+    //is rejected. A non-empty "(and ...)" already falls through to
+    //connected_sentence because its nested parens do not parse as terms.
+    //Ordering it first is safe: connector only admits "and"/"or", and a
+    //predicate merely starting with those (e.g. "android") backtracks out.
     auto const sentence_def =
         nil
-        | literal_terms
         | connected_sentence
+        | literal_terms
         | not_sentence
         | imply_sentence
         | equals_sentence // Note: HDDL has equals sentences, but PDDL 2.1 does not.

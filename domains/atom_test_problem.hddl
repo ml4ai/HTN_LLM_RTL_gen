@@ -1,0 +1,18 @@
+; (armed) holds initially and (safe) does not. After the plan:
+;   armed  must be false (deleted by disarm)
+;   safe   must be true  (added by disarm)
+;   checked bomb_1 must be true
+; disarm is only applicable while (armed) holds, so if the zero-arity atom
+; were mishandled the plan would not be found at all.
+(define (problem disarm_it)
+	(:domain atom_test)
+	(:objects
+		bomb_1 - device
+	)
+	(:htn
+		:subtasks (and (task0 (secure bomb_1)))
+	)
+	(:init
+		(armed)
+	)
+)
