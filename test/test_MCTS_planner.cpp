@@ -19,4 +19,32 @@ BOOST_AUTO_TEST_CASE(test_MCTS_planner) {
 
 }// end of testing the planner
 
+//Universally quantified effects, which no other domain in domains/ uses. Both
+//forms must fire for every matching object: the unconditional one for all of
+//them, the conditional one for exactly those meeting the condition.
+BOOST_AUTO_TEST_CASE(test_forall_effects) {
+    auto [domain,problem] = load("../../domains/forall_test.hddl",
+                                 "../../domains/forall_test_problem.hddl");
+
+    auto results = cppMCTShop(domain,problem,scorers["simple"],300,1,sqrt(2.0),2022);
+    auto& end_state = results.t[results.end].state;
+
+    //(forall (?l) (alerted ?l)) over three rooms
+    auto alerted = end_state.get_facts("alerted");
+    BOOST_TEST(alerted.size() == 3);
+    BOOST_TEST(alerted.contains("(alerted room_a)"));
+    BOOST_TEST(alerted.contains("(alerted room_b)"));
+    BOOST_TEST(alerted.contains("(alerted room_c)"));
+
+    //(forall (?l) (when (dirty ?l) (clean ?l))) with room_a and room_b dirty.
+    //room_c must NOT be cleaned, which is what distinguishes a working
+    //conditional effect from one that fires unconditionally.
+    auto clean = end_state.get_facts("clean");
+    BOOST_TEST(clean.size() == 2);
+    BOOST_TEST(clean.contains("(clean room_a)"));
+    BOOST_TEST(clean.contains("(clean room_b)"));
+    BOOST_TEST(!clean.contains("(clean room_c)"));
+
+}// end of testing quantified effects
+
 

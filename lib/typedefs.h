@@ -355,7 +355,6 @@ class ActionDef {
           else {
             Params params;
             std::string vt = "(and";
-            Params tempP = this->parameters;
             for (auto const& [var,types] : faparams) {
               std::pair<std::string,std::string> arg;
               arg.first = var;
@@ -364,41 +363,61 @@ class ActionDef {
               for (auto const& t : types) {
                 vt += " ("+t+" "+var+")";
               }
-              for (int i = 0; i < args.size(); i++) {
-                if (var == args[i].first) {
-                  args.erase(args.begin() + i); 
-                }
-                if (var == tempP[i].first) {
-                  tempP.erase(tempP.begin() + i);
-                  tempP.push_back(std::make_pair(var,"__Object__"));
-                }
-              }
             }
             vt += ")";
+
+            //A quantified variable shadows an action parameter of the same
+            //name, so drop those parameters and let the binding supply the
+            //value instead.
+            Args base_args;
+            for (auto const& a : args) {
+              if (!faparams.contains(a.first)) {
+                base_args.push_back(a);
+              }
+            }
+            //The condition mentions the quantified variables, so they have to
+            //be declared in the query that evaluates it. Previously only the
+            //action's own parameters were, and Z3 rejected the condition with
+            //"unknown constant" for every binding, so this effect never fired
+            //at all.
+            Params condP;
+            for (auto const& p : this->parameters) {
+              if (!faparams.contains(p.first)) {
+                condP.push_back(p);
+              }
+            }
+            for (auto const& [var,types] : faparams) {
+              condP.push_back(std::make_pair(var,"__Object__"));
+            }
+
             auto bindings = new_kb.ask(vt,params);
             for (auto &b : bindings) {
-              for (auto const& b_args : b) {
-                args.push_back(b_args); 
+              //Rebuilt per binding. Appending each binding onto a shared list
+              //left the previous binding's equalities in place, so from the
+              //second object on the condition was self-contradictory.
+              Args b_args = base_args;
+              for (auto const& b_arg : b) {
+                b_args.push_back(b_arg);
               }
               std::string wc;
-              if (!args.empty()) {
+              if (!b_args.empty()) {
                 wc = "(and ";
-                for (int i = 0; i < args.size(); i++) {
-                  wc += "(= "+args[i].first+" "+args[i].second+") ";
+                for (auto const& a : b_args) {
+                  wc += "(= "+a.first+" "+a.second+") ";
                 }
                 wc += e.condition + ")";
               }
               else {
                 wc = e.condition;
               }
-              auto pass = new_kb.ask(wc,tempP);
+              auto pass = new_kb.ask(wc,condP);
               if (!pass.empty()) {
                 auto pred = e.pred;
                 std::string et = "("+pred.first;
                 for (auto const& p : pred.second) {
                   auto bval = return_value(p.first,b);
                   if (bval == "__CONST__") {
-                    auto val = return_value(p.first,args); 
+                    auto val = return_value(p.first,b_args);
                     if (val == "__CONST__") {
                       et += " "+p.first;
                     }

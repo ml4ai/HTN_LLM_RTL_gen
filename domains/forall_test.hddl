@@ -1,0 +1,54 @@
+; Minimal domain exercising universally quantified effects, with and without a
+; condition. No other shipped domain uses `forall`, so this is what covers the
+; quantified-effect path in ActionDef::apply_binding.
+;
+; The grammar takes an UNTYPED variable list here -- (forall (?l) ...) -- and the
+; loader infers ?l's type from the effect predicate's declaration.
+;
+; alarm has a plain forall effect: every room becomes alerted.
+; sweep has a forall + when effect: only rooms that are dirty become clean.
+; Both must fire for EVERY matching object, not just the first one.
+(define (domain forall_test)
+	(:requirements :negative-preconditions :typing :hierarchy)
+	(:types
+		room - object
+		robot - object
+	)
+	(:predicates
+		(at ?r - robot ?l - room)
+		(dirty ?l - room)
+		(clean ?l - room)
+		(alerted ?l - room)
+	)
+
+	(:task run :parameters (?r - robot))
+
+	(:method m_run
+		:parameters (?r - robot)
+		:task (run ?r)
+		:ordered-subtasks (and
+			(task0 (alarm ?r))
+			(task1 (sweep ?r))
+		)
+	)
+
+	; unconditional forall: alerts every room
+	(:action alarm
+		:parameters (?r - robot)
+		:precondition (robot ?r)
+		:effect (and
+			(forall (?l) (alerted ?l))
+		)
+	)
+
+	; forall + when: cleans only the rooms that are dirty
+	(:action sweep
+		:parameters (?r - robot)
+		:precondition (robot ?r)
+		:effect (and
+			(forall (?l)
+				(when (dirty ?l) (clean ?l))
+			)
+		)
+	)
+)

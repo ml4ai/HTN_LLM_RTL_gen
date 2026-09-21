@@ -65,21 +65,23 @@ selection(pTree& t,
 
 void backprop(pTree& t, int n, double r, int sims) {
   do {
-    if (t[n].successors.empty()) {
-      t[n].score = r;
-      t[n].sims += sims;
-    }
-    else {
-      t[n].score += r;
-      t[n].sims += sims;
-    }
+    //Accumulate everywhere. Overwriting at nodes with no successors, while
+    //still adding to sims, made a terminal node selected k times report a mean
+    //of score/k instead of score, so UCT progressively undervalued complete
+    //plans it had already found.
+    t[n].score += r;
+    t[n].sims += sims;
     n = t[n].pred;
   }
   while (n != -1);
   return;
 }
 
-double
+//Returns the score of the plan this rollout completed, or nullopt if the
+//rollout could not reach a complete plan. An optional is used rather than a
+//sentinel value so that a score function is free to return any double,
+//including negative ones.
+std::optional<double>
 simulation(std::vector<std::string>& plan,
            KnowledgeBase state,
            TaskGraph tasks,
@@ -106,7 +108,7 @@ simulation(std::vector<std::string>& plan,
     }
   }
   if (u.empty()) {
-    return -1.0;
+    return std::nullopt;
   }
   std::shuffle(u.begin(),u.end(),g);
 
@@ -120,8 +122,8 @@ simulation(std::vector<std::string>& plan,
           ns.update_state();
           auto gplan = plan;
           gplan.push_back(act.first+"_"+std::to_string(cTask));
-          double rs = simulation(gplan,ns,gtasks,domain,g);
-          if (rs > -1.0) {
+          auto rs = simulation(gplan,ns,gtasks,domain,g);
+          if (rs) {
             return rs;
           }
         }
@@ -135,8 +137,8 @@ simulation(std::vector<std::string>& plan,
         if (!all_gts.empty()) {
           std::shuffle(all_gts.begin(),all_gts.end(),g);
           for (auto &gts : all_gts) {
-            double rs = simulation(plan,state,gts.second,domain,g);
-            if (rs > -1.0) {
+            auto rs = simulation(plan,state,gts.second,domain,g);
+            if (rs) {
               return rs;
             }
           }
@@ -144,7 +146,7 @@ simulation(std::vector<std::string>& plan,
       }
     }
   }
-  return -1.0;
+  return std::nullopt;
 }
 
 int expansion(pTree& t,
@@ -235,8 +237,15 @@ seek_planMCTS(pTree& t,
               double c,
               std::mt19937_64& g) {
   int stuck_counter = 10;
-  int prev_TID = -1;
-  std::vector<int> prev_i;
+  //One record per committed decision, so that consecutive backtracks retract
+  //consecutive commits. Two scalars describing only the latest commit meant a
+  //second backtrack in a row re-ran the first one's removal and left the
+  //commit before it in the task tree.
+  struct CommitUndo {
+    int parent_TID;
+    std::vector<int> added_TIDs;
+  };
+  std::vector<CommitUndo> undo_stack;
   //Node ids must come from a monotonic counter, not from t.size(): backtracking
   //erases nodes, after which t.size() can name a key that is still live and the
   //commit below would overwrite an existing node.
@@ -256,6 +265,13 @@ seek_planMCTS(pTree& t,
     auto stop = std::chrono::high_resolution_clock::now();
     while (std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count() < time_limit) {
       int n = selection(m,w,c,g);
+      //selection only hands back a node already marked deadend when that node
+      //is the root of this decision's tree, i.e. every option has been refuted.
+      //Expanding it again would just append another copy of its children and
+      //spend the rest of the budget doing so.
+      if (m[n].deadend) {
+        break;
+      }
       if (m[n].tasks.empty()) {
           backprop(m,n,domain.score(m[n].state,m[n].plan),1);
       }
@@ -265,17 +281,21 @@ seek_planMCTS(pTree& t,
           double ar = 0.0;
           bool bp = true;
           for (int j = 0; j < r; j++) {
-            ar += simulation(m[n].plan,
-                             m[n].state, 
-                             m[n].tasks, 
-                             domain,
-                             g);
-            if (ar == -1.0) {
+            auto rs = simulation(m[n].plan,
+                                 m[n].state, 
+                                 m[n].tasks, 
+                                 domain,
+                                 g);
+            //Test this rollout, not the running sum: a failure after a
+            //successful rollout leaves a sum that is not -1, so it used to go
+            //unnoticed and its -1 was folded into the node's score.
+            if (!rs) {
               m[n].deadend = true;
               backprop(m,n,-1.0,1);
               bp = false;
               break;
             }
+            ar += *rs;
           }
           if (bp) {
             backprop(m,n,ar,r);
@@ -288,17 +308,18 @@ seek_planMCTS(pTree& t,
           double ar = 0.0;
           bool bp = true;
           for (int j = 0; j < r; j++) {
-            ar += simulation(m[n_p].plan,
-                             m[n_p].state, 
-                             m[n_p].tasks, 
-                             domain,
-                             g);
-            if (ar == -1.0) {
+            auto rs = simulation(m[n_p].plan,
+                                 m[n_p].state, 
+                                 m[n_p].tasks, 
+                                 domain,
+                                 g);
+            if (!rs) {
               m[n_p].deadend = true;
               backprop(m,n_p,-1.0,1);
               bp = false;
               break;
             }
+            ar += *rs;
           }
           if (bp) {
             backprop(m,n_p,ar,r);
@@ -343,15 +364,19 @@ seek_planMCTS(pTree& t,
       }
       t.erase(v);
       v = u;
-      if (prev_TID != -1) {
-        auto& children = tasktree[prev_TID].children;
-        children.erase(std::remove_if(children.begin(),
-                                      children.end(),
-                                      [&prev_i](int c) { return in(c,prev_i); }),
-                       children.end());
-      }
-      for (auto i : prev_i) {
-        tasktree.erase(i);
+      if (!undo_stack.empty()) {
+        auto const& undo = undo_stack.back();
+        if (undo.parent_TID != -1) {
+          auto& children = tasktree[undo.parent_TID].children;
+          children.erase(std::remove_if(children.begin(),
+                                        children.end(),
+                                        [&undo](int c) { return in(c,undo.added_TIDs); }),
+                         children.end());
+        }
+        for (auto i : undo.added_TIDs) {
+          tasktree.erase(i);
+        }
+        undo_stack.pop_back();
       }
       stuck_counter--;
       if (stuck_counter <= 0) {
@@ -368,8 +393,8 @@ seek_planMCTS(pTree& t,
     k.plan = m[arg_max].plan;
     k.depth = t[v].depth + 1;
     k.treeRoots = m[arg_max].treeRoots;
-    prev_i.clear();
-    prev_TID = m[arg_max].prevTID;
+    CommitUndo undo;
+    undo.parent_TID = m[arg_max].prevTID;
     for (auto& i : m[arg_max].addedTIDs) {
       TaskNode tasknode;
       tasknode.task = k.tasks[i].head;
@@ -377,8 +402,9 @@ seek_planMCTS(pTree& t,
       tasknode.outgoing = k.tasks[i].outgoing;
       tasktree[i] = tasknode;
       tasktree[m[arg_max].prevTID].children.push_back(i);
-      prev_i.push_back(i);
+      undo.added_TIDs.push_back(i);
     }
+    undo_stack.push_back(undo);
     k.pred = v;
     int y = next_node_id++;
     t[y] = k;
@@ -423,7 +449,7 @@ cppMCTShop(DomainDef& domain,
     root.depth = 0;
     int v = t.size();
     t[v] = root;
-    static std::mt19937_64 g(seed);
+    std::mt19937_64 g(seed);
     std::cout << std::endl;
     std::cout << "Initial State:" << std::endl;
     t[v].state.print_facts();

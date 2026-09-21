@@ -1,0 +1,20 @@
+; Three rooms, two of them dirty. After the plan runs:
+;   alerted  should hold for all three rooms (unconditional forall)
+;   clean    should hold for room_a and room_b only (forall + when)
+(define (problem forall_check)
+	(:domain forall_test)
+	(:objects
+		bot - robot
+		room_a - room
+		room_b - room
+		room_c - room
+	)
+	(:htn
+		:subtasks (and (task0 (run bot)))
+	)
+	(:init
+		(at bot room_a)
+		(dirty room_a)
+		(dirty room_b)
+	)
+)

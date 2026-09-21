@@ -412,51 +412,75 @@ current.
    uninitialised pointer by value — benign in practice, undefined behaviour by
    the standard, and a sanitiser complaint. It is a local now.
 
+9. **Only one level of commit undo was tracked.** `prev_TID` and `prev_i`
+   described only the most recent commit, so a second backtrack in a row re-ran
+   the first one's removal and left the commit before it in the task tree.
+   Replaced with a stack of undo records, one per committed decision.
+10. **Terminal-node values decayed.** `backprop` overwrote `score` at nodes with
+    no successors while still adding to `sims`, so a terminal node selected k
+    times reported a mean of `score/k` instead of `score` and UCT
+    progressively undervalued complete plans it had already found. It now
+    accumulates everywhere.
+11. **The failure sentinel collided with scores and was tested against a running
+    sum.** `simulation` signalled failure by returning −1, which a score
+    function returning ≤ −1 was indistinguishable from, and the caller tested
+    `ar == -1.0` on the sum over `r` rollouts rather than on each result — so
+    with `-r > 1` a dead-end rollout following a successful one left a sum like
+    −0.5, went unnoticed, and folded its −1 into the node's score. Only a
+    failure on the *first* rollout was ever caught. `simulation` now returns
+    `std::optional<double>` and each rollout is tested individually.
+12. **Re-expanding a dead end duplicated its children.** `selection` hands back
+    a node as soon as it sees `deadend` — which only happens for the root of
+    the current decision's tree, i.e. when every option has been refuted — and
+    `expansion` did not check the flag, so it appended another full copy of the
+    root's children and the rest of the time budget went into doing that
+    repeatedly. The search now stops when selection reports the root exhausted.
+13. **Universally quantified conditional effects never fired.** In
+    `ActionDef::apply_binding`, the query evaluating a `forall` + `when`
+    condition declared only the action's own parameters, not the quantified
+    variables the condition mentions, so Z3 rejected it with "unknown constant"
+    for *every* binding — this path had never worked. The same block also
+    appended each binding onto a shared argument list without removing the
+    previous one, so even once declared, the condition would have been
+    self-contradictory from the second object on, and it erased from `args` and
+    `tempP` while indexing them by a counter bounded by `args.size()`. The
+    block is rewritten to build a fresh argument list per binding and to
+    declare the quantified variables. `domains/forall_test.hddl` and a case in
+    `test_MCTS_planner` now cover both quantified forms; no other domain in
+    `domains/` uses `forall`.
+14. **Seeding was process-wide.** `static std::mt19937_64 g(seed)` was
+    initialised on first call, so later calls to `cppMCTShop` in the same
+    process ignored their `seed`. No effect on a single run; it matters for
+    harnesses that call the planner more than once.
+
 ### 4.2 Open
 
-9. **Only one level of commit undo is tracked.** `prev_TID` and `prev_i`
-   describe only the most recent commit. After two backtracks in a row, the
-   second removes the wrong (stale) task-tree nodes. A proper fix needs an undo
-   stack rather than two scalars.
-10. **Terminal-node value decays.** `backprop` overwrites `score` at nodes with
-    no successors but keeps adding to `sims`, so a terminal node selected k
-    times has mean `score/k` rather than `score`. Its ancestors accumulate
-    normally, so only the terminal's own mean is wrong — the effect is that UCT
-    systematically undervalues complete plans it has already found. `+=` at
-    terminals would keep the mean correct. **Changes search results.**
-11. **The failure sentinel collides with scores, and is tested against a running
-    sum.**
-    * Failure is −1 and success is `rs > -1.0`, so a score function returning
-      ≤ −1 reads as failure.
-    * `ar == -1.0` tests the *accumulated* sum over `r` rollouts, not the
-      individual result. With `r > 1`, a dead-end rollout that follows a
-      successful one leaves a sum like −0.5, which the test misses, and that
-      −1 contribution is then backpropagated as if it were a real score. Only a
-      failure on the *first* rollout is caught.
-    * Scores in [0, 1] as UCB1 assumes, plus `std::optional` for failure, would
-      remove both. **Changes search results.**
-12. **Re-expanding a dead end duplicates its children.** `selection` returns a
-    node as soon as it sees `deadend`, and `expansion` does not check the flag
-    before generating successors. Once the root is marked dead, every remaining
-    iteration of the time budget re-expands it and appends another full copy of
-    its children. The final choice still skips dead nodes, so the answer is not
-    wrong, but the rest of the budget is spent growing the tree. **Changes how
-    the budget is spent, so it changes search results.**
-13. **Conditional `forall` effects fire for at most one object.** In
-    `ActionDef::apply_binding`, each quantified binding is appended to `args`
-    without removing the previous one, so from the second binding on the
-    condition carries contradictory equalities and never passes. The same block
-    erases from `args` and `tempP` while indexing them by a counter bounded by
-    `args.size()`, which both skips elements and can index `tempP` out of
-    range. This one needs the block rewritten rather than patched.
-14. **Seeding is process-wide.** `static std::mt19937_64 g(seed)` is
-    initialised on first call, so later calls to `cppMCTShop` in the same
-    process ignore their `seed`. Only matters for multi-trial harnesses that
-    call the planner more than once.
-15. **Semantics to document.**
+15. **Zero-arity predicates are not supported.** A propositional atom such as
+    `(done)`, which HDDL allows, makes every query fail. `update_state` emits
+    `(assert (forall () ...))` for it and the loader's `sentence_to_SMT` emits
+    `(done)` as a nullary application; Z3 rejects both — "invalid quantifier,
+    list of sorted variables is empty" and "invalid function application,
+    arguments missing". Supporting them means emitting a bare constant rather
+    than a quantified application in both places. No shipped domain declares
+    one, so this is a limitation rather than a live fault, but it fails loudly
+    and immediately for anyone who writes one.
+16. **An empty `(and)` precondition is rejected.** `:precondition (and)`, the
+    conventional PDDL spelling of "no precondition", does not match the
+    and-sentence rule and falls through to being parsed as a literal with
+    predicate `and`, which reaches Z3 as a nullary `(and)` and is rejected.
+    `sentence_to_SMT` already maps a conjunction whose operands are all empty
+    to `__NONE__`, so the gap is in the grammar. Workaround: state a real
+    precondition, or omit the keyword.
+17. **Semantics to document.**
     * Goals are ignored by the HTN planner (§2.1).
     * Method preconditions follow SHOP-style timing, not HDDL's (§2.3).
     * The search space is non-systematic, so duplicate subtrees occur (§2.3).
+
+Minor, not worth changing on their own but worth knowing: `expansion` shadows
+the RNG `g` with a loop variable of the same name, and `MethodDef::apply`
+shadows its `int i` parameter with a loop counter. Both currently resolve to
+the intended object, and both would break silently if the surrounding code
+moved.
 
 An earlier note here recorded two bugs in the time-indexed overlay's SMT
 emission — a duplicate `declare-fun` when a predicate had both regular and
@@ -484,15 +508,35 @@ so it was always empty, so the guard `time < 0 || temporal_facts.empty()` was
 always true; and the branch it guarded was a line-for-line duplicate of the
 branch in the `else`. The emitted SMT could not change.
 
-The §4.1 fixes were held to the same standard. They touch only paths that
-previously crashed, looped or corrupted state, so successful search should be
-untouched, and it is: the same five configurations still produce byte-identical
-output against a pre-fix binary, and `ctest` stays at 4/4. All five shipped
+Notes 1–8 were held to the same standard. They touch only paths that previously
+crashed, looped or corrupted state, so successful search should be untouched,
+and it is: the same five configurations still produce byte-identical output
+against a pre-fix binary, and `ctest` stays at 4/4. All five shipped
 domain/problem pairs — including `d18`/`p18`, which none of the tests cover —
 still plan, which is what rules out the new arity and ordering checks firing on
 valid input. The one intended behaviour change is that failures now announce
 themselves: `sar3` at `-T 500` exits 1 with an error instead of printing an
 empty plan, and succeeds at `-T 2000`.
+
+Notes 10, 11 and 12 change the search itself, so byte-identical output is not
+the bar for them and plans from before that commit are not reproducible after
+it. What was checked instead is that plan *quality* holds up: across
+`transport`, `simple_travel`, `sar3`, `d18`/`problem_gather_wake_evacuate` and
+`d18`/`p18`, every configuration returns a plan of the same length as it did
+before, and each still satisfies its score function. The plans themselves do
+differ — on `transport` the new one delivers the two packages in the opposite
+order, with the same eight actions and the same three drives, so the same
+`delivery_one` score. That is the expected shape of the change: corrected UCT
+values break ties differently among equally good plans.
+
+Note 13 could not be checked against the shipped domains at all, since none of
+them use `forall`. `domains/forall_test.hddl` exists for that: three rooms, two
+dirty, an unconditional quantified effect that must alert all three and a
+conditional one that must clean exactly the two. Before the fix the planner
+exited with a Z3 "unknown constant" error; after it, both effects produce
+exactly the expected facts, and `test_MCTS_planner` asserts it — including that
+the clean room is *not* cleaned, which is what separates a working conditional
+effect from one that fires unconditionally.
 
 ---
 
