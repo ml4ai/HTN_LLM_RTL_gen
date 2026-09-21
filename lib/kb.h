@@ -364,10 +364,31 @@ class KnowledgeBase {
         return get_bindings(smt_expr,params);
       }
 
+      //Satisfiability only: does any binding of params satisfy expr? Same query
+      //ask(expr,params) builds, but it stops at the first model instead of
+      //enumerating all of them with blocking clauses. For a caller that only
+      //needs a yes or no -- a precondition whose parameters are already pinned
+      //to values by expr -- that is one solver call rather than one per model.
+      bool ask_any(std::string expr,
+                   std::vector<std::pair<std::string, std::string>>& params) {
+        std::string smt_expr = this->smt_state;
+        for (auto const& p : params) {
+          smt_expr += "(declare-const "+p.first+" __Object__)\n";
+          smt_expr += "(assert ("+p.second+" "+p.first+"))\n";
+        }
+        if (expr != "") {
+          smt_expr += "(assert "+expr+")\n";
+        }
+        z3::context con;
+        z3::solver s(con);
+        s.from_string(smt_expr.c_str());
+        return s.check() == z3::sat;
+      }
+
       //This adds the assert to expr, but the rest of expr must be made smt
-      //compatible prior to this call. 
+      //compatible prior to this call.
       //This is mostly an issue for things like forall and exist, which have different
-      //syntax in smt compared to hddl. 
+      //syntax in smt compared to hddl.
       //Only grounded statements are allowed here!
       //EX: (and (A x) (or (B x y) (C z)))
       bool ask(std::string expr) {

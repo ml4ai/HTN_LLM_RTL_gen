@@ -114,14 +114,20 @@ simulation(std::vector<std::string>& plan,
 
   for (auto const& cTask : u) { 
     if (domain.actions.contains(tasks[cTask].head)) {
-      auto act = domain.actions.at(tasks[cTask].head).apply(state,tasks[cTask].args);
+      auto& adef = domain.actions.at(tasks[cTask].head);
+      auto act = adef.apply(state,tasks[cTask].args);
       if (!act.second.empty()) {
         auto gtasks = tasks;
         gtasks.remove_node(cTask);
         for (auto &ns : act.second) {
           ns.update_state();
           auto gplan = plan;
-          gplan.push_back(act.first+"_"+std::to_string(cTask));
+          //A synthesised method-precondition check is a search step but not a
+          //plan step; keeping it out leaves plan length and the score
+          //functions that read it meaning what they did before.
+          if (!adef.is_artificial()) {
+            gplan.push_back(act.first+"_"+std::to_string(cTask));
+          }
           auto rs = simulation(gplan,ns,gtasks,domain,g);
           if (rs) {
             return rs;
@@ -177,7 +183,8 @@ int expansion(pTree& t,
     
     for (auto const& tid : u) {
       if (domain.actions.contains(t[n].tasks[tid].head)) {
-        auto act = domain.actions.at(t[n].tasks[tid].head).apply(t[n].state,t[n].tasks[tid].args);
+        auto& adef = domain.actions.at(t[n].tasks[tid].head);
+        auto act = adef.apply(t[n].state,t[n].tasks[tid].args);
         if (!act.second.empty()) {
           for (auto const& state : act.second) {
             pNode v;
@@ -188,7 +195,9 @@ int expansion(pTree& t,
             v.depth = t[n].depth + 1;
             v.plan = t[n].plan;
             v.treeRoots = t[n].treeRoots;
-            v.plan.push_back(act.first+"_"+std::to_string(tid));
+            if (!adef.is_artificial()) {
+              v.plan.push_back(act.first+"_"+std::to_string(tid));
+            }
             v.pred = n;
             int w = t.size();
             t[w] = v;
@@ -354,6 +363,15 @@ seek_planMCTS(pTree& t,
       //commit loop below would then exit and report an empty plan as a
       //success. Fail loudly instead.
       if (u == -1) {
+        //Distinguish the two ways of getting here. With no successors at all,
+        //the budget ran out before a single option was expanded, which says
+        //nothing about whether a plan exists; with successors that are all
+        //dead, the options were genuinely refuted.
+        if (m[w].successors.empty()) {
+          throw std::logic_error(
+              "Planner exhausted its time limit before evaluating any option at the "
+              "root. Raise --time_limit (-T) and try again!");
+        }
         throw std::logic_error(
             "Planner found no applicable decomposition at the root, no plan exists "
             "within the given search budget!");

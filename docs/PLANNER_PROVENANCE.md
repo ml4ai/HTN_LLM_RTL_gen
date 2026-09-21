@@ -38,7 +38,7 @@ state and plan rather than minimizing cost.
 | Types, conditional/`forall` effects | `kb.h` 202–219; `typedefs.h` 286–435 | PDDL typing (McDermott et al. 1998); ADL (Pednault 1989) | Standard |
 | State queries, variable binding | `kb.h` 145–178, 234–455, 490–516 | Z3 (de Moura & Bjørner 2008); CWA / Clark completion (Reiter 1978; Clark 1978); SMT in planning (Gregory et al. 2012) | Engineering choice. I found no HTN planner that evaluates preconditions this way |
 | Search space | `cppMCTShop.h` 151–229; `typedefs.h` 608–693 | SHOP2 (Nau et al. 2003); HTN progression (Alford et al. 2012; Höller et al. 2020b, Alg. 1) | Matches Höller et al.'s Alg. 1 (branch over all unconstrained tasks). **Not** SHOP2's sub(m) restriction |
-| Method preconditions | `typedefs.h` 642–693 | SHOP semantics (Nau et al. 2003) vs. HDDL compiled semantics | SHOP-style: checked at decomposition time |
+| Method preconditions | `loader.h` (method loop); `typedefs.h` | HDDL compiled semantics (Höller et al. 2020a) vs. SHOP (Nau et al. 2003) | HDDL-style: compiled into a primitive action ahead of the subtasks (§2.3) |
 | Tree policy | `cppMCTShop.h` 17–64 | UCB1 (Auer et al. 2002); UCT (Kocsis & Szepesvári 2006) | Standard UCT, c = √2, random tie-breaking |
 | Expansion | `cppMCTShop.h` 151–229, 267–312 | Coulom 2006; Browne et al. 2012 | Rollout on first visit, full child generation on second |
 | Rollouts | `cppMCTShop.h` 82–149 | Wichlacz et al. 2020 (DFS roll-outs with backtracking) | Same idea; theirs is totally ordered, this one partial-order |
@@ -60,9 +60,12 @@ state and plan rather than minimizing cost.
   of ordering edges. Partially ordered networks use `:ordering`
   (`loader.h` 683–707).
 * **Method `:constraints`.** HDDL limits method constraints to (in)equality
-  constraints over variables (Höller et al. 2020a). The loader conjoins them
-  with the method precondition (`loader.h` 669–679), so they are checked in the
-  same SMT query.
+  constraints over variables (Höller et al. 2020a). They stay on the method and
+  are what its binding query is solved against. Because they mention only
+  variables and constants, never state, their truth cannot change between
+  decomposing a method and reaching its precondition check, which is why they
+  are not moved into the synthesised action along with the state precondition
+  (§2.3).
 * **Initial task network.** The problem's `:htn` network is turned into a
   method for a synthetic root task named after the problem (`loader.h`
   766–833), and that method is added to the domain (`loader.h` 840). The
@@ -155,15 +158,45 @@ This is **progression search** over partially ordered HTN networks:
   * The README's warning about "infinite recursive/looping tasks" matches
     Alford et al.'s (2012) observation that progression need not terminate on
     recursive domains without extra checks.
-* **Method preconditions follow SHOP semantics.** They are checked in the
-  current state when the method is applied (`typedefs.h` 642–693). HDDL instead
-  compiles a method precondition into a fresh primitive action placed before the
-  method's subtasks (Höller et al. 2020a). The two semantics agree for totally
-  ordered domains. With interleaving, they can differ: this code checks the
-  precondition before other unconstrained tasks run, while HDDL checks it
-  whenever the artificial action gets scheduled. Unlike SHOP, the code does
-  **not** implement SHOP's ordered if-then-else method lists. HDDL drops those
-  too, and here every applicable method becomes a sibling branch.
+* **Method preconditions follow HDDL semantics.** A method's state
+  precondition is compiled at load time into a fresh effect-free primitive
+  action, ordered before all of the method's subtasks (Höller et al. 2020a), so
+  it is evaluated when that action is scheduled rather than when the method is
+  decomposed. The two semantics agree for totally ordered domains; with
+  interleaving they differ, because other unconstrained tasks may run between
+  the decomposition and the check. This planner previously used SHOP timing —
+  checking in the current state at decomposition — and §2.3.1 records what
+  changing it cost. `:constraints` stay on the method: they are (in)equalities
+  over variables and constants only, so their truth cannot change in between.
+  Unlike SHOP, the code does **not** implement SHOP's ordered if-then-else
+  method lists. HDDL drops those too, and here every applicable method becomes
+  a sibling branch.
+* **The synthesised checks are search steps, not plan steps.** They carry an
+  `artificial` flag and are left out of the emitted plan, so plan length — and
+  every score function that reads it — means what it did under SHOP timing.
+  They do appear in the task tree and its rendering, which is where they
+  belong: they record when the check happened.
+
+#### 2.3.1 What HDDL timing costs
+
+Under SHOP timing a method precondition doubles as the **generator** for the
+method's free variables: `(at ?p ?l1)` both tests and computes `?l1`. Under
+HDDL timing it is only a **test**, so every type-consistent binding becomes a
+branch and the synthesised action rejects the bad ones later. Measured on this
+machine, average time for one complete DFS rollout:
+
+| Domain | SHOP timing | HDDL timing | |
+|---|---|---|---|
+| `simple_travel` | 14 ms | 17 ms | 1.2× |
+| `d18` | 89 ms | 155 ms | 1.7× |
+| `transport` | 166 ms | 2992 ms | 18× |
+
+The spread is the point: the cost is not uniform, it is proportional to how
+much a domain leans on its method preconditions to bind free variables.
+`transport` leans on it heavily, `simple_travel` and `d18` barely. A domain
+written so that free variables come from task parameters or `:constraints`
+pays almost nothing. This is why the default `--time_limit` is 20000 and why
+`test_MCTS_planner` plans over `simple_travel` rather than `transport`.
 * **Time bookkeeping.** Each primitive action advances an integer clock by one
   (`cppMCTShop.h` 184, 189). The clock is used only to line up with perceptual
   facts (§2.6).
@@ -483,7 +516,6 @@ empty `(and)` precondition. `test_MCTS_planner` asserts the resulting state.
 
 17. **Semantics to document.**
     * Goals are ignored by the HTN planner (§2.1).
-    * Method preconditions follow SHOP-style timing, not HDDL's (§2.3).
     * The search space is non-systematic, so duplicate subtrees occur (§2.3).
 
 Minor, not worth changing on their own but worth knowing: `expansion` shadows
@@ -558,6 +590,104 @@ the clean room is *not* cleaned, which is what separates a working conditional
 effect from one that fires unconditionally.
 
 ---
+
+## 5. Making the search systematic
+
+The non-systematicity noted in §2.3 and §4.2 is not inherent to progression
+search; Höller et al. (2020b) give an algorithm that removes it. This section
+records what that algorithm is, what it would take here, and what it would
+cost. **Nothing in it has been implemented.**
+
+### 5.1 The three algorithms
+
+The paper gives three progression algorithms that differ only in what they
+branch over when more than one task is unconstrained. Writing `UC` for the
+unconstrained *compound* tasks and `UA` for the unconstrained *primitive* ones:
+
+* **Algorithm 1** branches over every task in `UA` (apply it) *and* every task
+  in `UC` × every applicable method (decompose it). **This is what
+  `expansion` does** (`cppMCTShop.h`).
+* **Algorithm 2** branches over every task in `UA`, but *picks a single*
+  compound task from `UC` and branches only over its methods.
+* **Algorithm 3** goes further: while `UC` is non-empty it progresses **no**
+  action at all — it picks one compound task and branches over its methods.
+  Only once `UC` is empty does it branch over applying the tasks in `UA`.
+
+Algorithm 3 is the systematic one (their Theorem 3). The reasoning behind both
+restrictions is the same: *the order in which two compound tasks are decomposed
+implies no commitment to the solution — only the choice of method does* — so
+there is nothing to branch over. Picking rather than branching is the same move
+plan-space planners make when they select a flaw to resolve.
+
+### 5.2 It depends on the switch to HDDL precondition timing
+
+Their formalism defines a method as a bare pair `(c, tn)` of a compound task
+name and a subtask network: **methods have no preconditions**, because HDDL
+compiles them into actions (§2.3). Algorithm 3 relies on that. Under SHOP
+timing, where a method's applicability is a question about the current state,
+"never progress an action while an unconstrained compound task exists" can
+strand a branch: no method of the chosen task is applicable *now*, but one would
+be once some other unconstrained action has run.
+
+So the move to HDDL timing is a prerequisite for adopting Algorithm 3 here, not
+an unrelated change. Before it, this restriction would have been unsound.
+
+### 5.3 What it would take in this code
+
+Confined to `expansion`, which already computes the unconstrained set `u`:
+
+1. Split `u` into compound and primitive instead of iterating it as one list.
+2. If any compound task is unconstrained, pick exactly one — deterministically,
+   e.g. lowest task id, so a node always makes the same choice — and generate
+   children only for its methods and their bindings.
+3. Otherwise generate children for the applicable primitive tasks, as now.
+
+`simulation` should mirror it, or rollouts will explore a differently shaped
+space than the tree does.
+
+### 5.4 What it would and would not buy
+
+**Sound and complete either way.** Their Theorems 1 and 2 cover all three
+algorithms and do not rest on the assumptions below, so adopting Algorithm 3
+cannot lose solutions.
+
+**Full systematicity needs two assumptions this repository's domains break.**
+Theorem 3 additionally assumes no two methods for a task have isomorphic
+subtask networks (Assumption 1), and that no method has two subtasks with the
+same task name (Assumption 2). Checking Assumption 2 over the shipped domains:
+
+| Domain | Methods | Violations |
+|---|---|---|
+| `simple_travel` | 2 | none |
+| `transport_domain` | 6 | `m_deliver_ordering_0` has two `get_to` subtasks |
+| `sar3` | 12 | 2 methods, with 2 and 3 `location` subtasks |
+| `d18` | 13 | 4 methods, up to 3 `location` subtasks |
+
+So on three of the four, some duplicate solutions would survive. The authors
+note this case is a symmetry in the *model* rather than the search revisiting a
+node, and that it can be compiled away by making the repeated subtasks
+distinguishable. The redundancy Algorithm 3 does remove — reaching the same
+network by decomposing tasks in different orders — is present regardless.
+
+**There is a real cost, and the authors flag it.** The argument for progression
+search over plan-space search is having the current state available to compute
+heuristics; Algorithm 3 postpones progression, so it postpones the state
+update too. They are explicit that Algorithm 2 may therefore beat Algorithm 3
+on some domains and that "only an empirical evaluation can show which algorithm
+should be used in practice". That caution applies with more force here than in
+their setting: this planner's node values come from rollouts over the current
+state, and its score functions read that state, so delaying it delays the signal
+MCTS is steering by.
+
+**Recommendation.** If this is pursued, implement Algorithm 2 first. It is the
+smaller change, it is strictly better than Algorithm 1 on partially ordered
+problems by their analysis, and it does not postpone the state update. Then try
+Algorithm 3 behind a comparison, measuring both against the current behaviour on
+`transport` and `d18` — the two shipped domains with partial order — rather than
+assuming the systematic one wins.
+
+---
+
 
 ## References
 

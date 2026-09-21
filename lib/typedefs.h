@@ -267,6 +267,12 @@ class ActionDef {
     Params parameters;
     Preconds preconditions;
     Effects effects;
+    //True for the effect-free actions the loader synthesises to carry a
+    //method's precondition under HDDL timing. They are real search steps, but
+    //they are not part of the plan the user asked for, so they are kept out of
+    //it -- otherwise they would inflate plan length and every score function
+    //that looks at it.
+    bool artificial = false;
 
     KnowledgeBase apply_binding(KnowledgeBase& kb, Args& args) {
       KnowledgeBase new_kb = kb;
@@ -439,11 +445,20 @@ class ActionDef {
     }
 
   public:
-    ActionDef(std::string head, Params parameters, Preconds preconditions, Effects effects) {
+    ActionDef(std::string head,
+              Params parameters,
+              Preconds preconditions,
+              Effects effects,
+              bool artificial = false) {
       this->head = head;
       this->parameters = parameters;
       this->preconditions = preconditions;
       this->effects = effects;
+      this->artificial = artificial;
+    }
+
+    bool is_artificial() {
+      return this->artificial;
     }
 
     std::string get_head() {
@@ -491,6 +506,19 @@ class ActionDef {
       token += ")";
 
       std::vector<KnowledgeBase> new_states = {};
+
+      //A synthesised method-precondition check has no effects and arrives with
+      //every parameter already pinned by args, so at most one binding can
+      //satisfy pc and the resulting state is just the current one. Asking for
+      //satisfiability skips enumerating that single model, which matters
+      //because HDDL timing puts one of these in front of every method.
+      if (this->artificial) {
+        if (pc == "__NONE__" || kb.ask_any(pc,this->parameters)) {
+          new_states.push_back(kb);
+        }
+        return std::make_pair(token,new_states);
+      }
+
       if (pc != "__NONE__") {
         if (this->parameters.empty()) {
           auto pass = kb.ask(pc);

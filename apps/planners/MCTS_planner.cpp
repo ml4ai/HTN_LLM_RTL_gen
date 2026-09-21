@@ -12,7 +12,7 @@ namespace po = boost::program_options;
 using namespace std;
 
 int main(int argc, char* argv[]) {
-  int time_limit = 1000;
+  int time_limit = 20000;
   int r = 5;
   double c = sqrt(2.0);
   int seed = 2022;
@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
     po::options_description desc("Allowed options");
     desc.add_options()
       ("help,h", "produce help message")
-      ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search action (int), default = 1000")
+      ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search decision (int), default = 20000. MCTS always spends the whole budget, so lower it for small domains")
       ("simulations,r", po::value<int>(), "Number of simulations per MCTS cycle (int), default = 5")
       ("exp_param,c",po::value<double>(),"The exploration parameter for the planner (double), default = sqrt(2)")
       ("dom_file,D", po::value<std::string>(),"domain file (string), default = transport_domain.hddl")

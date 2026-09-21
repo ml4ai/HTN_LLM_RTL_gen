@@ -37,9 +37,26 @@ BOOST_AUTO_TEST_CASE(test_domain_loading) {
     auto methodtask = transport_domain.methods["deliver"][0].get_task();
     BOOST_TEST(methodtask.first == "deliver");
     BOOST_TEST(methodtask.second[0].first == "p");
-    // Test parsing method's precondition:
+    // Under HDDL timing the method itself carries no state precondition: it is
+    // compiled into a synthesised primitive action ordered before the method's
+    // subtasks, so that it is evaluated when that action is scheduled rather
+    // than when the method is decomposed. Only :constraints, which cannot
+    // change with the state, are left on the method.
     auto methodprec_f = transport_domain.methods["deliver"][0].get_preconditions();
-    BOOST_TEST(methodprec_f == "(and (at p l1))");
+    BOOST_TEST(methodprec_f == "__NONE__");
+
+    // The precondition now lives on the synthesised action ...
+    BOOST_TEST(transport_domain.actions.contains("__mprec_m_deliver_ordering_0"));
+    BOOST_TEST(transport_domain.actions.at("__mprec_m_deliver_ordering_0").get_preconditions()
+               == "(and (at p l1))");
+    BOOST_TEST(transport_domain.actions.at("__mprec_m_deliver_ordering_0").is_artificial());
+
+    // ... which is a subtask of the method, ordered ahead of every other one.
+    auto prec_subtask = transport_domain.methods["deliver"][0].get_subtasks()["__mprec__"];
+    BOOST_TEST(prec_subtask.first == "__mprec_m_deliver_ordering_0");
+    auto prec_ord = transport_domain.methods["deliver"][0].get_orderings()["__mprec__"];
+    BOOST_TEST(prec_ord.size()
+               == transport_domain.methods["deliver"][0].get_subtasks().size() - 1);
 
     // Test Parsing Method's SubTasks (in reverse order for planner):
     BOOST_TEST(transport_domain.methods["deliver"][0].get_subtasks()["task1"].first == "load");

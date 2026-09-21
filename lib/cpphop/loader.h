@@ -671,17 +671,24 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     }
     task.second = tparams;
 
-    Preconds preconditions = sentence_to_SMT(m.precondition,ptypes); 
+    //HDDL timing: a method's state precondition is not checked when the method
+    //is decomposed. It is compiled into a fresh effect-free primitive action
+    //ordered before the method's subtasks, so it is evaluated when that action
+    //is scheduled (Höller et al. 2020a). Under SHOP timing the two agree for
+    //totally ordered domains, but once tasks interleave they differ: other
+    //unconstrained tasks may run between the decomposition and the check.
+    Preconds state_pre = sentence_to_SMT(m.precondition,ptypes);
 
+    //:constraints are (in)equalities over variables and constants only -- see
+    //decompose_constraint -- so they never mention state and cannot change
+    //between decomposition and scheduling. They stay on the method, where they
+    //prune bindings, rather than multiplying branches the artificial action
+    //would only reject later.
+    Preconds preconditions = "__NONE__";
     if (m.task_network.constraints) {
       std::string cs = decompose_constraints(*m.task_network.constraints);
       if (cs != "__NONE__") {
-        if (preconditions != "__NONE__") {
-          preconditions = "(and "+preconditions+" "+cs+")";
-        }
-        else {
-          preconditions = cs;
-        }
+        preconditions = cs;
       }
     }
      
@@ -713,6 +720,31 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
           get_orderings(*m.task_network.orderings,orderings); 
         }
       }
+    }
+
+    if (state_pre != "__NONE__") {
+      //One artificial action per method carrying a precondition, taking the
+      //method's full parameter list so the binding chosen at decomposition is
+      //what the check is evaluated against.
+      std::string pre_action = "__mprec_"+name;
+      int suffix = 1;
+      while (actions.contains(pre_action)) {
+        pre_action = "__mprec_"+name+"_"+std::to_string(suffix);
+        suffix++;
+      }
+      actions.emplace(std::make_pair(pre_action,
+                                     ActionDef(pre_action,params,state_pre,Effects{},true)));
+
+      //Ordered before every other subtask. Giving it outgoing orderings also
+      //keeps it from inheriting the decomposed task's outgoing edges, which
+      //only the subtasks with no successor inside the method should take.
+      std::string pre_id = "__mprec__";
+      std::vector<std::string> before;
+      for (auto const& [id,st] : subtasks) {
+        before.push_back(id);
+      }
+      subtasks[pre_id] = std::make_pair(pre_action,params);
+      orderings[pre_id] = before;
     }
 
     methods[m.task.name].push_back(MethodDef(name,task,params,preconditions,subtasks,orderings));

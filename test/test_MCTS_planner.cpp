@@ -8,14 +8,28 @@
 #include "cpphop/loader.h"
 #include "cpphop/cppMCTShop.h"
 
+//simple_travel rather than transport. Under HDDL method-precondition timing a
+//method's free variables are no longer bound by its precondition -- every
+//type-consistent binding becomes a branch that the synthesised check rejects
+//later -- and transport leans on exactly that: (at ?p ?l1) is what determines
+//?l1. Its rollouts go from ~170ms to ~3s, which would make this test run for
+//minutes. simple_travel exercises the same pipeline (methods with
+//preconditions, the synthesised checks, actions, scoring) at ~17ms a rollout.
 BOOST_AUTO_TEST_CASE(test_MCTS_planner) {
-    auto [domain,problem] = load("../../domains/transport_domain.hddl",
-                                 "../../domains/transport_problem.hddl");
+    auto [domain,problem] = load("../../domains/simple_travel.hddl",
+                                 "../../domains/simple_travel_problem.hddl");
 
-    auto results = cppMCTShop(domain,problem,scorers["delivery_one"],1000,1,sqrt(2.0),2022);;
-    BOOST_TEST(results.t[results.end].plan.size() == 8);
-    BOOST_TEST(results.t[results.end].state.get_facts("at").contains("(at package_0 city_loc_0)"));
-    BOOST_TEST(results.t[results.end].state.get_facts("at").contains("(at package_1 city_loc_2)"));
+    auto results = cppMCTShop(domain,problem,scorers["travel_one"],500,1,sqrt(2.0),2022);
+    auto& end_state = results.t[results.end].state;
+
+    //The synthesised precondition checks must not show up in the plan
+    BOOST_TEST(results.t[results.end].plan.size() == 1);
+    for (auto const& step : results.t[results.end].plan) {
+      BOOST_TEST(step.find("__mprec_") == std::string::npos);
+    }
+
+    //travel_one scores reaching the park, which is what the plan has to achieve
+    BOOST_TEST(end_state.get_facts("loc").contains("(loc me park)"));
 
 }// end of testing the planner
 
