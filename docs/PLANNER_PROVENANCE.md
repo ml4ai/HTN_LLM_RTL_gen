@@ -10,7 +10,12 @@ Line numbers refer to the `main` branch at commit `9052868`, which predates the
 trim of this repository down to the HTN planner. Files and sections describing
 the hybrid planner, the DFS planner, the plan recognizers, the evaluation
 harness and the perceptual pipeline have been dropped from this note along with
-the code; line numbers within the surviving files have shifted slightly.
+the code.
+
+**Treat every line number here as approximate.** The surviving files have since
+been edited, `kb.h` substantially so — it lost the time-indexed fact overlay
+(§2.7) and is around 270 lines shorter than the numbers below assume. The file
+and function names are current; the offsets are not.
 
 ---
 
@@ -40,7 +45,7 @@ state and plan rather than minimizing cost.
 | Dead-end labels | `cppMCTShop.h` 30–53, 172–174, 227, 278–283 | MCTS-Solver (Winands et al. 2008); node caching in Wichlacz et al. 2020 | Only the "proven loss" half of MCTS-Solver |
 | Decision rule and commit loop | `cppMCTShop.h` 244–385 | "Max child" (Chaslot et al. 2008; Browne et al. 2012); online UCT (Kocsis & Szepesvári 2006); Run-Lookahead (Ghallab, Nau & Traverso 2016); UPOM (Patra et al. 2020/2021) | Receding-horizon HTN planning |
 | Objective | `typedefs.h` 42, 730–732; `domains/score_functions.h` | HTN planning with preferences (Sohrabi et al. 2009) | Arbitrary scalar utility, not cost |
-| Time-indexed fact overlay | `kb.h` 303–455 | Continual planning (Brenner & Nebel 2009); planning and acting (Ghallab et al. 2016) | Custom mechanism, now dormant (§2.7). I found no direct HTN precedent |
+| Time-indexed fact overlay | *removed* | Continual planning (Brenner & Nebel 2009); planning and acting (Ghallab et al. 2016) | Custom mechanism, since deleted (§2.7). I found no direct HTN precedent |
 | Output decomposition tree | `cppMCTShop.h` 369–379; `grapher.h` | Decomposition trees (Geier & Bercher 2011; Behnke et al. 2017) | Standard artifact |
 
 ---
@@ -277,30 +282,37 @@ the end of a complete decomposition. Two things follow:
 Wichlacz et al. (2020) turn plan cost into a [0, 1] reward normalized by the
 incumbent solution. Here, scaling is left to the score author.
 
-### 2.7 Time-indexed fact overlay (dormant)
+### 2.7 Time-indexed fact overlay (removed; historical)
 
-`KnowledgeBase` keeps a second, time-indexed fact store, `temporal_facts`
-(`kb.h` 137). When the state is compiled at time `time`, `update_state` finds
-the **most recent timestamp ≤ time**. The map is ordered with `std::greater`,
-so `lower_bound` behaves as a floor (`kb.h` 303–306). If that timestamp is
-within 1000 units, its facts are added to the predicate definitions (`kb.h`
-308, 370–450). The planner's `time` counter (`pNode::time`, incremented per
-committed action) is what indexes into it.
+This section is history. The mechanism it describes is **no longer in the
+code**, and is recorded here only because it shaped the design of `kb.h` and
+because it is the one component of this planner for which I found no HTN
+precedent.
 
-This existed to **interleave exogenous observations with planning**: a
-perceptual agent pushed field-of-view percepts onto a Redis stream, and
-`update_temporal_facts` folded them into `temporal_facts` between planning
-decisions. That was in the spirit of continual planning (Brenner & Nebel 2009)
-and of integrating planning with acting and sensing (Ghallab et al. 2016), and
-I did not find a specific HTN-literature precedent for the time-indexed
-overlay.
+`KnowledgeBase` used to keep a second, time-indexed fact store,
+`temporal_facts`, alongside the ordinary `facts` map. A perceptual agent for
+the ASIST Minecraft search-and-rescue testbed pushed field-of-view percepts
+onto a Redis stream; `update_temporal_facts` folded them into
+`temporal_facts` between planning decisions. When the state was compiled at
+time `t`, `update_state(t)` found the most recent percept timestamp ≤ `t` (the
+map was ordered with `std::greater`, so `lower_bound` acted as a floor), and if
+that timestamp was within 1000 units its facts were added to the predicate
+completions. The planner's per-node clock, `pNode::time`, incremented once per
+committed action, was what indexed into it.
 
-**The percept ingestion has been removed** along with the rest of the
-perceptual pipeline. Nothing in the remaining code writes to `temporal_facts`
-— no caller passes a non-negative `time` to `tell` (`kb.h` 466) — so the
-overlay is always empty, `update_state(time)` takes its early-out at `kb.h`
-241, and the planner's `time` counter now only tracks plan length. The
-machinery is left in place but is dead code as it stands.
+The intent was to **interleave exogenous observations with planning**, in the
+spirit of continual planning (Brenner & Nebel 2009) and of integrating planning
+with acting and sensing (Ghallab et al. 2016).
+
+The whole perceptual pipeline was removed when this repository was trimmed to
+the HTN planner, which left the consumer side unreachable: nothing wrote to
+`temporal_facts`, so it was always empty, so `update_state` always took its
+no-percepts branch. That branch was a verbatim duplicate of the one guarded by
+the emptiness check, so collapsing the two and deleting the overlay left the
+emitted SMT identical. `temporal_facts`, the `time` parameters on `tell` and
+`update_state`, and `pNode::time` are all gone; the planner no longer keeps a
+clock. The removal was verified by building both versions and diffing their
+output — see §4, note on verification.
 
 ### 2.8 Output: the task (decomposition) tree
 
@@ -332,7 +344,8 @@ complete DFS rollouts. The differences:
 **As far as I found, specific to this codebase:**
 
 * SMT/Z3-based state queries under a completion encoding.
-* The time-indexed fact overlay (§2.7).
+* The time-indexed fact overlay — since removed, but see §2.7 if the idea is
+  worth reviving.
 
 If these become part of a paper, they are the pieces to describe explicitly.
 
@@ -340,17 +353,28 @@ If these become part of a paper, they are the pieces to describe explicitly.
 
 ## 4. Implementation observations
 
-Found while reading. Line numbers as above. None of these were executed or
-tested.
+Found while reading. Line numbers as above. These were found by reading rather
+than by testing, except note 2, which has since been observed at run time.
 
 1. **Possible infinite loops when backtracking a commit.**
    * `cppMCTShop.h` 337–342: the `for` loop never increments `it`. If `v` is
      not the *first* successor of `u`, it spins forever.
    * `cppMCTShop.h` 345–349: same problem, and `erase(it)` also invalidates
      `it`. It should be `it = erase(it)`, otherwise `++it`.
-2. **Backtracking at the root.** In `cppMCTShop.h` 336, `t[v].pred` is −1 at
-   the root, so `t[-1]` silently creates a node. The now-removed hybrid planner
-   guarded this with a `u == -1` check, which is the fix to apply here.
+2. **Backtracking at the root — confirmed, and it silently returns an empty
+   plan.** In `cppMCTShop.h` 336, `t[v].pred` is −1 at the root, so `t[-1]`
+   default-constructs a node. That node has an empty task network, so the
+   commit loop exits at once and the planner reports "Plan found at depth 0"
+   with an empty plan and an empty final state — a *failure* printed as a
+   success, with exit status 0.
+
+   This is reachable on the shipped domains. On `sar3.hddl` / `sar3p1.hddl`
+   with `-T 500` it fires on roughly 19 runs in 20; whether it fires depends on
+   how many MCTS iterations fit in the wall-clock budget, so the same command
+   is not reproducible run to run. Anything scripting this planner should treat
+   a depth-0 result as failure rather than trusting the exit code. The
+   now-removed hybrid planner guarded the root with a `u == -1` check, which is
+   the fix to apply here.
 3. **Only one level of commit undo is tracked.** `prev_TID` and `prev_i`
    describe only the most recent commit. After two backtracks in a row, the
    second one removes the wrong (stale) task-tree nodes.
@@ -381,19 +405,35 @@ tested.
    therefore appears to fire for at most the first quantified object. The
    erase loop at 382–390 also indexes `tempP[i]` with a bound taken from
    `args.size()`.
-8. **Time-indexed overlay SMT.** Latent while the overlay is dormant (§2.7);
-   these bite again if anything is made to write `temporal_facts`.
-   * When a predicate has both regular and temporal facts, `update_state`
-     emits two `declare-fun` blocks for it (`kb.h` 380, 413). SMT-LIB
-     disallows redeclaring a symbol, and even if it were accepted, the two
-     biconditionals conflict. The intended semantics is presumably one
-     completion over the *union* of both fact sets.
-   * If every timestamp in the overlay is later than `time`, `lower_bound`
-     returns `end()` and `itlow->first` (306) is undefined behavior.
-9. **Semantics to document.**
+8. **Semantics to document.**
    * Goals are ignored by the HTN planner (§2.1).
    * Method preconditions follow SHOP-style timing, not HDDL's (§2.3).
    * The search space is non-systematic, so duplicate subtrees occur (§2.3).
+
+An earlier note here recorded two bugs in the time-indexed overlay's SMT
+emission — a duplicate `declare-fun` when a predicate had both regular and
+temporal facts, and a `lower_bound` that could dereference `end()`. Both went
+away with the overlay itself (§2.7). If that mechanism is ever revived, they
+are the first things to get right.
+
+### Note on verification
+
+Removing the overlay was checked against a build rather than by reading:
+
+* Both versions were compiled and `ctest` run on each — `test_parser`,
+  `test_kb`, `test_loader`, `test_MCTS_planner` pass before and after.
+* Both binaries were run on five deterministic configurations spanning four
+  domains (`transport`, `simple_travel`, `sar3`, `d18`), varying seed, time
+  limit, rollout count and exploration constant. Initial state, plan and final
+  state are byte-identical in every case, as is the rendered task-tree png.
+* `sar3` is not usable as a regression check: it is nondeterministic on the
+  *unmodified* code for the reason in note 2. Over 20 interleaved trials the
+  two versions failed at the same rate (1/20 each).
+
+The equivalence argument behind those results: `temporal_facts` had no writer,
+so it was always empty, so the guard `time < 0 || temporal_facts.empty()` was
+always true; and the branch it guarded was a line-for-line duplicate of the
+branch in the `else`. The emitted SMT could not change.
 
 ---
 

@@ -224,7 +224,6 @@ struct pNode {
     double score = 0.0;
     int sims = 0;
     int pred = -1;
-    int time = 0;
     bool deadend = false;
     std::vector<int> successors = {};
     std::vector<int> unexplored = {};

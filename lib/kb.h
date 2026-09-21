@@ -3,7 +3,6 @@
 #include "parsing/ast.hpp"
 #include "util.h"
 #include "z3++.h"
-#include <map>
 #include <unordered_set>
 #include <string>
 #include <tuple>
@@ -132,8 +131,6 @@ class KnowledgeBase {
       std::unordered_map<std::string,std::string> objects;
       //header, (header arg1 arg2 ...), ... 
       std::unordered_map<std::string, std::unordered_set<std::string>> facts;
-      //time, header, (header arg1 arg2 ...), ...
-      std::map<int, std::unordered_map<std::string,std::unordered_set<std::string>>, std::greater<int>> temporal_facts;
       //belief state in smt form;
       std::string smt_state;
 
@@ -230,57 +227,39 @@ class KnowledgeBase {
       //Used by tell to update the smt_state string. tell() calls this
       //automatically by default, but it can be called manually too (see tell()
       //for default settings).
-      void update_state(int time = -1) {
+      void update_state() {
         this->smt_state = "(declare-datatype __Object__ (";
         for (auto const& [o1,o2] : this->objects) {
           this->smt_state += o1+" ";
         }
         this->smt_state += "))\n";
-        //No temporal facts
-        if (time < 0 || this->temporal_facts.empty()) {
-          for (auto const& p : this->predicates) {
-            if (this->facts.find(p.first) != this->facts.end()) {
-              if (!this->facts[p.first].empty()) {
-                this->smt_state += "(declare-fun "+p.first+" (";
-                std::string pred_assert = "(assert (forall (";
-                int i = 0;
-                std::string var_assert = "";
-                for (auto const& pars : p.second) {
-                  this->smt_state += "__Object__ ";
-                  pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                  var_assert += " x_"+std::to_string(i);
-                  i++;
-                }
-                pred_assert += ") (= ("+p.first+var_assert+") (or ";
-                for (auto const& f : this->facts[p.first]) {
-                  auto pp = this->parse_predicate(f);
-                  pred_assert += "(and ";
-                  int j = 0;
-                  for (auto const& vals : pp.second) {
-                    pred_assert += "(= x_"+std::to_string(j)+" "+vals+") ";
-                    j++;
-                  }
-                  pred_assert += ") ";
-                }
-                pred_assert += "))))\n";
-                this->smt_state += ") Bool)\n";
-                this->smt_state += pred_assert;
+        for (auto const& p : this->predicates) {
+          if (this->facts.find(p.first) != this->facts.end()) {
+            if (!this->facts[p.first].empty()) {
+              this->smt_state += "(declare-fun "+p.first+" (";
+              std::string pred_assert = "(assert (forall (";
+              int i = 0;
+              std::string var_assert = "";
+              for (auto const& pars : p.second) {
+                this->smt_state += "__Object__ ";
+                pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
+                var_assert += " x_"+std::to_string(i);
+                i++;
               }
-              else {
-                this->smt_state += "(declare-fun "+p.first+" (";
-                std::string pred_assert = "(assert (forall (";
-                int i = 0;
-                std::string var_assert = "";
-                for (auto const& vars : p.second) {
-                  this->smt_state += "__Object__ ";
-                  pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                  var_assert += " x_"+std::to_string(i);
-                  i++;
+              pred_assert += ") (= ("+p.first+var_assert+") (or ";
+              for (auto const& f : this->facts[p.first]) {
+                auto pp = this->parse_predicate(f);
+                pred_assert += "(and ";
+                int j = 0;
+                for (auto const& vals : pp.second) {
+                  pred_assert += "(= x_"+std::to_string(j)+" "+vals+") ";
+                  j++;
                 }
-                pred_assert += ") (not ("+p.first+var_assert+"))))\n";
-                this->smt_state += ") Bool)\n";
-                this->smt_state += pred_assert;
+                pred_assert += ") ";
               }
+              pred_assert += "))))\n";
+              this->smt_state += ") Bool)\n";
+              this->smt_state += pred_assert;
             }
             else {
               this->smt_state += "(declare-fun "+p.first+" (";
@@ -298,159 +277,20 @@ class KnowledgeBase {
               this->smt_state += pred_assert;
             }
           }
-        }
-        else {
-          std::map<int, std::unordered_map<std::string,std::unordered_set<std::string>>, std::greater<int>>::iterator itlow;
-          itlow = this->temporal_facts.lower_bound(time);
-          int closest_time = itlow->first;
-          //No relevant temporal facts
-          if (time - closest_time > 1000 || closest_time > time) {
-            for (auto const& p : this->predicates) {
-              if (this->facts.find(p.first) != this->facts.end()) {
-                if (!this->facts[p.first].empty()) {
-                  this->smt_state += "(declare-fun "+p.first+" (";
-                  std::string pred_assert = "(assert (forall (";
-                  int i = 0;
-                  std::string var_assert = "";
-                  for (auto const& pars : p.second) {
-                    this->smt_state += "__Object__ ";
-                    pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                    var_assert += " x_"+std::to_string(i);
-                    i++;
-                  }
-                  pred_assert += ") (= ("+p.first+var_assert+") (or ";
-                  for (auto const& f : this->facts[p.first]) {
-                    auto pp = this->parse_predicate(f);
-                    pred_assert += "(and ";
-                    int j = 0;
-                    for (auto const& vals : pp.second) {
-                      pred_assert += "(= x_"+std::to_string(j)+" "+vals+") ";
-                      j++;
-                    }
-                    pred_assert += ") ";
-                  }
-                  pred_assert += "))))\n";
-                  this->smt_state += ") Bool)\n";
-                  this->smt_state += pred_assert;
-                }
-                else {
-                  this->smt_state += "(declare-fun "+p.first+" (";
-                  std::string pred_assert = "(assert (forall (";
-                  int i = 0;
-                  std::string var_assert = "";
-                  for (auto const& vars : p.second) {
-                    this->smt_state += "__Object__ ";
-                    pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                    var_assert += " x_"+std::to_string(i);
-                    i++;
-                  }
-                  pred_assert += ") (not ("+p.first+var_assert+"))))\n";
-                  this->smt_state += ") Bool)\n";
-                  this->smt_state += pred_assert;
-                }
-              }
-              else {
-                this->smt_state += "(declare-fun "+p.first+" (";
-                std::string pred_assert = "(assert (forall (";
-                int i = 0;
-                std::string var_assert = "";
-                for (auto const& vars : p.second) {
-                  this->smt_state += "__Object__ ";
-                  pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                  var_assert += " x_"+std::to_string(i);
-                  i++;
-                }
-                pred_assert += ") (not ("+p.first+var_assert+"))))\n";
-                this->smt_state += ") Bool)\n";
-                this->smt_state += pred_assert;
-              }
-            }
-          }
           else {
-            //Add temporal facts
-            for (auto const& p : this->predicates) {
-              bool t_facts_exist = false;
-              if (this->temporal_facts[closest_time].find(p.first) != this->temporal_facts[closest_time].end()) {
-                if (!this->temporal_facts[closest_time][p.first].empty()) {
-                  t_facts_exist = true;
-                }
-              }
-              if (t_facts_exist) {
-                this->smt_state += "(declare-fun "+p.first+" (";
-                std::string pred_assert = "(assert (forall (";
-                int i = 0;
-                std::string var_assert = "";
-                for (auto const& pars : p.second) {
-                  this->smt_state += "__Object__ ";
-                  pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                  var_assert += " x_"+std::to_string(i);
-                  i++;
-                }
-                pred_assert += ") (= ("+p.first+var_assert+") (or ";
-                for (auto const& f : this->temporal_facts[closest_time][p.first]) {
-                  auto pp = this->parse_predicate(f);
-                  pred_assert += "(and ";
-                  int j = 0;
-                  for (auto const& vals : pp.second) {
-                    pred_assert += "(= x_"+std::to_string(j)+" "+vals+") ";
-                    j++;
-                  }
-                  pred_assert += ") ";
-                }
-                pred_assert += "))))\n";
-                this->smt_state += ") Bool)\n";
-                this->smt_state += pred_assert;
-              }
-
-              bool facts_exist = false;
-              if (this->facts.find(p.first) != this->facts.end()) {
-                if (!this->facts[p.first].empty()) {
-                  facts_exist = true;
-                }
-              }
-              if (facts_exist) {
-                  this->smt_state += "(declare-fun "+p.first+" (";
-                  std::string pred_assert = "(assert (forall (";
-                  int i = 0;
-                  std::string var_assert = "";
-                  for (auto const& pars : p.second) {
-                    this->smt_state += "__Object__ ";
-                    pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                    var_assert += " x_"+std::to_string(i);
-                    i++;
-                  }
-                  pred_assert += ") (= ("+p.first+var_assert+") (or ";
-                  for (auto const& f : this->facts[p.first]) {
-                    auto pp = this->parse_predicate(f);
-                    pred_assert += "(and ";
-                    int j = 0;
-                    for (auto const& vals : pp.second) {
-                      pred_assert += "(= x_"+std::to_string(j)+" "+vals+") ";
-                      j++;
-                    }
-                    pred_assert += ") ";
-                  }
-                  pred_assert += "))))\n";
-                  this->smt_state += ") Bool)\n";
-                  this->smt_state += pred_assert;
-              }
-
-              if (!t_facts_exist && !facts_exist) {
-                this->smt_state += "(declare-fun "+p.first+" (";
-                std::string pred_assert = "(assert (forall (";
-                int i = 0;
-                std::string var_assert = "";
-                for (auto const& vars : p.second) {
-                  this->smt_state += "__Object__ ";
-                  pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                  var_assert += " x_"+std::to_string(i);
-                  i++;
-                }
-                pred_assert += ") (not ("+p.first+var_assert+"))))\n";
-                this->smt_state += ") Bool)\n";
-                this->smt_state += pred_assert;
-              }
+            this->smt_state += "(declare-fun "+p.first+" (";
+            std::string pred_assert = "(assert (forall (";
+            int i = 0;
+            std::string var_assert = "";
+            for (auto const& vars : p.second) {
+              this->smt_state += "__Object__ ";
+              pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
+              var_assert += " x_"+std::to_string(i);
+              i++;
             }
+            pred_assert += ") (not ("+p.first+var_assert+"))))\n";
+            this->smt_state += ") Bool)\n";
+            this->smt_state += pred_assert;
           }
         }
       }
@@ -463,45 +303,29 @@ class KnowledgeBase {
       //By Default, it calls update_state(). If you are calling this in a long
       //series or loop, set update_state = false and then call update_state()
       //manually after all the tells for more optimal performance! 
-      bool tell(std::string pred, bool remove = false, bool update_state = true, int time = -1) {
+      bool tell(std::string pred, bool remove = false, bool update_state = true) {
         auto pp = this->parse_predicate(pred);
         bool not_found = true;
         for (auto const& p : this->predicates) {
           if (pp.first == p.first and pp.second.size() == p.second.size()) {
             not_found = false;
-          }  
+          }
         }
         if (not_found) {
           return false;
         }
-        if (time < 0) {
-          if (remove) {
-            this->facts[pp.first].erase(pred);
-            if (update_state) { 
-              this->update_state();
-            }
-            return true;
-          }
-          this->facts[pp.first].insert(pred);
+        if (remove) {
+          this->facts[pp.first].erase(pred);
           if (update_state) {
             this->update_state();
           }
           return true;
         }
-        else {
-          if (remove) {
-            this->temporal_facts[time][pp.first].erase(pred);
-            if (update_state) { 
-              this->update_state(time);
-            }
-            return true;
-          }
-          this->temporal_facts[time][pp.first].insert(pred);
-          if (update_state) {
-            this->update_state(time);
-          }
-          return true;
+        this->facts[pp.first].insert(pred);
+        if (update_state) {
+          this->update_state();
         }
+        return true;
       }
 
       //This adds the assert to expr, but the rest of expr must be made smt
@@ -555,11 +379,6 @@ class KnowledgeBase {
             std::cout << fact << std::endl;
           }
         }
-      }
-      
-
-      bool temporal_facts_is_empty() {
-        return this->temporal_facts.empty();
       }
 
       std::unordered_map<std::string, std::unordered_set<std::string>>

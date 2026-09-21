@@ -82,7 +82,6 @@ double
 simulation(std::vector<std::string>& plan,
            KnowledgeBase state,
            TaskGraph tasks,
-           int time,
            DomainDef& domain,
            std::mt19937_64& g) {
   if (tasks.empty()) {
@@ -117,10 +116,10 @@ simulation(std::vector<std::string>& plan,
         auto gtasks = tasks;
         gtasks.remove_node(cTask);
         for (auto &ns : act.second) {
-          ns.update_state(time+1);
+          ns.update_state();
           auto gplan = plan;
           gplan.push_back(act.first+"_"+std::to_string(cTask));
-          double rs = simulation(gplan,ns,gtasks,time + 1,domain,g);
+          double rs = simulation(gplan,ns,gtasks,domain,g);
           if (rs > -1.0) {
             return rs;
           }
@@ -135,7 +134,7 @@ simulation(std::vector<std::string>& plan,
         if (!all_gts.empty()) {
           std::shuffle(all_gts.begin(),all_gts.end(),g);
           for (auto &gts : all_gts) {
-            double rs = simulation(plan,state,gts.second,time,domain,g);
+            double rs = simulation(plan,state,gts.second,domain,g);
             if (rs > -1.0) {
               return rs;
             }
@@ -180,12 +179,11 @@ int expansion(pTree& t,
           for (auto const& state : act.second) {
             pNode v;
             v.state = state;
-            v.state.update_state(t[n].time + 1);
+            v.state.update_state();
             v.tasks = t[n].tasks;
             v.tasks.remove_node(tid);
             v.depth = t[n].depth + 1;
             v.plan = t[n].plan;
-            v.time = t[n].time + 1;
             v.treeRoots = t[n].treeRoots;
             v.plan.push_back(act.first+"_"+std::to_string(tid));
             v.pred = n;
@@ -206,7 +204,6 @@ int expansion(pTree& t,
             v.plan = t[n].plan;
             v.addedTIDs = g.first;
             v.prevTID = tid;
-            v.time = t[n].time;
             v.treeRoots = t[n].treeRoots;
             v.pred = n;
             int w = t.size();
@@ -242,12 +239,11 @@ seek_planMCTS(pTree& t,
   while (!t[v].tasks.empty()) {
     pTree m;
     pNode n_node;
-    t[v].state.update_state(t[v].time);
+    t[v].state.update_state();
     n_node.state = t[v].state;
     n_node.tasks = t[v].tasks;
     n_node.depth = t[v].depth;
     n_node.plan = t[v].plan;
-    n_node.time = t[v].time;
     n_node.treeRoots = t[v].treeRoots;
     int w = m.size();
     m[w] = n_node;
@@ -260,14 +256,13 @@ seek_planMCTS(pTree& t,
       }
       else {
         if (m[n].sims == 0) {
-          m[n].state.update_state(m[n].time);
+          m[n].state.update_state();
           double ar = 0.0;
           bool bp = true;
           for (int j = 0; j < r; j++) {
             ar += simulation(m[n].plan,
                              m[n].state, 
                              m[n].tasks, 
-                             m[n].time,
                              domain,
                              g);
             if (ar == -1.0) {
@@ -282,16 +277,15 @@ seek_planMCTS(pTree& t,
           }
         }
         else {
-          m[n].state.update_state(m[n].time);
+          m[n].state.update_state();
           int n_p = expansion(m,n,domain,g);
-          m[n_p].state.update_state(m[n_p].time);
+          m[n_p].state.update_state();
           double ar = 0.0;
           bool bp = true;
           for (int j = 0; j < r; j++) {
             ar += simulation(m[n_p].plan,
                              m[n_p].state, 
                              m[n_p].tasks, 
-                             m[n_p].time,
                              domain,
                              g);
             if (ar == -1.0) {
@@ -359,7 +353,6 @@ seek_planMCTS(pTree& t,
     k.tasks = m[arg_max].tasks;
     k.plan = m[arg_max].plan;
     k.depth = t[v].depth + 1;
-    k.time = m[arg_max].time;
     k.treeRoots = m[arg_max].treeRoots;
     prev_i.clear();
     prev_TID = m[arg_max].prevTID;
