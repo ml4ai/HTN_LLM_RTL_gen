@@ -2,7 +2,6 @@
 
 #include "../util.h"
 #include "../typedefs.h"
-//#include "printing.h"
 #include <any>
 #include <iostream>
 #include <optional>
@@ -236,17 +235,13 @@ seek_planMCTS(pTree& t,
               int time_limit,
               int r,
               double c,
-              std::mt19937_64& g,
-              std::string const& redis_address) {
+              std::mt19937_64& g) {
   int stuck_counter = 10;
   int prev_TID = -1;
   std::vector<int> prev_i;
   while (!t[v].tasks.empty()) {
     pTree m;
     pNode n_node;
-    if (!redis_address.empty()) {
-      t[v].state.update_temporal_facts(redis_address);
-    }
     t[v].state.update_state(t[v].time);
     n_node.state = t[v].state;
     n_node.tasks = t[v].tasks;
@@ -399,8 +394,7 @@ cppMCTShop(DomainDef& domain,
            int time_limit = 1000,
            int r = 5,
            double c = 1.4142,
-           int seed = 4021,
-           std::string const& redis_address = "") {
+           int seed = 4021) {
     domain.set_scorer(scorer);
     pTree t;
     TaskTree tasktree;
@@ -427,7 +421,7 @@ cppMCTShop(DomainDef& domain,
     std::cout << "Initial State:" << std::endl;
     t[v].state.print_facts();
     std::cout << std::endl;
-    auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c,g,redis_address);
+    auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c, g);
     std::cout << "Plan:";
     for (auto const& p : t[end].plan) {
       std::cout << "\n\t " << p;

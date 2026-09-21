@@ -11,39 +11,8 @@
 #include <vector>
 #include <algorithm>
 #include "parsing/ast.hpp"
-#include "file.hpp"
 
 namespace json = boost::json;
-
-json::value
-parse_file( char const* filename )
-{
-    file f( filename, "r" );
-    json::stream_parser p;
-    json::error_code ec;
-    do
-    {
-        char buf[4096];
-        auto const nread = f.read( buf, sizeof(buf) );
-        p.write( buf, nread, ec );
-    }
-    while( ! f.eof() );
-    if( ec )
-        return nullptr;
-    p.finish( ec );
-    if( ec )
-        return nullptr;
-    return p.release();
-}
-
-bool is_subseq(std::vector<std::string> plan, std::vector<std::pair<int,std::string>> O) {
-  for (int i = 0; i < plan.size(); i++) {
-    if (plan[i].find(O[i].second) == std::string::npos) {
-      return false;
-    }
-  }
-  return true;
-}
 
 // Utility method to see if an element is in an associative container
 template <class Element, class AssociativeContainer>
@@ -96,38 +65,6 @@ std::ostream& operator<<(std::ostream& os, const std::variant<T, Ts...>& v) {
     return os;
 }
 
-void write_csv(std::string filename, std::vector<std::pair<std::string, std::vector<double>>> dataset){
-    // Make a CSV file with one or more columns of integer values
-    // Each column of data is represented by the pair <column name, column data>
-    //   as std::pair<std::string, std::vector<int>>
-    // The dataset is represented as a vector of these columns
-    // Note that all columns should be the same size
-
-    // Create an output filestream object
-    std::ofstream myFile(filename);
-
-    // Send column names to the stream
-    for(int j = 0; j < dataset.size(); ++j)
-    {
-        myFile << dataset.at(j).first;
-        if(j != dataset.size() - 1) myFile << ","; // No comma at end of line
-    }
-    myFile << "\n";
-
-    // Send data to the stream
-    for(int i = 0; i < dataset.at(0).second.size(); ++i)
-    {
-        for(int j = 0; j < dataset.size(); ++j)
-        {
-            myFile << dataset.at(j).second.at(i);
-            if(j != dataset.size() - 1) myFile << ","; // No comma at end of line
-        }
-        myFile << "\n";
-    }
-
-    // Close the file
-    myFile.close();
-}
 
 // Define support for printing vectors
 template <typename T>

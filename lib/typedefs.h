@@ -215,7 +215,6 @@ void tag_invoke(const json::value_from_tag&, json::value& jv, TaskTree const& t)
 
 struct pNode {
     KnowledgeBase state;
-    KnowledgeBase c_state;
     TaskGraph tasks;
     int prevTID = -1;
     std::vector<int> addedTIDs;
@@ -246,19 +245,6 @@ struct Results{
   }
 };
 
-struct Time {
-  int hours;
-  int minutes;
-  double seconds;
-  Time () {}
-  Time (std::string ts_) {
-    hours = std::stoi(ts_.substr(0,ts_.find(":")),nullptr);
-    std::string ts1_ = ts_.substr(ts_.find(":") + 1);
-    minutes = std::stoi(ts1_.substr(0,ts1_.find(":")),nullptr);
-    std::string ts2_ = ts1_.substr(ts1_.find(":") + 1);
-    seconds = std::stod(ts2_,nullptr);
-  }
-};
 
 std::string return_value(std::string var, Args& args) {
   for (auto const& a : args) {
@@ -705,7 +691,6 @@ struct DomainDef {
   MethodDefs methods;
   Objects constants;
   Scorer scorer;
-  Scorer rec_scorer;
   DomainDef(std::string head,
             TypeTree typetree,
             Predicates predicates,
@@ -723,17 +708,11 @@ struct DomainDef {
     this->scorer = scorer;
   }
 
-  void set_rec_scorer(Scorer scorer) {
-    this->rec_scorer = scorer;
-  }
 
   double score(KnowledgeBase& state, std::vector<std::string>& plan) {
     return this->scorer(state,plan); 
   }
 
-  double rec_score(KnowledgeBase& state, std::vector<std::string>& plan) {
-    return this->rec_scorer(state,plan);
-  }
 };
 
 struct ProblemDef {

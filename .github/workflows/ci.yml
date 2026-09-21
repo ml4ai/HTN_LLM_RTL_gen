@@ -26,8 +26,7 @@ jobs:
         sudo ./scripts/install_boost_from_source
         sudo ./scripts/install_z3_from_source
         sudo apt-get update
-        sudo apt-get install -y graphviz libgraphviz-dev libpaho-mqtt-dev libpaho-mqttpp-dev libhiredis-dev
-        sudo ./scripts/install_redis_plus_plus_from_source
+        sudo apt-get install -y graphviz libgraphviz-dev
         mkdir build
         cd build
         cmake .. 

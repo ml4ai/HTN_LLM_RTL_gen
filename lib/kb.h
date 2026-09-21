@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Redis_Connect.h"
 #include "parsing/ast.hpp"
 #include "util.h"
 #include "z3++.h"
@@ -558,24 +557,6 @@ class KnowledgeBase {
         }
       }
       
-      void update_temporal_facts(std::string const& redis_address) {
-        Redis_Connect* rc = Redis_Connect::getInstance(redis_address); 
-        std::string oldest;
-        if (this->temporal_facts.empty()) {
-          oldest = "0";
-        }
-        else {
-          oldest = std::to_string(this->temporal_facts.begin()->first);
-        }
-        std::vector<std::pair<std::string,std::vector<std::pair<std::string,std::string>>>> xresults;
-        rc->redis.xread("fov",oldest,std::back_inserter(xresults));
-        for (auto const& x : xresults) {
-          int t = std::stoi(x.first);
-          for (auto const& y : x.second) {
-            this->temporal_facts[t][y.first].insert(y.second);
-          }
-        }
-      }
 
       bool temporal_facts_is_empty() {
         return this->temporal_facts.empty();

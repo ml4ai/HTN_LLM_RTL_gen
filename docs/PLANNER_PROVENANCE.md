@@ -3,12 +3,14 @@
 This note complements the top-level `README.md`. It records **which algorithms
 the code in `lib/` implements** and **where each piece comes from in the
 planning and MCTS literature**, with pointers to the exact code. It covers the
-MCTS HTN planner (`lib/cpphop/cppMCTShop.h`), the shared data structures it
-depends on (`lib/typedefs.h`, `lib/kb.h`, `lib/cpphop/loader.h`), and, more
-briefly, the hybrid planner, the DFS planner, and the plan recognizers that
-reuse the same machinery.
+MCTS HTN planner (`lib/cpphop/cppMCTShop.h`) and the shared data structures it
+depends on (`lib/typedefs.h`, `lib/kb.h`, `lib/cpphop/loader.h`).
 
-Line numbers refer to the `main` branch at commit `9052868`.
+Line numbers refer to the `main` branch at commit `9052868`, which predates the
+trim of this repository down to the HTN planner. Files and sections describing
+the hybrid planner, the DFS planner, the plan recognizers, the evaluation
+harness and the perceptual pipeline have been dropped from this note along with
+the code; line numbers within the surviving files have shifted slightly.
 
 ---
 
@@ -38,10 +40,8 @@ state and plan rather than minimizing cost.
 | Dead-end labels | `cppMCTShop.h` 30–53, 172–174, 227, 278–283 | MCTS-Solver (Winands et al. 2008); node caching in Wichlacz et al. 2020 | Only the "proven loss" half of MCTS-Solver |
 | Decision rule and commit loop | `cppMCTShop.h` 244–385 | "Max child" (Chaslot et al. 2008; Browne et al. 2012); online UCT (Kocsis & Szepesvári 2006); Run-Lookahead (Ghallab, Nau & Traverso 2016); UPOM (Patra et al. 2020/2021) | Receding-horizon HTN planning |
 | Objective | `typedefs.h` 42, 730–732; `domains/score_functions.h` | HTN planning with preferences (Sohrabi et al. 2009) | Arbitrary scalar utility, not cost |
-| Percept overlay / time | `kb.h` 303–455, 562–578 | Continual planning (Brenner & Nebel 2009); planning and acting (Ghallab et al. 2016) | Custom mechanism. I found no direct HTN precedent |
+| Time-indexed fact overlay | `kb.h` 303–455 | Continual planning (Brenner & Nebel 2009); planning and acting (Ghallab et al. 2016) | Custom mechanism, now dormant (§2.7). I found no direct HTN precedent |
 | Output decomposition tree | `cppMCTShop.h` 369–379; `grapher.h` | Decomposition trees (Geier & Bercher 2011; Behnke et al. 2017) | Standard artifact |
-| Hybrid planner | `cppMCTShyhop.h` | Hybrid planning (Kambhampati et al. 1998; Biundo & Schattenberg 2001); angelic HLAs (Marthi et al. 2007); HGN/GTN (Shivashankar et al. 2012; Alford et al. 2016); TIHTN (Geier & Bercher 2011) | Two-level design related to all of these; it matches none of them exactly |
-| Plan recognition | `cppMCTSplanrec.h`, `cppMCTShyplanrec.h` | Plan recognition as planning (Ramírez & Geffner 2009); as HTN planning with an observed prefix (Höller et al. 2018); MCTS for plan recognition (Kantharaju et al. 2019) | Recognition by prefix-constrained MCTS |
 
 ---
 
@@ -69,7 +69,7 @@ state and plan rather than minimizing cost.
   decomposition (Erol, Hendler & Nau 1994), and the HTN planner follows that:
   it ignores `:goal`. HDDL makes the goal optional, but when a goal is given, a
   solution must also satisfy it (Höller et al. 2020a). The README already notes
-  this deviation. The hybrid planner (§2.8) does use the goal.
+  this deviation.
 * **Typing and effects.** Types become unary predicates asserted for each object
   and all of its ancestor types (`kb.h` 202–219). This is the usual compilation
   of PDDL typing (McDermott et al. 1998). Conditional effects (`when`) and
@@ -277,19 +277,30 @@ the end of a complete decomposition. Two things follow:
 Wichlacz et al. (2020) turn plan cost into a [0, 1] reward normalized by the
 incumbent solution. Here, scaling is left to the score author.
 
-### 2.7 Perceptual overlay and discrete time
+### 2.7 Time-indexed fact overlay (dormant)
 
-`update_temporal_facts` (`kb.h` 562–578) reads percepts from a Redis stream
-(`fov`) into `temporal_facts[t]`. When the state is compiled at time `time`,
-`update_state` finds the **most recent percept timestamp ≤ time**. The map is
-ordered with `std::greater`, so `lower_bound` behaves as a floor (`kb.h`
-303–306). If that timestamp is within 1000 units, its facts are added to the
-predicate definitions (`kb.h` 308, 370–450).
+`KnowledgeBase` keeps a second, time-indexed fact store, `temporal_facts`
+(`kb.h` 137). When the state is compiled at time `time`, `update_state` finds
+the **most recent timestamp ≤ time**. The map is ordered with `std::greater`,
+so `lower_bound` behaves as a floor (`kb.h` 303–306). If that timestamp is
+within 1000 units, its facts are added to the predicate definitions (`kb.h`
+308, 370–450). The planner's `time` counter (`pNode::time`, incremented per
+committed action) is what indexes into it.
 
-This is a lightweight way of **interleaving exogenous observations with
-planning**, in the spirit of continual planning (Brenner & Nebel 2009) and of
-integrating planning with acting and sensing (Ghallab et al. 2016). I did not
-find a specific HTN-literature precedent for this time-indexed fact overlay.
+This existed to **interleave exogenous observations with planning**: a
+perceptual agent pushed field-of-view percepts onto a Redis stream, and
+`update_temporal_facts` folded them into `temporal_facts` between planning
+decisions. That was in the spirit of continual planning (Brenner & Nebel 2009)
+and of integrating planning with acting and sensing (Ghallab et al. 2016), and
+I did not find a specific HTN-literature precedent for the time-indexed
+overlay.
+
+**The percept ingestion has been removed** along with the rest of the
+perceptual pipeline. Nothing in the remaining code writes to `temporal_facts`
+— no caller passes a non-negative `time` to `tell` (`kb.h` 466) — so the
+overlay is always empty, `update_state(time)` takes its early-out at `kb.h`
+241, and the planner's `time` counter now only tracks plan length. The
+machinery is left in place but is dead code as it stands.
 
 ### 2.8 Output: the task (decomposition) tree
 
@@ -298,90 +309,6 @@ Each committed method application appends children to `tasktree`
 structure is a **decomposition tree** in the sense of Geier & Bercher (2011).
 Behnke, Höller & Biundo (2017) use it as the witness in HTN plan verification.
 
-### 2.9 Hybrid planner (`cppMCTShyhop.h`)
-
-The hybrid planner searches one MCTS tree with two phases:
-
-1. **Classical phase.** Until the abstract state `c_state` satisfies the goal,
-   successors come from *forward classical planning* in an auxiliary domain
-   (`domain_c`). In that domain, compound tasks of the main domain are
-   **actions with preconditions and effects** (`cppMCTShyhop.h` 274–300). Each
-   chosen action is added as an **unordered** top-level task (`add_node` with
-   no edges), so its later decompositions can interleave freely.
-2. **HTN phase.** Once the abstract goal holds, the planner decomposes those
-   tasks exactly as the HTN planner does (199–273). It stops when the
-   *concrete* state satisfies the goal (`while (!t[v].state.ask(goal))`, 330).
-   That can happen before every task is decomposed.
-
-Rollouts here are **single random walks** (`simulationhh`, 72–190), not DFS.
-Failures are penalized with −1 (classical) or −0.5 (HTN), and the length of the
-abstract plan is capped by `max_depth`.
-
-Literature this relates to (none is an exact match):
-
-* **Hybrid planning.** Abstract tasks carry preconditions and effects, and
-  planning is done over them. Examples: Kambhampati, Mali & Srivastava (1998),
-  Biundo & Schattenberg (2001), and the PANDA line (e.g., Bercher, Keen & Biundo
-  2014).
-* **Angelic / summary semantics for high-level actions.** Marthi, Russell &
-  Wolfe (2007) and Clement, Durfee & Barrett (2007) study how effects of
-  abstract actions relate to the effects of their refinements. Here the
-  auxiliary domain states those effects by hand, and nothing checks that they
-  are sound with respect to the refinements. This is the main semantic risk:
-  phase 1 can succeed on a sequence of tasks that phase 2 cannot decompose.
-* **Goal-directed hierarchical planning.** Hierarchical Goal Networks
-  (Shivashankar, Kuter, Nau & Alford 2012) and Goal Task Networks (Alford,
-  Shivashankar, Roberts, Frank & Aha 2016).
-* **HTN planning with task insertion (TIHTN).** Geier & Bercher (2011); Alford,
-  Bercher & Aha (2015). Phase 1 inserts compound tasks to reach a goal. TIHTN
-  inserts *primitive* tasks without any method. The repo's `Tihtn` merge
-  (#68) suggests this link was intended.
-
-### 2.10 Exhaustive DFS planner (`cppDFShop.h`)
-
-`seek_planDFS` enumerates **all** decompositions reachable by progression. It
-branches over every unconstrained task, as in §2.3. It stores each distinct
-plan, compared by action names, with its decomposition tree and score in a
-**plan library** (`cppDFShop.h` 19–98). `planlib_planrec.h` then returns the
-highest-scoring library entries consistent with an observation prefix. This is
-**plan-library-based recognition** in the tradition of Kautz & Allen (1986).
-
-### 2.11 Plan recognizers (`cppMCTSplanrec.h`, `cppMCTShyplanrec.h`)
-
-The recognizer runs a single time-limited MCTS from the root task (not the
-per-decision loop):
-
-* Nodes and rollouts whose plan prefix does not match the observed action
-  sequence are rejected (`is_subseq`, `util.h` 39–46; `cppMCTSplanrec.h`
-  30–35). Matching is by **substring**, so an observation can be a partial
-  action description.
-* Rollouts stop once the plan is as long as the observation sequence (34).
-* The state clock is aligned to the observation timestamps (68–73, 141–147).
-* After the search, the explanation is read off by greedily following
-  max-mean children until the observations are covered (272–318). The
-  explanation is the **partial decomposition tree**.
-
-Provenance:
-
-* **Plan recognition as planning** (Ramírez & Geffner 2009): recognition is
-  solved by running a planner under observation constraints.
-* **Plan and goal recognition as HTN planning** (Höller, Behnke, Bercher &
-  Biundo 2018): observations are a **prefix** of the solution, and the
-  recognized plan/goal is a decomposition consistent with that prefix. They
-  compile the prefix constraint into the domain. This code enforces it directly
-  in the search.
-* **Grammar/parsing-based recognition.** The partial task tree as explanation
-  parallels the plan-tree explanations of PHATT (Geib & Goldman 2009) and the
-  parsing-based HTN recognition of Barták, Maillard & Cardoso (2018).
-* **MCTS for plan recognition.** Kantharaju, Ontañón & Geib (2019) used MCTS to
-  scale CCG-based plan recognition. That is the nearest precedent for MCTS as
-  the recognition engine, though with a grammar formalism instead of HTN
-  progression.
-* **Evaluation by prediction.** `cppMCTSeval.h` re-plans from the recognized
-  hierarchy and scores accuracy against the true future actions at increasing
-  horizons. This follows the common practice of evaluating recognizers by how
-  well they predict held-out actions.
-
 ---
 
 ## 3. What is standard vs. what is specific to this implementation
@@ -389,8 +316,7 @@ Provenance:
 **Standard, with direct precedents:** HDDL input; lifted forward decomposition
 in execution order; partial-order progression that branches over all
 unconstrained tasks; UCT with c = √2; max-child final selection;
-dead-end pruning; decomposition-tree output; plan recognition as prefix-
-constrained HTN planning.
+dead-end pruning; decomposition-tree output.
 
 **Closest single precedent:** Wichlacz et al. (2020). This codebase's MCTS work
 started around 2021 (PR #46), after that paper, but whether the design came
@@ -406,10 +332,7 @@ complete DFS rollouts. The differences:
 **As far as I found, specific to this codebase:**
 
 * SMT/Z3-based state queries under a completion encoding.
-* The time-indexed perceptual fact overlay.
-* The two-phase classical-then-HTN hybrid inside one MCTS tree.
-* Using the same MCTS engine with an observation-prefix filter for plan
-  recognition.
+* The time-indexed fact overlay (§2.7).
 
 If these become part of a paper, they are the pieces to describe explicitly.
 
@@ -425,11 +348,9 @@ tested.
      not the *first* successor of `u`, it spins forever.
    * `cppMCTShop.h` 345–349: same problem, and `erase(it)` also invalidates
      `it`. It should be `it = erase(it)`, otherwise `++it`.
-   * The same pattern appears in `cppMCTShyhop.h` 422, 430 and
-     `cppMCTSeval.h` 281.
 2. **Backtracking at the root.** In `cppMCTShop.h` 336, `t[v].pred` is −1 at
-   the root, so `t[-1]` silently creates a node. `cppMCTShyhop.h` checks
-   `u == -1` and should be used as the model.
+   the root, so `t[-1]` silently creates a node. The now-removed hybrid planner
+   guarded this with a `u == -1` check, which is the fix to apply here.
 3. **Only one level of commit undo is tracked.** `prev_TID` and `prev_i`
    describe only the most recent commit. After two backtracks in a row, the
    second one removes the wrong (stale) task-tree nodes.
@@ -449,11 +370,10 @@ tested.
      because a dead end fails on every rollout, but it is fragile.
    * Keeping scores in [0, 1] as UCB1 assumes, and using `std::optional`
      for failure, would remove both issues.
-6. **Seeding.** `static std::mt19937_64 g(seed)` (`cppMCTShop.h` 425, and the
-   other entry points) is initialized once per process. Later calls with a
-   different `seed` are ignored, and the `seed++` in `cppMCTSplanrec.h` 354
-   has no effect. This matters for multi-trial runs in one process, such as
-   the evaluation harness.
+6. **Seeding.** `static std::mt19937_64 g(seed)` (`cppMCTShop.h` 425) is
+   initialized once per process, so later calls to `cppMCTShop` with a
+   different `seed` are ignored. This matters for multi-trial runs that call
+   the planner more than once in a single process.
 7. **Conditional `forall` effects.** In `ActionDef::apply_binding`
    (`typedefs.h` 394–397), each quantified binding is *appended* to `args`
    (a reference) without removing the previous binding. From the second
@@ -461,14 +381,15 @@ tested.
    therefore appears to fire for at most the first quantified object. The
    erase loop at 382–390 also indexes `tempP[i]` with a bound taken from
    `args.size()`.
-8. **Percept overlay SMT.**
+8. **Time-indexed overlay SMT.** Latent while the overlay is dormant (§2.7);
+   these bite again if anything is made to write `temporal_facts`.
    * When a predicate has both regular and temporal facts, `update_state`
      emits two `declare-fun` blocks for it (`kb.h` 380, 413). SMT-LIB
      disallows redeclaring a symbol, and even if it were accepted, the two
      biconditionals conflict. The intended semantics is presumably one
      completion over the *union* of both fact sets.
-   * If every percept timestamp is later than `time`, `lower_bound` returns
-     `end()` and `itlow->first` (306) is undefined behavior.
+   * If every timestamp in the overlay is later than `time`, `lower_bound`
+     returns `end()` and `itlow->first` (306) is undefined behavior.
 9. **Semantics to document.**
    * Goals are ignored by the HTN planner (§2.1).
    * Method preconditions follow SHOP-style timing, not HDDL's (§2.3).
@@ -480,47 +401,34 @@ tested.
 
 - Alford, R., Bercher, P., & Aha, D. W. (2015). Tight bounds for HTN planning. *ICAPS 2015*. https://dl.acm.org/doi/10.5555/3038662.3038665
 - Alford, R., Shivashankar, V., Kuter, U., & Nau, D. (2012). HTN problem spaces: Structure, algorithms, termination. *SoCS 2012*. https://ojs.aaai.org/index.php/SOCS/article/view/18239
-- Alford, R., Shivashankar, V., Roberts, M., Frank, J., & Aha, D. W. (2016). Hierarchical planning: Relating task and goal decomposition with task sharing. *IJCAI 2016*. https://www.ijcai.org/Proceedings/16/Papers/429.pdf
 - Auer, P., Cesa-Bianchi, N., & Fischer, P. (2002). Finite-time analysis of the multiarmed bandit problem. *Machine Learning*, 47, 235–256.
-- Barták, R., Maillard, A., & Cardoso, R. C. (2018). Validation of hierarchical plans via parsing of attribute grammars. *ICAPS 2018*.
 - Behnke, G., Höller, D., & Biundo, S. (2017). This is a solution! (… but is it though?) – Verifying solutions of hierarchical planning problems. *ICAPS 2017*.
 - Bercher, P., Alford, R., & Höller, D. (2019). A survey on hierarchical planning – One abstract idea, many concrete realizations. *IJCAI 2019*.
-- Bercher, P., Keen, S., & Biundo, S. (2014). Hybrid planning heuristics based on task decomposition graphs. *SoCS 2014*.
-- Biundo, S., & Schattenberg, B. (2001). From abstract crisis to concrete relief – A preliminary report on combining state abstraction and HTN planning. *ECP 2001*.
 - Brenner, M., & Nebel, B. (2009). Continual planning and acting in dynamic multiagent environments. *JAAMAS*, 19(3), 297–331.
 - Browne, C. B., et al. (2012). A survey of Monte Carlo tree search methods. *IEEE TCIAIG*, 4(1), 1–43.
 - Cazenave, T., & Jouandeau, N. (2007). On the parallelization of UCT. *Computer Games Workshop 2007*.
 - Chaslot, G. M. J.-B., Winands, M. H. M., & van den Herik, H. J. (2008). Parallel Monte-Carlo tree search. *CG 2008*.
 - Chaslot, G. M. J.-B., Winands, M. H. M., van den Herik, H. J., Uiterwijk, J. W. H. M., & Bouzy, B. (2008). Progressive strategies for Monte-Carlo tree search. *New Mathematics and Natural Computation*, 4(3), 343–357.
 - Clark, K. L. (1978). Negation as failure. In *Logic and Data Bases*, 293–322.
-- Clement, B. J., Durfee, E. H., & Barrett, A. C. (2007). Abstract reasoning for planning and coordination. *JAIR*, 28, 453–515.
 - Coulom, R. (2006). Efficient selectivity and backup operators in Monte-Carlo tree search. *CG 2006*.
 - de Moura, L., & Bjørner, N. (2008). Z3: An efficient SMT solver. *TACAS 2008*.
 - Erol, K., Hendler, J., & Nau, D. S. (1994). HTN planning: Complexity and expressivity. *AAAI 1994*.
-- Geib, C. W., & Goldman, R. P. (2009). A probabilistic plan recognition algorithm based on plan tree grammars. *Artificial Intelligence*, 173(11), 1101–1132.
 - Geier, T., & Bercher, P. (2011). On the decidability of HTN planning with task insertion. *IJCAI 2011*.
 - Ghallab, M., Nau, D., & Traverso, P. (2016). *Automated Planning and Acting*. Cambridge University Press.
 - Gomes, C. P., Selman, B., & Kautz, H. (1998). Boosting combinatorial search through randomization. *AAAI 1998*.
 - Gregory, P., Long, D., Fox, M., & Beck, J. C. (2012). Planning modulo theories: Extending the planning paradigm. *ICAPS 2012*. https://ojs.aaai.org/index.php/ICAPS/article/view/13505
-- Höller, D., Behnke, G., Bercher, P., & Biundo, S. (2018). Plan and goal recognition as HTN planning. *ICTAI 2018*. https://staff.fnwi.uva.nl/g.behnke/papers/Hoeller2018PlanRec.pdf
 - Höller, D., Behnke, G., Bercher, P., Biundo, S., Fiorino, H., Pellier, D., & Alford, R. (2020a). HDDL: An extension to PDDL for expressing hierarchical planning problems. *AAAI 2020*. https://staff.fnwi.uva.nl/g.behnke/papers/Hoeller2020HDDL.pdf
 - Höller, D., Bercher, P., Behnke, G., & Biundo, S. (2020b). HTN planning as heuristic progression search. *JAIR*, 67, 835–880. https://jair.org/index.php/jair/article/view/11282
-- Kambhampati, S., Mali, A., & Srivastava, B. (1998). Hybrid planning for partially hierarchical domains. *AAAI 1998*.
-- Kantharaju, P., Ontañón, S., & Geib, C. W. (2019). Scaling up CCG-based plan recognition via Monte-Carlo tree search. *IEEE CoG 2019*. https://ieeexplore.ieee.org/document/8848013/
-- Kautz, H. A., & Allen, J. F. (1986). Generalized plan recognition. *AAAI 1986*.
 - Keller, T., & Helmert, M. (2013). Trial-based heuristic tree search for finite horizon MDPs. *ICAPS 2013*.
 - Kocsis, L., & Szepesvári, C. (2006). Bandit based Monte-Carlo planning. *ECML 2006*.
 - Lahiri, S. K., Nieuwenhuis, R., & Oliveras, A. (2006). SMT techniques for fast predicate abstraction. *CAV 2006*.
-- Marthi, B., Russell, S., & Wolfe, J. (2007). Angelic semantics for high-level actions. *ICAPS 2007*.
 - McDermott, D., et al. (1998). PDDL – The Planning Domain Definition Language. Tech. rep. CVC TR-98-003, Yale.
 - Nau, D., Au, T.-C., Ilghami, O., Kuter, U., Murdock, J. W., Wu, D., & Yaman, F. (2003). SHOP2: An HTN planning system. *JAIR*, 20, 379–404. https://arxiv.org/abs/1106.4869
 - Patra, S., Mason, J., Kumar, A., Ghallab, M., Traverso, P., & Nau, D. (2020). Integrating acting, planning, and learning in hierarchical operational models. *ICAPS 2020*. https://ojs.aaai.org/index.php/ICAPS/article/view/6743
 - Patra, S., Mason, J., Ghallab, M., Nau, D., & Traverso, P. (2021). Deliberative acting, planning and learning with hierarchical operational models. *Artificial Intelligence*, 299. https://arxiv.org/abs/2010.01909
 - Pednault, E. P. D. (1989). ADL: Exploring the middle ground between STRIPS and the situation calculus. *KR 1989*.
-- Ramírez, M., & Geffner, H. (2009). Plan recognition as planning. *IJCAI 2009*.
 - Reiter, R. (1978). On closed world data bases. In *Logic and Data Bases*, 55–76.
 - Schadd, M. P. D., Winands, M. H. M., van den Herik, H. J., Chaslot, G. M. J.-B., & Uiterwijk, J. W. H. M. (2008). Single-player Monte-Carlo tree search. *CG 2008*.
-- Shivashankar, V., Kuter, U., Nau, D., & Alford, R. (2012). A hierarchical goal-based formalism and algorithm for single-agent planning. *AAMAS 2012*.
 - Sohrabi, S., Baier, J. A., & McIlraith, S. A. (2009). HTN planning with preferences. *IJCAI 2009*.
 - Winands, M. H. M., Björnsson, Y., & Saito, J.-T. (2008). Monte-Carlo tree search solver. *CG 2008*.
 - Wichlacz, J., Höller, D., Torralba, Á., & Hoffmann, J. (2020). Applying Monte-Carlo tree search in HTN planning. *SoCS 2020*. https://ojs.aaai.org/index.php/SOCS/article/view/18538 (code: https://github.com/minecraft-saar/MCTS-JSHOP)
