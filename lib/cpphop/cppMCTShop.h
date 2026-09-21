@@ -2,6 +2,7 @@
 
 #include "../util.h"
 #include "../typedefs.h"
+#include <algorithm>
 #include <any>
 #include <iostream>
 #include <optional>
@@ -236,6 +237,10 @@ seek_planMCTS(pTree& t,
   int stuck_counter = 10;
   int prev_TID = -1;
   std::vector<int> prev_i;
+  //Node ids must come from a monotonic counter, not from t.size(): backtracking
+  //erases nodes, after which t.size() can name a key that is still live and the
+  //commit below would overwrite an existing node.
+  int next_node_id = t.size();
   while (!t[v].tasks.empty()) {
     pTree m;
     pNode n_node;
@@ -323,18 +328,27 @@ seek_planMCTS(pTree& t,
 
     if (arg_maxes.empty()) {
       int u = t[v].pred;
-      for (std::vector<int>::iterator it = t[u].successors.begin(); it != t[u].successors.end();) {
-        if (*it == v) {
-          t[u].successors.erase(it);
-          break;
-        }
+      //At the root there is nowhere to back up to. Reading t[u] here would
+      //default-construct a node at key -1 whose task network is empty, and the
+      //commit loop below would then exit and report an empty plan as a
+      //success. Fail loudly instead.
+      if (u == -1) {
+        throw std::logic_error(
+            "Planner found no applicable decomposition at the root, no plan exists "
+            "within the given search budget!");
+      }
+      auto succ_it = std::find(t[u].successors.begin(), t[u].successors.end(), v);
+      if (succ_it != t[u].successors.end()) {
+        t[u].successors.erase(succ_it);
       }
       t.erase(v);
       v = u;
-      for (std::vector<int>::iterator it = tasktree[prev_TID].children.begin(); it != tasktree[prev_TID].children.end();) {
-        if (in(*it,prev_i)) {
-          tasktree[prev_TID].children.erase(it);
-        }
+      if (prev_TID != -1) {
+        auto& children = tasktree[prev_TID].children;
+        children.erase(std::remove_if(children.begin(),
+                                      children.end(),
+                                      [&prev_i](int c) { return in(c,prev_i); }),
+                       children.end());
       }
       for (auto i : prev_i) {
         tasktree.erase(i);
@@ -366,7 +380,7 @@ seek_planMCTS(pTree& t,
       prev_i.push_back(i);
     }
     k.pred = v;
-    int y = t.size();
+    int y = next_node_id++;
     t[y] = k;
     t[v].successors.push_back(y);
     v = y;

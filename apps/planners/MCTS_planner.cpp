@@ -85,36 +85,63 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   catch(...) {
-    std::cerr << "Exception of unknown type!\n";
-  }
-  auto [domain,problem] = load(dom_file,prob_file);
-  if (problem.initM.get_head() != ":htn") {
-    std::cout << "Problem class " << problem.initM.get_head() << " not recognized, defaulting to :htn problem class!" << std::endl;   
+    std::cerr << "error: exception of unknown type while parsing options!\n";
+    return 1;
   }
 
-  if (graph) {
-    if (graph_file == "") {
-      graph_file = problem.head + ".png"; 
+  //Loading, planning and graphing all throw on bad input (missing or malformed
+  //domain and problem files, a domain the planner cannot make progress in).
+  //Without this handler those escape main and the process aborts with no
+  //usable message.
+  try {
+    if (!scorers.contains(score_fun)) {
+      std::cerr << "error: unknown score function \"" << score_fun << "\". Available: ";
+      bool first = true;
+      for (auto const& [name,_] : scorers) {
+        std::cerr << (first ? "" : ", ") << name;
+        first = false;
+      }
+      std::cerr << std::endl;
+      return 1;
     }
-    auto start = std::chrono::high_resolution_clock::now();
-    auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed); 
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-    cout << "Time taken by planner: "
-        << duration.count() << " microseconds" << endl;
-    generate_graph(results.t[results.end].plan,
-                   results.t[results.end].treeRoots,
-                   domain,
-                   results.tasktree,
-                   graph_file);
+
+    auto [domain,problem] = load(dom_file,prob_file);
+    if (problem.initM.get_head() != ":htn") {
+      std::cout << "Problem class " << problem.initM.get_head() << " not recognized, defaulting to :htn problem class!" << std::endl;
+    }
+
+    if (graph) {
+      if (graph_file == "") {
+        graph_file = problem.head + ".png";
+      }
+      auto start = std::chrono::high_resolution_clock::now();
+      auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed);
+      auto stop = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+      cout << "Time taken by planner: "
+          << duration.count() << " microseconds" << endl;
+      generate_graph(results.t[results.end].plan,
+                     results.t[results.end].treeRoots,
+                     domain,
+                     results.tasktree,
+                     graph_file);
+    }
+    else {
+      auto start = std::chrono::high_resolution_clock::now();
+      cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed);
+      auto stop = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+      cout << "Time taken by planner: "
+          << duration.count() << " microseconds" << endl;
+    }
   }
-  else {
-    auto start = std::chrono::high_resolution_clock::now();
-    cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed); 
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-    cout << "Time taken by planner: "
-        << duration.count() << " microseconds" << endl;
+  catch(std::exception& e) {
+    std::cerr << "error: " << e.what() << "\n";
+    return 1;
+  }
+  catch(...) {
+    std::cerr << "error: exception of unknown type!\n";
+    return 1;
   }
   return EXIT_SUCCESS;
 }

@@ -353,68 +353,117 @@ If these become part of a paper, they are the pieces to describe explicitly.
 
 ## 4. Implementation observations
 
-Found while reading. Line numbers as above. These were found by reading rather
-than by testing, except note 2, which has since been observed at run time.
+Split into what has been fixed and what is still open. Line numbers are from
+the pre-trim commit and are approximate; the file and function names are
+current.
 
-1. **Possible infinite loops when backtracking a commit.**
-   * `cppMCTShop.h` 337–342: the `for` loop never increments `it`. If `v` is
-     not the *first* successor of `u`, it spins forever.
-   * `cppMCTShop.h` 345–349: same problem, and `erase(it)` also invalidates
-     `it`. It should be `it = erase(it)`, otherwise `++it`.
-2. **Backtracking at the root — confirmed, and it silently returns an empty
-   plan.** In `cppMCTShop.h` 336, `t[v].pred` is −1 at the root, so `t[-1]`
-   default-constructs a node. That node has an empty task network, so the
-   commit loop exits at once and the planner reports "Plan found at depth 0"
-   with an empty plan and an empty final state — a *failure* printed as a
-   success, with exit status 0.
+### 4.1 Fixed
 
-   This is reachable on the shipped domains. On `sar3.hddl` / `sar3p1.hddl`
-   with `-T 500` it fires on roughly 19 runs in 20; whether it fires depends on
-   how many MCTS iterations fit in the wall-clock budget, so the same command
-   is not reproducible run to run. Anything scripting this planner should treat
-   a depth-0 result as failure rather than trusting the exit code. The
-   now-removed hybrid planner guarded the root with a `u == -1` check, which is
-   the fix to apply here.
-3. **Only one level of commit undo is tracked.** `prev_TID` and `prev_i`
+1. **Two non-terminating loops in the backtrack path.** In `seek_planMCTS`,
+   neither loop that removed a retracted node incremented its iterator, and the
+   second also erased through the iterator it was still comparing. The first
+   spun forever whenever the retracted node was not its parent's first
+   successor; the second spun or ran into invalidated-iterator territory
+   depending on what it found. Replaced with `std::find` + `erase` and the
+   erase-remove idiom.
+2. **Backtracking at the root reported failure as success.** `t[v].pred` is −1
+   at the root, so `t[-1]` default-constructed a node with an empty task
+   network; the commit loop then exited and the planner printed "Plan found at
+   depth 0" with an empty plan and an empty final state, and returned 0. This
+   was reachable on the shipped domains — `sar3.hddl` at `-T 500` hit it on
+   roughly 19 runs in 20 — and it made failure indistinguishable from success
+   for anything scripting the planner. The root case now throws, and
+   `MCTS_planner` reports it as an error with exit status 1. The same `sar3`
+   configuration succeeds reliably at `-T 2000`; the failures were genuine
+   budget exhaustion that the planner was concealing.
+3. **Node-id collision after repeated backtracking.** New `pTree` nodes took
+   their id from `t.size()`, but backtracking erases nodes, so after two
+   retractions in a row `t.size()` could name a key that was still live and the
+   next commit would overwrite an existing node. Ids now come from a monotonic
+   counter.
+4. **Out-of-bounds parameter reads on arity mismatch.** `ActionDef::apply` and
+   `MethodDef::apply` walk `args` by index while indexing `this->parameters`
+   and `this->task.second` with the same counter, so a task applied with more
+   arguments than the definition declares read past the end of a `std::vector`.
+   Both now check arity and throw a message naming the action or method.
+5. **Ordering constraints could wire up the wrong task.** In
+   `MethodDef::apply_binding`, an `:ordering` naming a label that is not one of
+   the method's subtasks resolved through `gts`' `operator[]` to task id 0 and
+   silently added an edge to an unrelated task. That is now an error. The same
+   function used `operator[]` on `this->orderings`, inserting an empty entry
+   into the method for every subtask label it was asked about; it now uses
+   `find`.
+6. **Uncaught exceptions aborted the process.** `load` throws on a missing file
+   or a bad extension, the planner throws when it is stuck, and `MethodDef` and
+   `ActionDef` now throw on malformed input — but `main` wrapped only the
+   option parsing, so all of these escaped and aborted. A missing domain file
+   exited 134 (`SIGABRT`) with a raw `libc++abi` message. The planner call is
+   now inside the handler and these exit 1 with a readable message. The
+   `catch(...)` arm around option parsing also fell through instead of
+   returning, so an unknown exception there carried on into planning.
+7. **An unknown `--score_fun` segfaulted.** `scorers[score_fun]` on a missing
+   key value-initialises a function pointer to null, which the planner then
+   called: a typo exited 139 (`SIGSEGV`). The name is now checked up front and
+   the valid names are listed.
+8. **Dead code in `grapher.h`.** `build_graph_from_json` and
+   `generate_graph_from_json` served the removed `apps/data_tools` graphers and
+   had no remaining callers. `build_graph` also took an `Agnode_t*` parameter
+   that it overwrote before any read, so every call site passed an
+   uninitialised pointer by value — benign in practice, undefined behaviour by
+   the standard, and a sanitiser complaint. It is a local now.
+
+### 4.2 Open
+
+9. **Only one level of commit undo is tracked.** `prev_TID` and `prev_i`
    describe only the most recent commit. After two backtracks in a row, the
-   second one removes the wrong (stale) task-tree nodes.
-4. **Terminal-node value decays.**
-   * `backprop` overwrites `score` at nodes with no successors (68–70) but
-     keeps adding to `sims`. A terminal node (empty task network) that is
-     selected k times therefore has mean `score/k`, not `score`.
-   * Its ancestors accumulate normally, so their means are unaffected. The
-     result is that UCT systematically undervalues already-found complete
-     plans. Overwriting is presumably meant for the first visit; `+=` at
-     terminals would keep the mean correct.
-5. **Sentinel collides with scores.**
-   * Failure is signaled by −1 and success is tested with `rs > -1.0`
-     (125, 140). A score function returning ≤ −1 would be read as failure.
-   * `ar == -1.0` (278, 302) tests the *running sum*. That catches only a
-     failed *first* rollout. This is harmless while rollouts are complete DFS,
-     because a dead end fails on every rollout, but it is fragile.
-   * Keeping scores in [0, 1] as UCB1 assumes, and using `std::optional`
-     for failure, would remove both issues.
-6. **Seeding.** `static std::mt19937_64 g(seed)` (`cppMCTShop.h` 425) is
-   initialized once per process, so later calls to `cppMCTShop` with a
-   different `seed` are ignored. This matters for multi-trial runs that call
-   the planner more than once in a single process.
-7. **Conditional `forall` effects.** In `ActionDef::apply_binding`
-   (`typedefs.h` 394–397), each quantified binding is *appended* to `args`
-   (a reference) without removing the previous binding. From the second
-   binding on, the condition contains contradictory equalities. The effect
-   therefore appears to fire for at most the first quantified object. The
-   erase loop at 382–390 also indexes `tempP[i]` with a bound taken from
-   `args.size()`.
-8. **Semantics to document.**
-   * Goals are ignored by the HTN planner (§2.1).
-   * Method preconditions follow SHOP-style timing, not HDDL's (§2.3).
-   * The search space is non-systematic, so duplicate subtrees occur (§2.3).
+   second removes the wrong (stale) task-tree nodes. A proper fix needs an undo
+   stack rather than two scalars.
+10. **Terminal-node value decays.** `backprop` overwrites `score` at nodes with
+    no successors but keeps adding to `sims`, so a terminal node selected k
+    times has mean `score/k` rather than `score`. Its ancestors accumulate
+    normally, so only the terminal's own mean is wrong — the effect is that UCT
+    systematically undervalues complete plans it has already found. `+=` at
+    terminals would keep the mean correct. **Changes search results.**
+11. **The failure sentinel collides with scores, and is tested against a running
+    sum.**
+    * Failure is −1 and success is `rs > -1.0`, so a score function returning
+      ≤ −1 reads as failure.
+    * `ar == -1.0` tests the *accumulated* sum over `r` rollouts, not the
+      individual result. With `r > 1`, a dead-end rollout that follows a
+      successful one leaves a sum like −0.5, which the test misses, and that
+      −1 contribution is then backpropagated as if it were a real score. Only a
+      failure on the *first* rollout is caught.
+    * Scores in [0, 1] as UCB1 assumes, plus `std::optional` for failure, would
+      remove both. **Changes search results.**
+12. **Re-expanding a dead end duplicates its children.** `selection` returns a
+    node as soon as it sees `deadend`, and `expansion` does not check the flag
+    before generating successors. Once the root is marked dead, every remaining
+    iteration of the time budget re-expands it and appends another full copy of
+    its children. The final choice still skips dead nodes, so the answer is not
+    wrong, but the rest of the budget is spent growing the tree. **Changes how
+    the budget is spent, so it changes search results.**
+13. **Conditional `forall` effects fire for at most one object.** In
+    `ActionDef::apply_binding`, each quantified binding is appended to `args`
+    without removing the previous one, so from the second binding on the
+    condition carries contradictory equalities and never passes. The same block
+    erases from `args` and `tempP` while indexing them by a counter bounded by
+    `args.size()`, which both skips elements and can index `tempP` out of
+    range. This one needs the block rewritten rather than patched.
+14. **Seeding is process-wide.** `static std::mt19937_64 g(seed)` is
+    initialised on first call, so later calls to `cppMCTShop` in the same
+    process ignore their `seed`. Only matters for multi-trial harnesses that
+    call the planner more than once.
+15. **Semantics to document.**
+    * Goals are ignored by the HTN planner (§2.1).
+    * Method preconditions follow SHOP-style timing, not HDDL's (§2.3).
+    * The search space is non-systematic, so duplicate subtrees occur (§2.3).
 
 An earlier note here recorded two bugs in the time-indexed overlay's SMT
 emission — a duplicate `declare-fun` when a predicate had both regular and
 temporal facts, and a `lower_bound` that could dereference `end()`. Both went
 away with the overlay itself (§2.7). If that mechanism is ever revived, they
 are the first things to get right.
+
 
 ### Note on verification
 
@@ -434,6 +483,16 @@ The equivalence argument behind those results: `temporal_facts` had no writer,
 so it was always empty, so the guard `time < 0 || temporal_facts.empty()` was
 always true; and the branch it guarded was a line-for-line duplicate of the
 branch in the `else`. The emitted SMT could not change.
+
+The §4.1 fixes were held to the same standard. They touch only paths that
+previously crashed, looped or corrupted state, so successful search should be
+untouched, and it is: the same five configurations still produce byte-identical
+output against a pre-fix binary, and `ctest` stays at 4/4. All five shipped
+domain/problem pairs — including `d18`/`p18`, which none of the tests cover —
+still plan, which is what rules out the new arity and ordering checks firing on
+valid input. The one intended behaviour change is that failures now announce
+themselves: `sar3` at `-T 500` exits 1 with an error instead of printing an
+empty plan, and succeeds at `-T 2000`.
 
 ---
 

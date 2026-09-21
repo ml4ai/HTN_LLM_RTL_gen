@@ -447,6 +447,13 @@ class ActionDef {
       std::string pc;
       std::string token = "("+this->head;
       if (!args.empty()) {
+        //args is indexed in lockstep with this->parameters, so a task invoking
+        //this action with the wrong arity would read past the end of parameters.
+        if (args.size() != this->parameters.size()) {
+          throw std::logic_error("Action "+this->head+" applied with "+
+                                 std::to_string(args.size())+" arguments but declared with "+
+                                 std::to_string(this->parameters.size())+" parameters!");
+        }
         pc = "(and ";
         for (int i = 0; i < args.size(); i++) {
           pc += "(= "+this->parameters[i].first+" "+args[i].second+") ";
@@ -610,7 +617,10 @@ class MethodDef {
         }
         gts[id] = tasks.add_node(gt);
         addedTIDs.push_back(gts[id]);
-        if (this->orderings[id].empty()) {
+        //find, not operator[]: the latter would insert an empty ordering into
+        //this->orderings for every subtask label it is asked about.
+        auto ord = this->orderings.find(id);
+        if (ord == this->orderings.end() || ord->second.empty()) {
           for (auto const& o : out) {
             tasks.add_edge(gts[id],o);
           }
@@ -618,8 +628,17 @@ class MethodDef {
       }
       for (auto const &[t1,ot] : this->orderings) {
         for (auto const &t2 : ot) {
-          tasks.add_edge(gts[t1],gts[t2]);
-        } 
+          //An ordering naming a label that is not one of this method's subtasks
+          //would silently resolve through gts' operator[] to task id 0 and wire
+          //up an edge to an unrelated task.
+          auto g1 = gts.find(t1);
+          auto g2 = gts.find(t2);
+          if (g1 == gts.end() || g2 == gts.end()) {
+            throw std::logic_error("Method "+this->head+" has an ordering constraint between "+
+                                   t1+" and "+t2+", which are not both subtasks of it!");
+          }
+          tasks.add_edge(g1->second,g2->second);
+        }
       }
       return std::make_pair(addedTIDs,tasks);
     }
@@ -628,6 +647,13 @@ class MethodDef {
       std::string pc;
       std::string token = "("+this->task.first;
       if (!args.empty()) {
+        //args is indexed in lockstep with this->task.second, so a task invoked
+        //with the wrong arity would read past the end of the task's parameters.
+        if (args.size() != this->task.second.size()) {
+          throw std::logic_error("Task "+this->task.first+" in method "+this->head+" applied with "+
+                                 std::to_string(args.size())+" arguments but declared with "+
+                                 std::to_string(this->task.second.size())+" parameters!");
+        }
         pc = "(and ";
         for (int i = 0; i < args.size(); i++) {
           pc += "(= "+this->task.second[i].first+" "+args[i].second+") ";
