@@ -3,6 +3,7 @@
 #include "../util.h"
 #include "../typedefs.h"
 #include <algorithm>
+#include <numeric>
 #include <any>
 #include <iostream>
 #include <optional>
@@ -81,10 +82,15 @@ void backprop(pTree& t, int n, double r, int sims) {
 //rollout could not reach a complete plan. An optional is used rather than a
 //sentinel value so that a score function is free to return any double,
 //including negative ones.
+//state and tasks are taken by reference, not by value. A rollout never mutates
+//either -- successor states come back fresh from ActionDef::apply, and
+//MethodDef::apply takes its own copy of the network because it removes the
+//decomposed task from it -- so copying them per recursion level was pure cost,
+//and it was the single largest source of allocation in the planner.
 std::optional<double>
 simulation(std::vector<std::string>& plan,
-           KnowledgeBase state,
-           TaskGraph tasks,
+           KnowledgeBase& state,
+           TaskGraph& tasks,
            DomainDef& domain,
            std::mt19937_64& g) {
   if (tasks.empty()) {
@@ -143,9 +149,14 @@ simulation(std::vector<std::string>& plan,
       }
     }
     else {
-      auto task_methods = domain.methods[tasks[cTask].head];
-      std::shuffle(task_methods.begin(),task_methods.end(),g);
-      for (auto &m : task_methods) {
+      //Shuffle an index permutation rather than a copy of the method list:
+      //copying it deep-copies every MethodDef, subtask map and ordering map.
+      auto& task_methods = domain.methods[tasks[cTask].head];
+      std::vector<int> order(task_methods.size());
+      std::iota(order.begin(),order.end(),0);
+      std::shuffle(order.begin(),order.end(),g);
+      for (auto const& mi : order) {
+        auto& m = task_methods[mi];
         auto all_gts = m.apply(state,tasks[cTask].args,tasks,cTask);
         if (!all_gts.empty()) {
           std::shuffle(all_gts.begin(),all_gts.end(),g);

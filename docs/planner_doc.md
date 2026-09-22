@@ -1403,29 +1403,72 @@ largest single remaining item. It was not done here because it reaches much
 further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the public
 `get_facts` API all traffic in strings.
 
-`simple_travel` did not move at all, which is the useful negative result: its
-rollouts are bound by recursion through a `get_to`-style task structure, not by
-state cost. No amount of representation work will touch it — that is §8.7.
+`simple_travel` did not move at all here, and the explanation offered at the
+time — that its rollouts were bound by recursion through a `get_to`-style task
+structure — was **wrong**. §8.6 found the real cause: its score function was
+asking Z3 two ground questions per rollout, which dwarfed everything else, and
+routing those through the evaluator made it 117x faster. Attributing a cost
+without measuring it is guesswork even when the guess is plausible.
 
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 2–6x on top of
 §8.4.
 
-### 8.6 Stop copying, then stop deep-copying
+### 8.6 Kill the deep copies in the hot path — **done**
 
-Two related things, both invisible until §8.4 lands:
+The first half of this item (sharing the immutable schema, dropping
+`smt_state`) landed in §8.5. For the rest, attributing allocation samples to
+the nearest planner frame put **19.8% in `simulation`** alone, from its
+by-value `KnowledgeBase` and `TaskGraph` parameters. Three changes:
 
-* Every `KnowledgeBase` carries its own copy of the predicate schema and object
-  map, which are fixed for the whole problem, plus a 3–5 KB `smt_state`. Share
-  the immutable parts through one domain-level context; `smt_state` disappears
-  with item 4.
-* `simulation` takes `KnowledgeBase` and `TaskGraph` **by value** and recurses;
-  `MethodDef::apply` and `apply_binding` take `TaskGraph` by value;
-  `simulation` copies the whole method vector just to shuffle it; `get_facts`,
-  `get_parameters`, `get_effects`, `get_subtasks`, `get_orderings` all return
-  containers by value. Longer term, a trail-based apply/undo state for rollouts
-  instead of copy-per-node.
+1. **`simulation` takes state and tasks by reference.** A rollout never mutates
+   either — successors come back fresh from `ActionDef::apply`, and
+   `MethodDef::apply` takes its own copy because it removes the decomposed task
+   from the network — so a copy per recursion level was pure cost. ~20%.
+2. **The method list is shuffled by index.** `auto task_methods =
+   domain.methods[...]` deep-copied every `MethodDef` with its subtask and
+   ordering maps, purely in order to shuffle it. An index permutation does the
+   same job.
+3. **Ground queries no longer reach Z3.** Score functions ask through
+   `KnowledgeBase::ask(std::string)` with hand-written ground text, which only
+   a solver could answer. `expr::parse_ground` reads those strings into the IR
+   once, cached, and they are answered from the fact index like everything
+   else.
 
-**Depends on:** §8.4. **Risk:** low. **Payoff:** memory, and time once Z3 is gone.
+Median rollout time against §8.5, and against where this started:
+
+| Domain | after §8.5 | after §8.6 | | vs. the original Z3 |
+|---|---|---|---|---|
+| `transport` | 13.51 ms | **6.05 ms** | 2.2x | **362x** |
+| `simple_travel` | 4.69 ms | **0.04 ms** | 117x | **479x** |
+| `sar3` | 0.26 ms | **0.21 ms** | 1.2x | **578x** |
+| `d18_gather` | 0.18 ms | **0.14 ms** | 1.3x | **912x** |
+| `d18_p18` | 0.21 ms | **0.15 ms** | 1.4x | **478x** |
+| `forall_test` | 0.03 ms | **0.02 ms** | 1.5x | **993x** |
+| `atom_test` | 0.01 ms | **0.01 ms** | — | **563x** |
+
+Behaviour-preserving: every deterministic plan fingerprint is unchanged, and
+the differential build agrees on every domain, the ground path included.
+
+**Z3 no longer appears in the profile at all.** It stays linked and stays the
+fallback for an expression the evaluator declines — `imply`, `exists`, a
+quantified precondition, or ground text `parse_ground` will not read — but on
+these domains nothing reaches it.
+
+**What is left.** The profile is **53.5% malloc, 30.3% our own code, 10%
+memcpy/memset**. The allocation is `KnowledgeBase` and `TaskGraph` copies whose
+contents are `std::string`: one per search node, one per binding in
+`apply_binding`. Two things would move it, larger first:
+
+* **Interning** predicates, objects and task names to integers, which §8.5 left
+  open. The more invasive of the two — it reaches into `Grounded_Task`,
+  `TaskGraph`, the evaluator and the public `get_facts` API.
+* **A trail-based state**: apply an action's effects and undo them on the way
+  back out, instead of copying the fact base per successor. A bigger design
+  change than it sounds, since the MCTS tree holds states and not just the
+  rollout, but it removes copying rather than shrinking it.
+
+**Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
+of §8.5.
 
 ### 8.7 Re-encode the recursive `goto` pattern out of the domains
 

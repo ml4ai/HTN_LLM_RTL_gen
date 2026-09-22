@@ -2,6 +2,7 @@
 
 #include "parsing/ast.hpp"
 #include "util.h"
+#include "expr.h"
 #include "z3++.h"
 #include <unordered_set>
 #include <string>
@@ -456,6 +457,44 @@ class KnowledgeBase {
       //Only grounded statements are allowed here!
       //EX: (and (A x) (or (B x y) (C z)))
       bool ask(std::string expr) {
+        //Score functions ask through this, once per rollout that reaches a
+        //terminal, and their queries are ground text. Reading them into the IR
+        //once and answering from the fact index avoids building the whole SMT
+        //encoding and starting a solver for what is a handful of lookups. The
+        //parse is cached: these strings are literals in the score function, so
+        //there are only ever a few distinct ones.
+        //`expr` is also the parameter name here, so the namespace needs qualifying.
+        static std::unordered_map<std::string,::expr::Ptr> parsed;
+        auto it = parsed.find(expr);
+        if (it == parsed.end()) {
+          it = parsed.emplace(expr,::expr::parse_ground(expr)).first;
+        }
+        auto holds = [this](std::string const& head,
+                            std::vector<std::string> const& args) {
+          for (auto const& tup : this->get_relation(head)) {
+            if (tup == args) {
+              return true;
+            }
+          }
+          return false;
+        };
+        auto direct = ::expr::eval_ground(it->second,holds);
+
+#ifdef HTN_DIFFERENTIAL_EVAL
+        if (direct) {
+          this->ensure_smt();
+          z3::context dcon;
+          z3::solver ds(dcon);
+          ds.from_string((this->smt_state+"(assert "+expr+")\n").c_str());
+          if (*direct != (ds.check() == z3::sat)) {
+            throw std::logic_error("ground evaluator disagrees with Z3 on: "+expr);
+          }
+        }
+#endif
+
+        if (direct) {
+          return *direct;
+        }
         this->ensure_smt();
         z3::context con;
         z3::solver s(con);

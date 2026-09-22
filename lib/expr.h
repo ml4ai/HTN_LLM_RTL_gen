@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cctype>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -180,6 +183,166 @@ inline std::string to_smt(Ptr const& e) {
     }
   }
   return "__NONE__";
+}
+
+} // namespace expr
+
+namespace expr {
+
+// A minimal reader for the ground SMT-ish strings that `KnowledgeBase::ask`
+// accepts. Score functions are written by hand against that API -- see
+// domains/score_functions.h -- so they arrive as text with no structure to
+// walk, and the only engine that could answer them was Z3. Parsing them once
+// into the IR lets them be answered from the fact index like everything else.
+//
+// Deliberately narrow: `and`, `or`, `not`, `=` and atoms over constants, which
+// is the whole of what those strings contain. Anything else returns null and
+// the caller falls back to the solver.
+inline Ptr parse_ground(std::string const& text) {
+  size_t i = 0;
+  //Recursive descent over the token stream. Returns null on anything
+  //unexpected, which aborts the whole parse.
+  std::function<Ptr()> parse = [&]() -> Ptr {
+    auto skip = [&]{ while (i < text.size() && isspace((unsigned char)text[i])) i++; };
+    skip();
+    if (i >= text.size()) {
+      return nullptr;
+    }
+    if (text[i] != '(') {
+      //A bare symbol: a zero-arity predicate.
+      size_t start = i;
+      while (i < text.size() && !isspace((unsigned char)text[i]) && text[i] != '(' && text[i] != ')') i++;
+      if (i == start) {
+        return nullptr;
+      }
+      return make_atom(text.substr(start,i-start),{});
+    }
+    i++;                                   //consume '('
+    skip();
+    size_t start = i;
+    while (i < text.size() && !isspace((unsigned char)text[i]) && text[i] != '(' && text[i] != ')') i++;
+    std::string head = text.substr(start,i-start);
+    if (head.empty()) {
+      return nullptr;
+    }
+
+    if (head == "and" || head == "or" || head == "not") {
+      std::vector<Ptr> kids;
+      while (true) {
+        skip();
+        if (i >= text.size()) {
+          return nullptr;
+        }
+        if (text[i] == ')') {
+          i++;
+          break;
+        }
+        auto k = parse();
+        if (!k) {
+          return nullptr;
+        }
+        kids.push_back(k);
+      }
+      if (head == "not") {
+        return kids.size() == 1 ? make_connective(Kind::Not,kids) : nullptr;
+      }
+      if (kids.empty()) {
+        return nullptr;
+      }
+      return make_connective(head == "and" ? Kind::And : Kind::Or,kids);
+    }
+
+    //An atom, or an equality. Arguments are constants: this reader is only
+    //used for ground text.
+    std::vector<Term> args;
+    while (true) {
+      skip();
+      if (i >= text.size()) {
+        return nullptr;
+      }
+      if (text[i] == ')') {
+        i++;
+        break;
+      }
+      if (text[i] == '(') {
+        return nullptr;                    //nested term: not ground text
+      }
+      size_t s2 = i;
+      while (i < text.size() && !isspace((unsigned char)text[i]) && text[i] != '(' && text[i] != ')') i++;
+      args.push_back({text.substr(s2,i-s2),false});
+    }
+    if (head == "=") {
+      return args.size() == 2 ? make_compare(true,args[0],args[1]) : nullptr;
+    }
+    return make_atom(head,std::move(args));
+  };
+
+  auto e = parse();
+  if (!e) {
+    return nullptr;
+  }
+  while (i < text.size() && isspace((unsigned char)text[i])) i++;
+  return i == text.size() ? e : nullptr;   //trailing junk means we misread it
+}
+
+// Truth of a ground expression, given a way to ask whether a tuple is a fact.
+// Null for anything the caller should not trust to this path.
+inline std::optional<bool> eval_ground(
+    Ptr const& e,
+    std::function<bool(std::string const&, std::vector<std::string> const&)> const& holds) {
+  if (!e) {
+    return std::nullopt;
+  }
+  switch (e->kind) {
+    case Kind::Atom: {
+      std::vector<std::string> args;
+      for (auto const& a : e->args) {
+        if (a.is_variable) {
+          return std::nullopt;
+        }
+        args.push_back(a.name);
+      }
+      return holds(e->predicate,args);
+    }
+    case Kind::Equals:
+    case Kind::NotEquals: {
+      if (e->args[0].is_variable || e->args[1].is_variable) {
+        return std::nullopt;
+      }
+      bool same = e->args[0].name == e->args[1].name;
+      return e->kind == Kind::Equals ? same : !same;
+    }
+    case Kind::Not: {
+      auto v = eval_ground(e->children[0],holds);
+      return v ? std::optional<bool>(!*v) : std::nullopt;
+    }
+    case Kind::And: {
+      for (auto const& c : e->children) {
+        auto v = eval_ground(c,holds);
+        if (!v) {
+          return std::nullopt;
+        }
+        if (!*v) {
+          return false;
+        }
+      }
+      return true;
+    }
+    case Kind::Or: {
+      for (auto const& c : e->children) {
+        auto v = eval_ground(c,holds);
+        if (!v) {
+          return std::nullopt;
+        }
+        if (*v) {
+          return true;
+        }
+      }
+      return false;
+    }
+    default:
+      return std::nullopt;
+  }
 }
 
 } // namespace expr
