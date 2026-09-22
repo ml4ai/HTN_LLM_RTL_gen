@@ -46,14 +46,19 @@ ROOT = os.path.dirname(HERE)
 # plan_iters of 0 means "no deterministic plan in the default run"; the
 # time-limited budgets are the smallest that reliably solve each domain and are
 # only used by --full.
+# Rollout counts are sized so each domain is timed over enough work to be
+# meaningful. They were raised once the direct evaluator (6.6) put several
+# domains into the tens of microseconds, where a handful of samples is mostly
+# scheduler noise. Raising them changes rollout_scores and rng_after, so a
+# baseline taken before that change will not compare.
 CONFIGS = [
-    ("transport",     "transport_domain.hddl", "transport_problem.hddl",           "delivery_one", 3,  0, 20000, 5),
-    ("simple_travel", "simple_travel.hddl",    "simple_travel_problem.hddl",       "travel_one",  10, 30,   500, 5),
-    ("sar3",          "sar3.hddl",             "sar3p1.hddl",                      "sar3",         5,  8,  4000, 5),
-    ("d18_gather",    "d18.hddl",              "problem_gather_wake_evacuate.hddl","simple",       5, 12,  2000, 5),
-    ("d18_p18",       "d18.hddl",              "p18.hddl",                         "simple",       5, 12,  2000, 5),
-    ("forall_test",   "forall_test.hddl",      "forall_test_problem.hddl",         "simple",      10, 30,   300, 5),
-    ("atom_test",     "atom_test.hddl",        "atom_test_problem.hddl",           "simple",      10, 30,   300, 5),
+    ("transport",     "transport_domain.hddl", "transport_problem.hddl",           "delivery_one",   5,  0, 20000, 5),
+    ("simple_travel", "simple_travel.hddl",    "simple_travel_problem.hddl",       "travel_one",    30, 30,   500, 5),
+    ("sar3",          "sar3.hddl",             "sar3p1.hddl",                      "sar3",          50,  8,  4000, 5),
+    ("d18_gather",    "d18.hddl",              "problem_gather_wake_evacuate.hddl","simple",        50, 12,  2000, 5),
+    ("d18_p18",       "d18.hddl",              "p18.hddl",                         "simple",        50, 12,  2000, 5),
+    ("forall_test",   "forall_test.hddl",      "forall_test_problem.hddl",         "simple",       100, 30,   300, 5),
+    ("atom_test",     "atom_test.hddl",        "atom_test_problem.hddl",           "simple",       200, 30,   300, 5),
 ]
 
 SEMANTIC = ["rollout_scores", "rollout_failed", "plan_ok", "plan_len", "plan", "final_state_hash"]

@@ -9,6 +9,8 @@
 #include <vector>
 #include <unordered_map>
 #include <chrono>
+#include <algorithm>
+#include <memory>
 
 //Type struct
 struct Type {
@@ -125,20 +127,36 @@ int find_var(std::vector<std::pair<std::string, std::string>> vars, std::string 
 //statements, and then run initialize before using the kb!
 class KnowledgeBase {
     private:
-      //header,{{var1,type1},{var2,type2},...}
-      std::vector<std::pair<std::string,std::vector<std::pair<std::string,std::string>>>> predicates;
-      //constant, type
-      std::unordered_map<std::string,std::string> objects;
-      //header, (header arg1 arg2 ...), ... 
-      std::unordered_map<std::string, std::unordered_set<std::string>> facts;
-      //The same facts with their arguments already split out: predicate head ->
-      //list of argument tuples. `facts` stays the source of truth; this is a
-      //derived index, rebuilt by update_state alongside smt_state and stale in
-      //exactly the same circumstances. It exists so a query can be answered by
-      //looking at tuples instead of by re-parsing strings.
+      //The predicate signatures and the objects. Both are fixed for the whole
+      //problem, so every KnowledgeBase derived from one holds the same content
+      //-- and there is one per search node. Sharing it means a copy carries a
+      //pointer instead of re-allocating the lot.
+      struct Schema {
+        //header,{{var1,type1},{var2,type2},...}
+        std::vector<std::pair<std::string,std::vector<std::pair<std::string,std::string>>>> predicates;
+        //constant, type
+        std::unordered_map<std::string,std::string> objects;
+      };
+      std::shared_ptr<const Schema> schema;
+      //The fact base: predicate head -> its argument tuples. This used to be
+      //held twice, once as "(head a b)" strings and once as split tuples, with
+      //the second rebuilt from the first on every update_state. Every copy of a
+      //KnowledgeBase -- one per search node -- paid for both. The tuples are
+      //the useful form, so they are now the only one, and the strings are
+      //reconstructed on the rare paths that still want them.
       std::unordered_map<std::string, std::vector<std::vector<std::string>>> relations;
-      //belief state in smt form;
+
+      static std::string fact_string(std::string const& head,
+                                     std::vector<std::string> const& args) {
+        std::string f = "("+head;
+        for (auto const& a : args) {
+          f += " "+a;
+        }
+        return f+")";
+      }
+      //belief state in smt form, built on demand; see update_state.
       std::string smt_state;
+      bool smt_fresh = false;
 
       //Gets all bindings for smt_statement and set of variables
       //A set of bindings is an vector of pairs of form {variable,value}. Called
@@ -201,23 +219,25 @@ class KnowledgeBase {
       // Initializes the KBs belief state with
       // closed world assumption. Call ONCE after adding all of the needed types, objects, and
       // predicate or else all tell() and ask() calls will crash or fail!   
-      void initialize(TypeTree typetree) {
+      void initialize(Schema& sch, TypeTree typetree) {
         for (auto const& [t1, t2] : typetree.types) {
           std::vector<std::pair<std::string, std::string>> params;
           params.push_back(std::make_pair("?o","__Object__"));
-          this->predicates.push_back(std::make_pair(t2.type,params));
+          sch.predicates.push_back(std::make_pair(t2.type,params));
         }
-        for (auto const& [o1,o2] : this->objects) {
+        for (auto const& [o1,o2] : sch.objects) {
           int t = typetree.find_type(o2);
           for (auto const& [t1,t2] : typetree.types) {
-            std::string f = "("+t2.type+" "+o1+")";
             if (in(t1,typetree.types[t].lineage) ||
                 t2.type == o2) {
-              this->facts[t2.type].insert(f);
+              //Type facts are unary: (type object).
+              auto& rel = this->relations[t2.type];
+              if (std::find(rel.begin(),rel.end(),std::vector<std::string>{o1}) == rel.end()) {
+                rel.push_back({o1});
+              }
             } 
           }
         }
-        this->update_state();
       }
 
     public:
@@ -225,38 +245,53 @@ class KnowledgeBase {
       KnowledgeBase(std::vector<std::pair<std::string,std::vector<std::pair<std::string,std::string>>>> predicates,
                     std::unordered_map<std::string,std::string> objects,
                     TypeTree typetree) {
-        this->predicates = predicates;
-        this->objects = objects;
-        this->initialize(typetree);
+        auto sch = std::make_shared<Schema>();
+        sch->predicates = std::move(predicates);
+        sch->objects = std::move(objects);
+        //initialize both extends the signatures with one per type and asserts
+        //the type facts, so it runs while the schema is still mutable.
+        this->initialize(*sch,typetree);
+        this->schema = std::move(sch);
+        this->update_state();
       }
 
       //Used by tell to update the smt_state string. tell() calls this
       //automatically by default, but it can be called manually too (see tell()
       //for default settings).
+      //Refreshes the derived views of the fact base. The relation index is
+      //rebuilt eagerly: it is what queries are answered from. The SMT text is
+      //only marked stale, because building it costs several kilobytes of
+      //string that a KnowledgeBase then carries into every copy of itself --
+      //and since the direct evaluator took over the query path, most states
+      //are never asked anything a solver has to answer, so most of those
+      //kilobytes were built, copied and discarded unread.
       void update_state() {
         //Derived index first, so it is never stale while smt_state is fresh.
-        this->relations.clear();
-        for (auto const& [head,fs] : this->facts) {
-          auto& rel = this->relations[head];
-          rel.reserve(fs.size());
-          for (auto const& f : fs) {
-            rel.push_back(this->parse_predicate(f).second);
-          }
+        this->smt_state.clear();
+        this->smt_fresh = false;
+      }
+
+    private:
+      //Builds the SMT-LIB encoding of the current facts. Only reached through
+      //ensure_smt, i.e. only when something actually asks Z3.
+      void build_smt_state() {
+        if (!this->schema) {
+          return;
         }
         this->smt_state = "(declare-datatype __Object__ (";
-        for (auto const& [o1,o2] : this->objects) {
+        for (auto const& [o1,o2] : this->schema->objects) {
           this->smt_state += o1+" ";
         }
         this->smt_state += "))\n";
-        for (auto const& p : this->predicates) {
+        for (auto const& p : this->schema->predicates) {
           //A zero-arity predicate is a propositional atom. It gets a plain Bool
           //constant and a bare assert: running it through the quantified path
           //below would emit "(forall () ...)" and "(and)", both of which Z3
           //rejects, which made any domain declaring one unusable.
           if (p.second.empty()) {
             this->smt_state += "(declare-fun "+p.first+" () Bool)\n";
-            auto pf = this->facts.find(p.first);
-            if (pf != this->facts.end() && !pf->second.empty()) {
+            auto pf = this->relations.find(p.first);
+            if (pf != this->relations.end() && !pf->second.empty()) {
               this->smt_state += "(assert "+p.first+")\n";
             }
             else {
@@ -264,8 +299,8 @@ class KnowledgeBase {
             }
             continue;
           }
-          if (this->facts.find(p.first) != this->facts.end()) {
-            if (!this->facts[p.first].empty()) {
+          if (this->relations.find(p.first) != this->relations.end()) {
+            if (!this->relations[p.first].empty()) {
               this->smt_state += "(declare-fun "+p.first+" (";
               std::string pred_assert = "(assert (forall (";
               int i = 0;
@@ -277,11 +312,10 @@ class KnowledgeBase {
                 i++;
               }
               pred_assert += ") (= ("+p.first+var_assert+") (or ";
-              for (auto const& f : this->facts[p.first]) {
-                auto pp = this->parse_predicate(f);
+              for (auto const& tup : this->relations[p.first]) {
                 pred_assert += "(and ";
                 int j = 0;
-                for (auto const& vals : pp.second) {
+                for (auto const& vals : tup) {
                   pred_assert += "(= x_"+std::to_string(j)+" "+vals+") ";
                   j++;
                 }
@@ -325,6 +359,15 @@ class KnowledgeBase {
         }
       }
 
+      void ensure_smt() {
+        if (!this->smt_fresh) {
+          this->build_smt_state();
+          this->smt_fresh = true;
+        }
+      }
+
+    public:
+
       //Returns false if predicate type is not found. Only give it a single grounded
       //predicate in (header arg1 arg2 ...) form. Adding facts requires that remove = false (default) and 
       //deleting facts require that remove = true. 
@@ -336,7 +379,7 @@ class KnowledgeBase {
       bool tell(std::string pred, bool remove = false, bool update_state = true) {
         auto pp = this->parse_predicate(pred);
         bool not_found = true;
-        for (auto const& p : this->predicates) {
+        for (auto const& p : this->schema->predicates) {
           if (pp.first == p.first and pp.second.size() == p.second.size()) {
             not_found = false;
           }
@@ -345,13 +388,17 @@ class KnowledgeBase {
           return false;
         }
         if (remove) {
-          this->facts[pp.first].erase(pred);
+          auto& rel = this->relations[pp.first];
+          rel.erase(std::remove(rel.begin(),rel.end(),pp.second),rel.end());
           if (update_state) {
             this->update_state();
           }
           return true;
         }
-        this->facts[pp.first].insert(pred);
+        auto& rel = this->relations[pp.first];
+        if (std::find(rel.begin(),rel.end(),pp.second) == rel.end()) {
+          rel.push_back(pp.second);
+        }
         if (update_state) {
           this->update_state();
         }
@@ -368,6 +415,7 @@ class KnowledgeBase {
       std::vector<std::vector<std::pair<std::string,std::string>>>
       ask(std::string expr,
           std::vector<std::pair<std::string, std::string>>& params) {
+        this->ensure_smt();
         std::string smt_expr = this->smt_state;
         for (auto const& p : params) {
           smt_expr += "(declare-const "+p.first+" __Object__)\n";
@@ -386,6 +434,7 @@ class KnowledgeBase {
       //to values by expr -- that is one solver call rather than one per model.
       bool ask_any(std::string expr,
                    std::vector<std::pair<std::string, std::string>>& params) {
+        this->ensure_smt();
         std::string smt_expr = this->smt_state;
         for (auto const& p : params) {
           smt_expr += "(declare-const "+p.first+" __Object__)\n";
@@ -407,6 +456,7 @@ class KnowledgeBase {
       //Only grounded statements are allowed here!
       //EX: (and (A x) (or (B x y) (C z)))
       bool ask(std::string expr) {
+        this->ensure_smt();
         z3::context con;
         z3::solver s(con);
         std::string smt_expr = this->smt_state+"(assert "+expr+")\n";
@@ -417,6 +467,7 @@ class KnowledgeBase {
 
       //prints smt_state string
       void print_smt_state() {
+        this->ensure_smt();
         std::cout << this->smt_state << std::endl;
       }
 
@@ -442,20 +493,31 @@ class KnowledgeBase {
       }
 
       std::unordered_set<std::string> get_facts(std::string head) {
-        return this->facts[head];
+        std::unordered_set<std::string> out;
+        for (auto const& tup : this->get_relation(head)) {
+          out.insert(fact_string(head,tup));
+        }
+        return out;
       } 
 
       void print_facts() {
-        for (auto const& [_,fset] : this->facts) {
-          for (auto const& fact : fset) {
-            std::cout << fact << std::endl;
+        for (auto const& [head,rel] : this->relations) {
+          for (auto const& tup : rel) {
+            std::cout << fact_string(head,tup) << std::endl;
           }
         }
       }
 
       std::unordered_map<std::string, std::unordered_set<std::string>>
       get_facts() {
-        return this->facts;
+        std::unordered_map<std::string, std::unordered_set<std::string>> out;
+        for (auto const& [head,rel] : this->relations) {
+          auto& set = out[head];
+          for (auto const& tup : rel) {
+            set.insert(fact_string(head,tup));
+          }
+        }
+        return out;
       }
 };
 

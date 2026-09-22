@@ -467,50 +467,6 @@ class ActionDef {
       return std::make_pair(token,new_states);
     }
 
-    std::vector<std::pair<Args,KnowledgeBase>> apply(KnowledgeBase& kb) {
-      std::vector<std::pair<Args,KnowledgeBase>> new_states = {};
-      if (this->preconditions != "__NONE__") {
-        if (this->parameters.empty()) {
-          auto pass = kb.ask(this->preconditions);
-          if (pass) {
-            Args b = {};
-            std::pair<Args,KnowledgeBase> pr;
-            pr.first = b;
-            pr.second = this->apply_binding(kb,b);
-            new_states.push_back(pr);
-          }
-        }
-        else {
-          auto bindings = kb.ask(this->preconditions,this->parameters);
-          for (auto &b : bindings) {
-            std::pair<Args,KnowledgeBase> pr;
-            pr.first = b;
-            pr.second = this->apply_binding(kb,b);
-            new_states.push_back(pr); 
-          }
-        }
-      }
-      else {
-        if (this->parameters.empty()) {
-          Args b = {};
-          std::pair<Args,KnowledgeBase> pr;
-          pr.first = b;
-          pr.second = this->apply_binding(kb,b);
-          new_states.push_back(pr);
-        }
-        else {
-          auto bindings = kb.ask("",this->parameters);
-          for (auto &b : bindings) {
-            std::pair<Args,KnowledgeBase> pr;
-            pr.first = b;
-            pr.second = this->apply_binding(kb,b);
-            new_states.push_back(pr);
-          }
-        }
-      }
-      return new_states;
-    }
-
 };
 
 class MethodDef {

@@ -1357,14 +1357,58 @@ belongs with §8.5, which changes the representation anyway.
 **Depends on:** §8.3. **Risk:** was high; discharged by differential testing.
 **Payoff:** 68x–330x per rollout, and the default budget back to 1000 ms.
 
-### 8.5 Intern symbols
+### 8.5 Representation — **partly done**
 
-Facts are stored as strings and re-parsed constantly — `parse_predicate` splits
-them on every `tell` and on every fact in every `update_state`. Intern
-predicates and objects to integers at load; represent a fact as an integer
-tuple. Largely pointless before §8.4, because Z3 wants text anyway.
+Re-profiling after §8.4 redirected this item. The premise had been string
+churn from re-parsing facts; with Z3 off the query path the profile was
+**51.5% malloc/free, 12% memmove/memset, 6.5% Z3**. The cost was not parsing,
+it was *copying state* — there is one `KnowledgeBase` per search node, and each
+carried more than it needed to. Three changes, each measured:
 
-**Depends on:** §8.4. **Risk:** medium. **Payoff:** removes the string churn.
+1. **`smt_state` is built lazily.** It is several kilobytes of SMT-LIB text
+   that `update_state` produced eagerly and every copy then carried. Since the
+   evaluator took over, most states are never asked anything a solver must
+   answer, so most of it was built, copied and discarded unread. It is now
+   materialised on demand and cached until the next update. ~30%.
+2. **The predicate signatures and object map are shared.** They are fixed for
+   the whole problem, so all nodes held identical copies; they now sit behind a
+   `shared_ptr<const Schema>` and a copy carries a pointer. ~40% cumulative.
+3. **The fact base is stored once.** It had been held twice — as
+   `"(head a b)"` strings and as split argument tuples, the second rebuilt from
+   the first on every `update_state`. The tuples are the useful form, so they
+   are now the only one, and strings are reconstructed on the few paths that
+   still want them (`get_facts`, `print_facts`).
+
+Median rollout time, against the §6.6 numbers:
+
+| Domain | after §8.4 | after §8.5 | | vs. the original Z3 |
+|---|---|---|---|---|
+| `transport` | 32.23 ms | **13.51 ms** | 2.4x | 162x |
+| `sar3` | 0.98 ms | **0.26 ms** | 3.8x | 467x |
+| `d18_gather` | 1.07 ms | **0.18 ms** | 5.9x | 709x |
+| `d18_p18` | 0.73 ms | **0.21 ms** | 3.5x | 341x |
+| `forall_test` | 0.06 ms | **0.03 ms** | 2x | 662x |
+| `atom_test` | 0.03 ms | **0.01 ms** | 3x | 563x |
+| `simple_travel` | 4.73 ms | **4.69 ms** | — | 4x |
+
+Unlike §8.4 this is behaviour-preserving, and the deterministic plan
+fingerprints are unchanged throughout.
+
+**What is left, and why interning is still the name of this item.** The profile
+is still **48.7% malloc**. Relations hold `std::string`, so every argument of
+every fact is a separate allocation, copied per node; `TaskGraph` and the plan
+vector carry strings too. Interning predicates and objects to integers at load
+— the original plan — is the change that removes that, and it is now the
+largest single remaining item. It was not done here because it reaches much
+further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the public
+`get_facts` API all traffic in strings.
+
+`simple_travel` did not move at all, which is the useful negative result: its
+rollouts are bound by recursion through a `get_to`-style task structure, not by
+state cost. No amount of representation work will touch it — that is §8.7.
+
+**Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 2–6x on top of
+§8.4.
 
 ### 8.6 Stop copying, then stop deep-copying
 
