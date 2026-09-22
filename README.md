@@ -7,6 +7,7 @@ Code for the MCTS Hierarchical Task Network (HTN) planner developed for ToMCAT.
 3. [HDDL Domain and Problem Definition
    Loaders](#hddl-domain-and-problem-definition-loaders)
 4. [MCTS HTN Planner](#mcts-htn-planner) 
+5. [Benchmarking](#benchmarking) 
 
 # Build Requirements
 - cmake (Minimum requirement is version 3.16, https://cmake.org/)
@@ -137,6 +138,21 @@ avoids it almost entirely. See
 
 If the budget is too small to evaluate even one option, the planner says so and
 exits non-zero rather than reporting an empty plan.
+
+## Benchmarking
+
+`scripts/benchmark` runs every shipped domain and reports rollout timing plus a
+reproducible fingerprint of what the planner did. Use it around any change that
+is meant to preserve behaviour:
+
+    scripts/benchmark --save before.json
+    # ... make the change, rebuild ...
+    scripts/benchmark --compare before.json
+
+It exits non-zero if the plans, scores or final states moved, and prints timing
+deltas without failing on them. The default run takes about 40 seconds;
+`--full` swaps the fixed-iteration runs for the real time-limited planner and
+takes roughly 20 minutes. See [docs/planner\_doc.md](docs/planner_doc.md) §6.5.
 
 Passing the `--graph` (or `-g`) flag saves a visual representation of the task
 hierarchy behind the returned plan as a png. By default it is written to the

@@ -265,7 +265,8 @@ seek_planMCTS(pTree& t,
               int time_limit,
               int r,
               double c,
-              std::mt19937_64& g) {
+              std::mt19937_64& g,
+              int max_iterations) {
   int stuck_counter = 10;
   //One record per committed decision, so that consecutive backtracks retract
   //consecutive commits. Two scalars describing only the latest commit meant a
@@ -293,7 +294,18 @@ seek_planMCTS(pTree& t,
     m[w] = n_node;
     auto start = std::chrono::high_resolution_clock::now();
     auto stop = std::chrono::high_resolution_clock::now();
-    while (std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count() < time_limit) {
+    //max_iterations > 0 replaces the wall-clock budget with a fixed number of
+    //MCTS iterations. The time-limited search is the real one, but it is not
+    //reproducible -- a busier machine fits fewer iterations into the same
+    //budget and commits to a different plan -- so there is no way to tell a
+    //refactor that changed behaviour from one that merely ran on a loaded
+    //machine. Counting iterations instead makes a whole planner run a
+    //deterministic function of the seed, which is what the benchmark harness
+    //needs to regression-test the tree search. Nothing else should use it.
+    int iterations = 0;
+    while (max_iterations > 0 ? (iterations < max_iterations)
+                              : (std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count() < time_limit)) {
+      iterations++;
       int n = selection(m,w,c,g);
       //selection only hands back a node already marked deadend when that node
       //is the root of this decision's tree, i.e. every option has been refuted.
@@ -466,7 +478,8 @@ cppMCTShop(DomainDef& domain,
            int time_limit = 1000,
            int r = 5,
            double c = 1.4142,
-           int seed = 4021) {
+           int seed = 4021,
+           int max_iterations = 0) {
     domain.set_scorer(scorer);
     pTree t;
     TaskTree tasktree;
@@ -493,7 +506,7 @@ cppMCTShop(DomainDef& domain,
     std::cout << "Initial State:" << std::endl;
     t[v].state.print_facts();
     std::cout << std::endl;
-    auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c, g);
+    auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c, g, max_iterations);
     std::cout << "Plan:";
     for (auto const& p : t[end].plan) {
       std::cout << "\n\t " << p;

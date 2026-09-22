@@ -1040,6 +1040,49 @@ show causes an exponential blow-up of redundant decompositions — see §8.7.
 The single number worth keeping in mind: **2% of the time Z3 is given is spent
 solving**. Everything else it does here is setup for a question that did not
 need it.
+### 6.5 The harness
+
+*Written after §6.1–§6.4, and after the audit it grew out of.*
+
+`apps/bench/planner_bench` measures one domain; `scripts/benchmark` drives it
+over all of them and diffs against a saved baseline. It reports two kinds of
+number and they are read differently: semantic fields fail a comparison,
+timing fields only get printed.
+
+It covers two code paths, and it needs both.
+
+* **Rollouts** (`--rollouts N`) time N rollouts from the initial state. This is
+  the performance signal — rollouts dominate runtime, and a few of them take
+  seconds where a full plan takes minutes. It reports their scores, which are
+  RNG-driven rather than clock-driven and so are reproducible.
+* **A fixed-iteration plan** (`--iterations N`) runs the planner end to end but
+  bounds each decision by a count of MCTS iterations rather than a wall-clock
+  budget. This is what makes the **tree search** testable.
+
+That second mode exists because of a hole found while testing the harness
+itself. A deliberate change to `expansion` — picking the highest-id
+unconstrained compound task instead of the lowest — was made, and the
+rollout-only harness **passed it clean**. Rollouts go through `simulation`,
+which deliberately does not share expansion's Algorithm 2 restriction
+(§2.3.2), so they never touch `expansion`, `selection`, `backprop` or the
+commit loop at all. The normal time-limited planner does touch them, but it is
+not reproducible: a busier machine fits fewer iterations into the same budget
+and commits to a different plan, so a changed plan cannot be distinguished from
+a loaded machine. Fixing the iteration count makes a whole run a deterministic
+function of the seed. With it in place the same perturbation is caught, on
+`d18_gather` and `d18_p18`, with the plan diff printed.
+
+Two caveats worth keeping in mind:
+
+* **`transport` is excluded from the deterministic plan check.** Even *two*
+  fixed iterations take about nine minutes there, for the reasons in §6.1. It
+  still contributes rollout timing and scores.
+* **`rng_after` is a tripwire, not a verdict.** It hashes the RNG state after
+  the rollouts, so it moves if the search makes a different number of draws —
+  more sensitive than the scores, and sensitive enough that a genuinely
+  behaviour-preserving change can shift it. The harness reports it as a warning
+  and fails only on the semantic fields.
+
 
 ---
 
@@ -1164,14 +1207,15 @@ and right now a single rollout on `transport` costs three seconds.
 
 ---
 
-### 8.1 Benchmark harness *(prerequisite)*
+### 8.1 Benchmark harness — **done**
 
-A committed script that runs every shipped domain/problem pair at fixed seed
-and budget and reports wall time, mean rollout time, plan length and final
-state. Nothing below is verifiable without it, and the numbers in §6.1 came
-from throwaway probes that should not have been throwaway.
+`apps/bench/planner_bench` plus `scripts/benchmark`. See §6.5 for what it
+measures and why it measures two different things.
 
-**Depends on:** nothing. **Risk:** none.
+    scripts/benchmark                    # ~40s, reproducible
+    scripts/benchmark --save base.json   # before a change
+    scripts/benchmark --compare base.json # after; exits non-zero if behaviour moved
+    scripts/benchmark --full             # the real time-limited planner, ~20 min
 
 ### 8.2 Delete dead weight
 

@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""Run the planner benchmark over every shipped domain and compare to a baseline.
+
+    scripts/benchmark                          # quick: rollouts only
+    scripts/benchmark --full                   # also plan each domain end to end
+    scripts/benchmark --save base.json         # record a baseline
+    scripts/benchmark --compare base.json      # diff against one
+
+Two kinds of number come back, and they are read differently.
+
+  Semantic fields -- rollout_scores, rollout_failed, plan, plan_len,
+  final_state_hash -- are driven by the seeded RNG, not the clock. A change to
+  any of them means behaviour changed. For a refactor that is supposed to
+  preserve behaviour, that is a failure, and --compare exits non-zero.
+
+  The default run covers two different things, and it needs both. Rollouts go
+  through `simulation`; they never reach expansion, selection, backprop or the
+  commit loop. Those are covered by a planner run with a *fixed iteration
+  count*, which is reproducible where the normal time-limited run is not. A
+  change to the tree search is invisible without it.
+
+  Timing fields are informational. They vary with machine load, so --compare
+  reports the delta but never fails on it. Compare medians, not means: a single
+  unlucky rollout can cost several times the typical one.
+
+  rng_after sits in between. It is a tripwire on control flow -- it moves if the
+  search makes a different number of random draws -- so it is more sensitive
+  than the scores and can shift for a change that is genuinely
+  behaviour-preserving. --compare flags it as a warning, not a failure.
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+# name, domain, problem, scorer, rollouts, plan_iters, plan time limit, plan sims
+#
+# Counts are per-domain on purpose. transport costs seconds per rollout (see
+# planner_doc.md 6.1), so it gets few of them and is skipped entirely by the
+# deterministic plan check -- even two fixed iterations take nine minutes there.
+# plan_iters of 0 means "no deterministic plan in the default run"; the
+# time-limited budgets are the smallest that reliably solve each domain and are
+# only used by --full.
+CONFIGS = [
+    ("transport",     "transport_domain.hddl", "transport_problem.hddl",           "delivery_one", 3,  0, 20000, 5),
+    ("simple_travel", "simple_travel.hddl",    "simple_travel_problem.hddl",       "travel_one",  10, 30,   500, 5),
+    ("sar3",          "sar3.hddl",             "sar3p1.hddl",                      "sar3",         5,  8,  4000, 5),
+    ("d18_gather",    "d18.hddl",              "problem_gather_wake_evacuate.hddl","simple",       5, 12,  2000, 5),
+    ("d18_p18",       "d18.hddl",              "p18.hddl",                         "simple",       5, 12,  2000, 5),
+    ("forall_test",   "forall_test.hddl",      "forall_test_problem.hddl",         "simple",      10, 30,   300, 5),
+    ("atom_test",     "atom_test.hddl",        "atom_test_problem.hddl",           "simple",      10, 30,   300, 5),
+]
+
+SEMANTIC = ["rollout_scores", "rollout_failed", "plan_ok", "plan_len", "plan", "final_state_hash"]
+TRIPWIRE = ["rng_after"]
+TIMING = ["rollout_ms_median", "rollout_ms_mean", "plan_wall_ms"]
+
+
+def find_bench(explicit):
+    if explicit:
+        return explicit
+    for cand in (os.path.join(ROOT, "build", "apps", "bench", "planner_bench"),
+                 os.path.join(ROOT, "build", "planner_bench")):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    sys.exit("error: planner_bench not found. Build it first, or pass --bench PATH.\n"
+             "       (cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j)")
+
+
+def run_one(bench, cfg, full, seed):
+    name, dom, prob, scorer, rollouts, iters, tl, sims = cfg
+    cmd = [bench,
+           "-D", os.path.join(ROOT, "domains", dom),
+           "-P", os.path.join(ROOT, "domains", prob),
+           "-F", scorer, "-s", str(seed),
+           "--rollouts", str(rollouts)]
+    if full:
+        # the real, time-limited planner: realistic but not reproducible
+        cmd += ["--plan", "-T", str(tl), "-r", str(sims)]
+    elif iters:
+        # fixed iterations: reproducible, and the only thing that exercises
+        # expansion, selection, backprop and the commit loop
+        cmd += ["--iterations", str(iters), "-r", "1"]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        return {"error": (proc.stderr or proc.stdout).strip()[:200]}
+    out = {}
+    for line in proc.stdout.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k] = v
+    return out
+
+
+def fmt(v, width=10):
+    try:
+        return f"{float(v):{width}.2f}"
+    except (TypeError, ValueError):
+        return f"{str(v):>{width}}"
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--full", action="store_true",
+                    help="run the real time-limited planner instead of fixed iterations (slow, not reproducible)")
+    ap.add_argument("--save", metavar="FILE", help="write results as a baseline")
+    ap.add_argument("--compare", metavar="FILE", help="diff against a saved baseline")
+    ap.add_argument("--seed", type=int, default=2022)
+    ap.add_argument("--bench", help="path to planner_bench")
+    ap.add_argument("--only", help="run only configs whose name contains this")
+    args = ap.parse_args()
+
+    bench = find_bench(args.bench)
+    configs = [c for c in CONFIGS if not args.only or args.only in c[0]]
+    if not configs:
+        sys.exit(f"error: no config matches {args.only!r}")
+
+    if args.full:
+        print("running in --full mode; transport alone takes ~17 minutes\n")
+
+    results = {}
+    print(f"{'domain':<15}{'roll ms (med)':>14}{'  scores':<34}{'rng_after':>18}")
+    print("-" * 81)
+    for cfg in configs:
+        name = cfg[0]
+        res = run_one(bench, cfg, args.full, args.seed)
+        results[name] = res
+        if "error" in res:
+            print(f"{name:<15}  ERROR: {res['error']}")
+            continue
+        scores = res.get("rollout_scores", "")
+        short = scores if len(scores) <= 32 else scores[:29] + "..."
+        print(f"{name:<15}{fmt(res.get('rollout_ms_median'), 14)}  {short:<32}"
+              f"{res.get('rng_after', '-'):>18}")
+        if "plan_ok" in res:
+            kind = "plan" if args.full else f"plan@{res.get('iterations')}it"
+            if res.get("plan_ok") == "1":
+                print(f"{'':<15}  {kind}: {res.get('plan_len')} actions, "
+                      f"{float(res.get('plan_wall_ms', 0))/1000:.1f}s, "
+                      f"state {res.get('final_state_hash')}")
+            else:
+                print(f"{'':<15}  {kind} FAILED: {res.get('plan_error', '?')[:60]}")
+
+    payload = {"seed": args.seed, "full": args.full, "results": results}
+
+    if args.save:
+        with open(args.save, "w") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+        print(f"\nbaseline written to {args.save}")
+
+    if args.compare:
+        with open(args.compare) as f:
+            base = json.load(f)
+        failures, warnings = [], []
+        print("\n" + "=" * 81)
+        print(f"comparing against {args.compare}")
+        print("=" * 81)
+        for name, cur in results.items():
+            old = base.get("results", {}).get(name)
+            if old is None:
+                warnings.append(f"{name}: not in baseline")
+                continue
+            for k in SEMANTIC:
+                if k in old or k in cur:
+                    if old.get(k) != cur.get(k):
+                        failures.append(f"{name}.{k}: {old.get(k)!r} -> {cur.get(k)!r}")
+            for k in TRIPWIRE:
+                if old.get(k) != cur.get(k):
+                    warnings.append(f"{name}.{k}: {old.get(k)} -> {cur.get(k)}")
+            for k in TIMING:
+                if k in old and k in cur:
+                    try:
+                        a, b = float(old[k]), float(cur[k])
+                    except ValueError:
+                        continue
+                    if a > 0:
+                        pct = 100.0 * (b - a) / a
+                        if abs(pct) >= 5.0:
+                            arrow = "faster" if pct < 0 else "slower"
+                            print(f"  {name}.{k}: {a:.2f} -> {b:.2f} ms  ({abs(pct):.0f}% {arrow})")
+
+        if warnings:
+            print("\nwarnings (look, but not necessarily wrong):")
+            for w in warnings:
+                print("  " + w)
+        if failures:
+            print("\nBEHAVIOUR CHANGED:")
+            for f_ in failures:
+                print("  " + f_)
+            print(f"\n{len(failures)} semantic difference(s).")
+            return 1
+        print("\nno semantic differences.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
