@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 
 add_compile_definitions(BOOST_NO_CXX98_FUNCTION_BASE)
-find_package(Boost COMPONENTS program_options json REQUIRED)
+find_package(Boost COMPONENTS program_options REQUIRED)
 find_package(Z3 REQUIRED)
 
 add_executable(planner_bench planner_bench.cpp)

@@ -11,9 +11,6 @@
 #include <optional>
 #include "util.h"
 #include <boost/variant/recursive_wrapper.hpp>
-#include <boost/json.hpp>
-
-namespace json = boost::json;
 
 //{var,type}
 using Params = std::vector<std::pair<std::string, std::string>>; 
@@ -103,82 +100,6 @@ struct TaskGraph {
 
 };
 
-void tag_invoke(const json::value_from_tag&, json::value& jv, Grounded_Task const& gt) {
-  json::array sargs;
-  for (auto const& a : gt.args) {
-    json::array sa;
-    sa.emplace_back(a.first);
-    sa.emplace_back(a.second);
-    sargs.emplace_back(sa);
-  }
-
-  json::array sincoming;
-  for (auto const& i : gt.incoming) {
-    sincoming.emplace_back(std::to_string(i));
-  }
-
-  json::array soutgoing;
-  for (auto const& o : gt.outgoing) {
-    soutgoing.emplace_back(std::to_string(o));
-  }
-
-  jv = {
-      {"head", gt.head},
-      {"args", sargs},
-      {"incoming", sincoming},
-      {"outgoing",soutgoing}
-  }; 
-
-}
-
-Grounded_Task tag_invoke(const json::value_to_tag<Grounded_Task>&,json::value const& jv) {
-  Grounded_Task gt; 
-  json::object ob = jv.as_object();
-  gt.head = json::value_to<std::string>(ob["head"]);
-
-  for (auto const& a : ob["args"].as_array()) {
-    std::pair<std::string,std::string> p;
-    p.first = json::value_to<std::string>(a.as_array()[0]);
-    p.second = json::value_to<std::string>(a.as_array()[1]);
-    gt.args.push_back(p);
-  }
-
-  for (auto const& i : ob["incoming"].as_array()) {
-    std::string si = json::value_to<std::string>(i);
-    gt.incoming.push_back(std::stoi(si));
-  }
-
-  for (auto const& o : ob["outgoing"].as_array()) {
-    std::string so = json::value_to<std::string>(o);
-    gt.outgoing.push_back(std::stoi(so));
-  }
-
-  return gt;
-}
-
-void tag_invoke(const json::value_from_tag&, json::value& jv, TaskGraph const& tg) {
-  std::unordered_map<std::string, Grounded_Task> sGTs;
-  for (auto const& [id,n] : tg.GTs) {
-    sGTs[std::to_string(id)] = n;
-  }
-  jv = {
-      {"GTs",sGTs},
-      {"nextID",std::to_string(tg.nextID)}
-  };
-}
-
-TaskGraph tag_invoke(const json::value_to_tag<TaskGraph>&,json::value const& jv) {
-  TaskGraph tg; 
-  json::object ob = jv.as_object();
-  for (auto const& [id,n] : ob["GTs"].as_object()) {
-    std::string sid {id};
-    tg[std::stoi(sid)] = json::value_to<Grounded_Task>(n);
-  }
-  std::string snextID = json::value_to<std::string>(ob["nextID"]);
-  tg.nextID = std::stoi(snextID);
-  return tg;
-}
-
 struct TaskNode {
   std::string task;
   std::string token;
@@ -186,32 +107,7 @@ struct TaskNode {
   std::vector<int> outgoing;
 };
 
-void tag_invoke(const json::value_from_tag&, json::value& jv, TaskNode const& t) {
-  json::array schildren;
-  for (auto const& c : t.children) {
-    schildren.emplace_back(std::to_string(c));
-  } 
-  json::array soutgoing;
-  for (auto const& o : t.outgoing) {
-    soutgoing.emplace_back(std::to_string(o));
-  }
-  jv = {
-      {"task",t.task},
-      {"token",t.token},
-      {"children",schildren},
-      {"outgoing",soutgoing}
-  };
-}
-
 using TaskTree = std::unordered_map<int,TaskNode>;
-
-void tag_invoke(const json::value_from_tag&, json::value& jv, TaskTree const& t) {
-  std::unordered_map<std::string, TaskNode> stasktree;
-  for (auto const& [id,n] : t) {
-    stasktree[std::to_string(id)] = n;
-  }
-  jv = json::value_from(stasktree);
-}
 
 struct pNode {
     KnowledgeBase state;

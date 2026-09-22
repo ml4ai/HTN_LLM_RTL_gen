@@ -2,9 +2,6 @@
 #include <graphviz/gvc.h>
 #include <string>
 #include "typedefs.h"
-#include <boost/json.hpp>
-
-namespace json = boost::json;
 
 void set_property(Agnode_t *node,
                   std::string property_name,

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/json.hpp>
 #include <iomanip>
 #include <iostream>
 #include <fstream>
@@ -11,8 +10,6 @@
 #include <vector>
 #include <algorithm>
 #include "parsing/ast.hpp"
-
-namespace json = boost::json;
 
 // Utility method to see if an element is in an associative container
 template <class Element, class AssociativeContainer>

@@ -12,7 +12,9 @@ Code for the MCTS Hierarchical Task Network (HTN) planner developed for ToMCAT.
 # Build Requirements
 - cmake (Minimum requirement is version 3.16, https://cmake.org/)
 - Boost (Minimum requirement is version 1.79, https://www.boost.org/)
-  - Specific Boost Libraries to build: filesystem, log, date\_time, chrono, program\_options, coroutine, json
+  - Only program\_options needs to be compiled; everything else used here
+    (Spirit, Fusion, Variant, Optional, Boost.Test's included variant) is
+    header-only
 - Z3 (c++ Library) (Minimum requirement is version 4.8.17, https://github.com/Z3Prover/z3)
 - Graphviz (c Library) (Tested on version 8.0.5, https://graphviz.org/)
 - Tested on Apple clang version 15.0.0.15000309 (It may also work using GNU 11.4.0)

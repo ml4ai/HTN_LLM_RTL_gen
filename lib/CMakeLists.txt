@@ -1,9 +1,11 @@
 set(CMAKE_CXX_STANDARD 20)
 
 # We require a minimum of Boost 1.79, since we need this bugfix: https://github.com/boostorg/spirit/commit/bcf19220896a73523f20fdc4a56ad553a21c5292
+# Header-only: this uses Spirit, Fusion, Variant and Optional, none of which
+# need linking.
 
 add_compile_definitions(BOOST_NO_CXX98_FUNCTION_BASE)
-find_package(Boost 1.79 COMPONENTS json REQUIRED)
+find_package(Boost 1.79 REQUIRED)
 find_package(Z3 REQUIRED)
 find_package(Graphviz REQUIRED)
 add_library(tomcat parsing/parser_instantiation.cpp parsing/ast.cpp kb.h)

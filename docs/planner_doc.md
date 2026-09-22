@@ -590,7 +590,13 @@ empty `(and)` precondition. `test_MCTS_planner` asserts the resulting state.
 
 ### 4.2 Open
 
-17. **Semantics to document.**
+17. **The tests only run from `<source>/build`.** `test_loader`, `test_parser`
+    and `test_MCTS_planner` reach their domains through the relative path
+    `../../domains/...`, which assumes the build directory is a child of the
+    source tree. Configuring a build anywhere else yields binaries that compile
+    and link but fail at run time with "No file transport_domain.hddl found".
+    Passing the domain directory in at configure time would fix it.
+18. **Semantics to document.**
     * Goals are ignored by the HTN planner (§2.1).
     * The search space is non-systematic, so duplicate subtrees occur (§2.3).
 
@@ -1217,15 +1223,29 @@ measures and why it measures two different things.
     scripts/benchmark --compare base.json # after; exits non-zero if behaviour moved
     scripts/benchmark --full             # the real time-limited planner, ~20 min
 
-### 8.2 Delete dead weight
+### 8.2 Delete dead weight — **done**
 
-`boost::json` is unused — six `tag_invoke` overloads in `typedefs.h`, no
-callers of `value_from`/`value_to` anywhere. Drops a Boost component from three
-`CMakeLists.txt`. Also set `CMAKE_BUILD_TYPE` to `Release` when the caller does
-not specify: today that is worth nothing measurable (§6.1.4), but it stops
-being free to ignore after §8.4.
+`boost::json` was unused — six `tag_invoke` overloads in `typedefs.h`
+serializing `Grounded_Task`, `TaskGraph`, `TaskNode` and `TaskTree`, left from
+the plan-recognizer JSON output, with no caller of `value_from` or `value_to`
+anywhere. `util.h` and `grapher.h` carried the include and a namespace alias
+without using either. **Boost.Log was dead too**: nothing includes it, and the
+only traces were a `-DBOOST_LOG_DYN_LINK` define and a `find_package` in
+`test/CMakeLists.txt`.
 
-**Depends on:** nothing. **Risk:** none. **Payoff:** hygiene.
+What Boost is actually used for — Spirit, Fusion, Variant, Optional and
+`boost/test/included` — is all header-only, so the one compiled component the
+project needs is **program_options**, and only for the two apps. `lib/` and
+`test/` now ask for headers alone.
+
+`CMAKE_BUILD_TYPE` defaults to `Release`, so a plain `cmake ..` compiles with
+`-O3 -DNDEBUG` rather than no `-O` flag at all.
+
+**Payoff, measured: none, as predicted.** The binary no longer links
+`libboost_json`, but clean build time is unchanged at 20s either way, and the
+benchmark shows no timing change beyond noise — the `-O3` default included,
+for the reason in §6.1.4. This was hygiene, and it is worth being clear it
+bought nothing else.
 
 ### 8.3 Keep the parsed AST
 

@@ -1,9 +1,10 @@
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../apps/cmake")
 
-add_definitions(-DBOOST_LOG_DYN_LINK)
+# Header-only: the tests use boost/test/included/unit_test.hpp, which compiles
+# the framework into the translation unit rather than linking it.
 add_compile_definitions(BOOST_NO_CXX98_FUNCTION_BASE)
-find_package(Boost COMPONENTS log json REQUIRED)
+find_package(Boost REQUIRED)
 find_package(Z3 REQUIRED)
 
 # Parser testing
