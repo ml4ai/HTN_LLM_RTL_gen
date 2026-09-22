@@ -232,6 +232,110 @@ std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
   return "__NONE__";
 }
 
+//Mirrors sentence_to_SMT above, building the structured form instead of the
+//string. The two are kept in step by a round-trip assertion in test_loader:
+//every precondition and effect condition in every shipped domain must render
+//back to the string stored beside it.
+expr::Ptr sentence_to_expr(Sentence sentence, Ptypes& ptypes) {
+  if (sentence.which() == 0) {
+    return nullptr;
+  }
+  if (sentence.which() == 1) {
+    auto s = boost::get<Literal<Term>>(sentence);
+    std::vector<expr::Term> args;
+    for (auto const& a : s.args) {
+      if (a.which() == 0) {
+        args.push_back({boost::get<Constant>(a).name,false});
+      }
+      else {
+        args.push_back({boost::get<Variable>(a).name,true});
+      }
+    }
+    return expr::make_atom(s.predicate,std::move(args));
+  }
+  if (sentence.which() == 2) {
+    auto s = boost::get<ConnectedSentence>(sentence);
+    std::vector<expr::Ptr> children;
+    for (auto const& t : s.sentences) {
+      auto c = sentence_to_expr(t,ptypes);
+      if (c) {
+        children.push_back(c);
+      }
+    }
+    if (children.empty()) {
+      return nullptr;
+    }
+    return expr::make_connective(s.connector == "or" ? expr::Kind::Or : expr::Kind::And,
+                                 std::move(children));
+  }
+  if (sentence.which() == 3) {
+    auto s = boost::get<NotSentence>(sentence);
+    auto c = sentence_to_expr(s.sentence,ptypes);
+    if (!c) {
+      return nullptr;
+    }
+    return expr::make_connective(expr::Kind::Not,{c});
+  }
+  if (sentence.which() == 4) {
+    auto s = boost::get<ImplySentence>(sentence);
+    auto a = sentence_to_expr(s.sentence1,ptypes);
+    auto b = sentence_to_expr(s.sentence2,ptypes);
+    if (!a || !b) {
+      return nullptr;
+    }
+    return expr::make_connective(expr::Kind::Imply,{a,b});
+  }
+  if (sentence.which() == 5) {
+    auto s = boost::get<QuantifiedSentence>(sentence);
+    if (s.variables.explicitly_typed_lists.empty() && s.variables.implicitly_typed_list.empty()) {
+      return nullptr;
+    }
+    std::vector<expr::Bound> bound;
+    for (auto const& t : s.variables.explicitly_typed_lists) {
+      std::string type = boost::get<PrimitiveType>(t.type);
+      for (auto const& e : t.entries) {
+        bound.push_back({e.name,{type}});
+      }
+    }
+    for (auto const& it : s.variables.implicitly_typed_list) {
+      expr::Bound b;
+      b.name = it.name;
+      //Same call sentence_to_SMT makes, so the type order matches.
+      for (auto const& t : type_inference(s.sentence,ptypes,it.name)) {
+        b.types.push_back(t);
+      }
+      bound.push_back(std::move(b));
+    }
+    auto body = sentence_to_expr(s.sentence,ptypes);
+    if (!body) {
+      return nullptr;
+    }
+    return expr::make_quantified(s.quantifier,std::move(bound),body);
+  }
+  if (sentence.which() == 6 || sentence.which() == 7) {
+    bool equals = sentence.which() == 6;
+    Term lhs_t, rhs_t;
+    if (equals) {
+      auto s = boost::get<EqualsSentence>(sentence);
+      lhs_t = s.lhs;
+      rhs_t = s.rhs;
+    }
+    else {
+      auto s = boost::get<NotEqualsSentence>(sentence);
+      lhs_t = s.lhs;
+      rhs_t = s.rhs;
+    }
+    auto conv = [](Term const& t) -> expr::Term {
+      if (t.which() == 0) {
+        return {boost::get<Constant>(t).name,false};
+      }
+      return {boost::get<Variable>(t).name,true};
+    };
+    return expr::make_compare(equals,conv(lhs_t),conv(rhs_t));
+  }
+  return nullptr;
+}
+
 std::unordered_set<std::string> type_inference(effect e, Ptypes& ptypes, std::string var) {
   std::unordered_set<std::string> types = {"__Object__"};
   auto pred = e.pred;
@@ -284,7 +388,8 @@ Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
     auto e = boost::get<WhenCEffect>(ceffect);
     if (e.cond_effect.which() == 0) {
       auto p = boost::get<PEffect>(e.cond_effect);
-      auto sentSMT = sentence_to_SMT(e.gd, ptypes); 
+      auto sentSMT = sentence_to_SMT(e.gd, ptypes);
+      auto sentAST = sentence_to_expr(e.gd, ptypes);
       Pred pd;
       pd.first = p.predicate;
       for (int i = 0; i < p.args.size(); i++) {
@@ -303,11 +408,12 @@ Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
         }
       }
       std::unordered_map<std::string,std::unordered_set<std::string>> fa;
-      effects.push_back(effect(sentSMT,p.is_negative,pd,fa));
+      effects.push_back(effect(sentSMT,p.is_negative,pd,fa,sentAST));
     }
     else {
       auto vp = boost::get<std::vector<PEffect>>(e.cond_effect);
-      auto sentSMT = sentence_to_SMT(e.gd, ptypes); 
+      auto sentSMT = sentence_to_SMT(e.gd, ptypes);
+      auto sentAST = sentence_to_expr(e.gd, ptypes);
       for (auto const& p : vp) {
         Pred pd;
         pd.first = p.predicate;
@@ -327,7 +433,7 @@ Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
           }
         }
         std::unordered_map<std::string,std::unordered_set<std::string>> fa;
-        effects.push_back(effect(sentSMT,p.is_negative,pd,fa));
+        effects.push_back(effect(sentSMT,p.is_negative,pd,fa,sentAST));
       }
     }
     return effects;
@@ -352,7 +458,7 @@ Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
       }
     }
     std::unordered_map<std::string,std::unordered_set<std::string>> fa;
-    effects.push_back(effect("__NONE__",p.is_negative,pd,fa));
+    effects.push_back(effect("__NONE__",p.is_negative,pd,fa,nullptr));
     return effects;
   }
   return effects;
@@ -432,6 +538,59 @@ std::string decompose_constraints(Constraints constraints) {
     return cs+")"; 
   }
   return "__NONE__";
+}
+
+//Mirrors decompose_constraint. :constraints are (in)equalities over variables
+//and constants only, so this is the whole of it.
+expr::Ptr constraint_to_expr(Constraint constraint) {
+  int w = which_constraint(constraint);
+  if (w != 1 && w != 2) {
+    return nullptr;
+  }
+  Term lhs_t, rhs_t;
+  if (w == 1) {
+    auto s = boost::get<EqualsSentence>(constraint);
+    lhs_t = s.lhs;
+    rhs_t = s.rhs;
+  }
+  else {
+    auto s = boost::get<NotEqualsSentence>(constraint);
+    lhs_t = s.lhs;
+    rhs_t = s.rhs;
+  }
+  auto conv = [](Term const& t) -> expr::Term {
+    if (t.which() == 0) {
+      return {boost::get<Constant>(t).name,false};
+    }
+    return {boost::get<Variable>(t).name,true};
+  };
+  return expr::make_compare(w == 1,conv(lhs_t),conv(rhs_t));
+}
+
+//Mirrors decompose_constraints, which always wraps in an `and`.
+expr::Ptr constraints_to_expr(Constraints constraints) {
+  int w = which_constraints(constraints);
+  if (w == 1) {
+    auto c = constraint_to_expr(boost::get<Constraint>(constraints));
+    if (!c) {
+      return nullptr;
+    }
+    return expr::make_connective(expr::Kind::And,{c});
+  }
+  if (w == 2) {
+    std::vector<expr::Ptr> children;
+    for (auto const& c : boost::get<std::vector<Constraint>>(constraints)) {
+      auto e = constraint_to_expr(c);
+      if (e) {
+        children.push_back(e);
+      }
+    }
+    if (children.empty()) {
+      return nullptr;
+    }
+    return expr::make_connective(expr::Kind::And,std::move(children));
+  }
+  return nullptr;
 }
 
 std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks subtasks, Tasktypes ttypes) {
@@ -636,8 +795,9 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     }
 
     Preconds preconditions = sentence_to_SMT(a.precondition,ptypes); 
+    expr::Ptr precondition_ast = sentence_to_expr(a.precondition,ptypes);
     Effects effects = decompose_effects(a.effect,ptypes);
-    actions.emplace(std::make_pair(name, ActionDef(name,params,preconditions,effects))); 
+    actions.emplace(std::make_pair(name, ActionDef(name,params,preconditions,effects,false,precondition_ast))); 
   }
   
   MethodDefs methods;
@@ -678,6 +838,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     //totally ordered domains, but once tasks interleave they differ: other
     //unconstrained tasks may run between the decomposition and the check.
     Preconds state_pre = sentence_to_SMT(m.precondition,ptypes);
+    expr::Ptr state_pre_ast = sentence_to_expr(m.precondition,ptypes);
 
     //:constraints are (in)equalities over variables and constants only -- see
     //decompose_constraint -- so they never mention state and cannot change
@@ -685,10 +846,12 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     //prune bindings, rather than multiplying branches the artificial action
     //would only reject later.
     Preconds preconditions = "__NONE__";
+    expr::Ptr precondition_ast = nullptr;
     if (m.task_network.constraints) {
       std::string cs = decompose_constraints(*m.task_network.constraints);
       if (cs != "__NONE__") {
         preconditions = cs;
+        precondition_ast = constraints_to_expr(*m.task_network.constraints);
       }
     }
      
@@ -733,7 +896,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
         suffix++;
       }
       actions.emplace(std::make_pair(pre_action,
-                                     ActionDef(pre_action,params,state_pre,Effects{},true)));
+                                     ActionDef(pre_action,params,state_pre,Effects{},true,state_pre_ast)));
 
       //Ordered before every other subtask. Giving it outgoing orderings also
       //keeps it from inheriting the decomposed task's outgoing edges, which
@@ -747,7 +910,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
       orderings[pre_id] = before;
     }
 
-    methods[m.task.name].push_back(MethodDef(name,task,params,preconditions,subtasks,orderings));
+    methods[m.task.name].push_back(MethodDef(name,task,params,preconditions,subtasks,orderings,precondition_ast));
   }
   auto DD = DomainDef(name,typetree,predicates,constants,actions,methods);
   return std::make_pair(DD,std::make_pair(ptypes,ttypes));

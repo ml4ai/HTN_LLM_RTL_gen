@@ -8,6 +8,7 @@
 #include <vector>
 #include <iterator>
 #include "kb.h"
+#include "expr.h"
 #include <optional>
 #include "util.h"
 #include <boost/variant/recursive_wrapper.hpp>
@@ -24,11 +25,15 @@ struct effect {
   bool remove;
   Pred pred;
   std::unordered_map<std::string,std::unordered_set<std::string>> forall;
-  effect (std::string condition, bool remove, Pred pred, std::unordered_map<std::string,std::unordered_set<std::string>> forall) {
+  //The structured form of `condition`, kept so the condition can be evaluated
+  //without a solver. Null when there is none.
+  expr::Ptr condition_ast;
+  effect (std::string condition, bool remove, Pred pred, std::unordered_map<std::string,std::unordered_set<std::string>> forall, expr::Ptr condition_ast = nullptr) {
     this->condition = condition;
     this->remove = remove;
     this->pred = pred;
     this->forall = forall;
+    this->condition_ast = condition_ast;
   }
 };
 using Effects = std::vector<effect>;
@@ -162,6 +167,7 @@ class ActionDef {
     std::string head;
     Params parameters;
     Preconds preconditions;
+    expr::Ptr precondition_ast;
     Effects effects;
     //True for the effect-free actions the loader synthesises to carry a
     //method's precondition under HDDL timing. They are real search steps, but
@@ -345,12 +351,20 @@ class ActionDef {
               Params parameters,
               Preconds preconditions,
               Effects effects,
-              bool artificial = false) {
+              bool artificial = false,
+              expr::Ptr precondition_ast = nullptr) {
       this->head = head;
       this->parameters = parameters;
       this->preconditions = preconditions;
       this->effects = effects;
       this->artificial = artificial;
+      this->precondition_ast = precondition_ast;
+    }
+
+    //The structured form of `preconditions`. Nothing evaluates it yet; it is
+    //here so that the direct evaluator can.
+    expr::Ptr get_precondition_ast() {
+      return this->precondition_ast;
     }
 
     bool is_artificial() {
@@ -497,6 +511,7 @@ class MethodDef {
     TaskDef task; 
     Params parameters;
     Preconds preconditions;
+    expr::Ptr precondition_ast;
     TaskDefs subtasks;
     std::unordered_map<std::string,std::vector<std::string>> orderings;
 
@@ -507,13 +522,21 @@ class MethodDef {
               Params parameters, 
               Preconds preconditions, 
               TaskDefs subtasks, 
-              std::unordered_map<std::string,std::vector<std::string>> orderings) {
+              std::unordered_map<std::string,std::vector<std::string>> orderings,
+              expr::Ptr precondition_ast = nullptr) {
       this->head = head;
       this->task = task;
       this->parameters = parameters;
       this->preconditions = preconditions;
       this->subtasks = subtasks;
       this->orderings = orderings;
+      this->precondition_ast = precondition_ast;
+    }
+
+    //Structured form of `preconditions`, which for a method is its
+    //:constraints (the state precondition moved into a synthesised action).
+    expr::Ptr get_precondition_ast() {
+      return this->precondition_ast;
     }
 
     std::string get_head() {

@@ -1247,13 +1247,40 @@ benchmark shows no timing change beyond noise — the `-O3` default included,
 for the reason in §6.1.4. This was hygiene, and it is worth being clear it
 bought nothing else.
 
-### 8.3 Keep the parsed AST
+### 8.3 Keep the parsed AST — **done**
 
-Have the loader retain the `Sentence` AST alongside the SMT string instead of
-discarding it in `sentence_to_SMT`. Pure addition, no behaviour change. This is
-the hinge: nothing in §8.4 is possible without it.
+`lib/expr.h` defines a small expression IR, and the loader builds it alongside
+the SMT string for every action precondition, method `:constraints` and
+conditional effect. Nothing evaluates it yet; §8.4 will.
 
-**Depends on:** §8.1. **Risk:** none. **Payoff:** none directly.
+It is deliberately **not** the Spirit AST. A planner-owned type keeps the
+evaluator away from Spirit's variant layout and position-tracking, and lets the
+loader record something the SMT text cannot express: whether an argument is a
+**variable or a constant**. The string spells both as a bare name, and the
+current engine only recovers the difference from which names `ask` happened to
+declare. The evaluator will need it directly.
+
+**Fidelity is asserted, not assumed.** `expr::to_smt` renders the IR back to
+the loader's own string format, and `test_loader` checks that every stored
+precondition and effect condition in all six domains round-trips exactly —
+163 of them. The test was confirmed to fail when the renderer was deliberately
+broken. `to_smt` exists only for that check and goes away with the SMT path in
+§8.4.
+
+Two things the IR must reproduce that are easy to miss: `__NONE__` propagation
+(a null `Ptr`, which `and`/`or` drop and which collapses a whole node if every
+part is absent), and the desugaring of typed quantification into
+`(forall ((v __Object__)) (=> (and (type v)) body))`, including taking the
+inferred type order from the same `type_inference` call the string path uses.
+
+**Coverage note.** The shipped domains exercise atoms, `and`, `not`, `or`,
+equality and inequality, plus `forall` in effects. None use `imply`, `exists`,
+or a quantified *precondition*, so those branches of the IR are written but
+unexercised. §8.4's fallback-to-Z3 covers them either way, but they are the
+places to look first if something is wrong.
+
+**Depends on:** §8.1. **Risk:** none — pure addition; the benchmark reports no
+semantic change. **Payoff:** none directly.
 
 ### 8.4 Replace Z3 on the hot path
 

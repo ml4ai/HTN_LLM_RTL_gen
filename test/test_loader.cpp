@@ -193,3 +193,55 @@ BOOST_AUTO_TEST_CASE(test_apply) {
     }
 
 }
+
+//The loader keeps a structured form of every precondition and effect condition
+//alongside the SMT string it hands to Z3 (lib/expr.h). Nothing evaluates it
+//yet -- the direct evaluator is the next step -- so the only thing worth
+//asserting now is that it is faithful: rendering the structure back must
+//reproduce the string stored beside it, exactly, for every action, method and
+//conditional effect in every shipped domain. If those two ever disagree, the
+//structure is not describing what the planner actually evaluates.
+BOOST_AUTO_TEST_CASE(test_expr_ast_matches_smt) {
+    std::vector<std::string> domains = {
+      "../../domains/transport_domain.hddl",
+      "../../domains/simple_travel.hddl",
+      "../../domains/sar3.hddl",
+      "../../domains/d18.hddl",
+      "../../domains/forall_test.hddl",
+      "../../domains/atom_test.hddl",
+    };
+
+    int checked = 0;
+    for (auto const& d : domains) {
+        auto domain = loadDomain(d).first;
+
+        for (auto& [name,action] : domain.actions) {
+            BOOST_TEST_CONTEXT(d << " action " << name) {
+                BOOST_TEST(expr::to_smt(action.get_precondition_ast())
+                           == action.get_preconditions());
+            }
+            checked++;
+            for (auto const& e : action.get_effects()) {
+                BOOST_TEST_CONTEXT(d << " effect of " << name) {
+                    BOOST_TEST(expr::to_smt(e.condition_ast) == e.condition);
+                }
+                checked++;
+            }
+        }
+
+        for (auto& [task,methods] : domain.methods) {
+            for (auto& m : methods) {
+                BOOST_TEST_CONTEXT(d << " method " << m.get_head()) {
+                    BOOST_TEST(expr::to_smt(m.get_precondition_ast())
+                               == m.get_preconditions());
+                }
+                checked++;
+            }
+        }
+    }
+    //Guard against the loop silently checking nothing.
+    BOOST_TEST(checked > 100);
+    std::cout << "round-tripped " << checked << " preconditions and conditions"
+              << std::endl;
+
+}// end of testing the expression IR
