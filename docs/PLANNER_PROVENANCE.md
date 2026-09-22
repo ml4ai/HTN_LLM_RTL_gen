@@ -37,7 +37,7 @@ state and plan rather than minimizing cost.
 | Initial task network → single root task + method | `loader.h` 766–833, 840 | Geier & Bercher 2011 formalism (single initial task) | Standard compilation |
 | Types, conditional/`forall` effects | `kb.h` 202–219; `typedefs.h` 286–435 | PDDL typing (McDermott et al. 1998); ADL (Pednault 1989) | Standard |
 | State queries, variable binding | `kb.h` 145–178, 234–455, 490–516 | Z3 (de Moura & Bjørner 2008); CWA / Clark completion (Reiter 1978; Clark 1978); SMT in planning (Gregory et al. 2012) | Engineering choice. I found no HTN planner that evaluates preconditions this way |
-| Search space | `cppMCTShop.h` 151–229; `typedefs.h` 608–693 | SHOP2 (Nau et al. 2003); HTN progression (Alford et al. 2012; Höller et al. 2020b, Alg. 1) | Matches Höller et al.'s Alg. 1 (branch over all unconstrained tasks). **Not** SHOP2's sub(m) restriction |
+| Search space | `cppMCTShop.h` (`expansion`); `typedefs.h` | SHOP2 (Nau et al. 2003); HTN progression (Alford et al. 2012; Höller et al. 2020b, Alg. 2) | Höller et al.'s Alg. 2: all unconstrained primitive tasks, one unconstrained compound task (§2.3.2). **Not** SHOP2's sub(m) restriction |
 | Method preconditions | `loader.h` (method loop); `typedefs.h` | HDDL compiled semantics (Höller et al. 2020a) vs. SHOP (Nau et al. 2003) | HDDL-style: compiled into a primitive action ahead of the subtasks (§2.3) |
 | Tree policy | `cppMCTShop.h` 17–64 | UCB1 (Auer et al. 2002); UCT (Kocsis & Szepesvári 2006) | Standard UCT, c = √2, random tie-breaking |
 | Expansion | `cppMCTShop.h` 151–229, 267–312 | Coulom 2006; Browne et al. 2012 | Rollout on first visit, full child generation on second |
@@ -130,12 +130,12 @@ ids plus `incoming`/`outgoing` edges, `typedefs.h` 63–104), and the plan prefi
    (`cppMCTShop.h` 156–171).
 2. **Primitive** task: if its precondition holds, apply it, remove it from the
    network, and append it to the plan (178–197).
-3. **Compound** task: for each method and each binding of the method's
-   precondition, replace the task with the method's subtasks (199–217). In
-   `MethodDef::apply_binding` (`typedefs.h` 608–640), subtasks that have no
-   successor inside the method inherit the decomposed task's outgoing edges
-   (628–632). The decomposed task never has incoming edges, because only
-   unconstrained tasks are chosen, so no incoming edges need to be copied.
+3. **Compound** task: **one** unconstrained compound task is chosen (the
+   lowest task id), and the branching is over its methods and their bindings
+   only — see §2.3.2. In `MethodDef::apply_binding`, subtasks that have no
+   successor inside the method inherit the decomposed task's outgoing edges.
+   The decomposed task never has incoming edges, because only unconstrained
+   tasks are chosen, so no incoming edges need to be copied.
 
 This is **progression search** over partially ordered HTN networks:
 
@@ -145,16 +145,13 @@ This is **progression search** over partially ordered HTN networks:
   README cites SHOP2 for this reason.
 * **Important difference from SHOP2.** After SHOP2 applies a method, it
   restricts the next choice to the unconstrained subtasks of *that method*
-  (T₀ ← {t ∈ sub(m) : …}). This code does not. It always branches over *every*
-  unconstrained task in the network. Höller et al. (2020b, §4) point out this
-  exact difference. The code matches their **Algorithm 1**, which branches over
-  all unconstrained primitive and compound tasks, and not their systematic
-  Algorithm 3. The problem-space analysis of Alford, Shivashankar, Kuter & Nau
-  (2012) is the other standard reference for this progression formulation and
-  its termination issues. Two consequences:
-  * The space is **non-systematic**. The same network can be reached by
-    decomposing tasks in different orders, so the MCTS tree contains duplicate
-    subtrees.
+  (T₀ ← {t ∈ sub(m) : …}). This code does not. Höller et al. (2020b, §4) point
+  out this exact difference. The problem-space analysis of Alford,
+  Shivashankar, Kuter & Nau (2012) is the other standard reference for this
+  progression formulation and its termination issues. Two consequences:
+  * The space is **not fully systematic**, even under Algorithm 2: the same
+    network can still be reached along different routes, so the MCTS tree can
+    contain duplicate subtrees. Algorithm 3 would close that (§5).
   * The README's warning about "infinite recursive/looping tasks" matches
     Alford et al.'s (2012) observation that progression need not terminate on
     recursive domains without extra checks.
@@ -222,6 +219,53 @@ pays almost nothing. This is why the default `--time_limit` is 20000 and why
 * **Time bookkeeping.** Each primitive action advances an integer clock by one
   (`cppMCTShop.h` 184, 189). The clock is used only to line up with perceptual
   facts (§2.6).
+
+#### 2.3.2 Algorithm 2: one compound task, not all of them
+
+`expansion` implements Höller et al.'s (2020b) **Algorithm 2**: it branches over
+every unconstrained *primitive* task, but over only a **single** unconstrained
+*compound* one, chosen deterministically as the lowest task id. Their argument
+is that the order in which two compound tasks are decomposed carries no
+commitment to the solution — only the choice of *method* does — so branching
+over which to decompose first only re-reaches the same networks by different
+routes. Picking rather than branching is the move plan-space planners make when
+they select a flaw to resolve.
+
+**This is sound here only because of §2.3.** Their formalism has preconditionless
+methods, and under the SHOP timing this planner used previously, a method's
+applicability was a question about the current state: a compound task with no
+applicable method *now* might have one after some other unconstrained action
+ran, so skipping it could have stranded a branch. With preconditions compiled
+into actions, what is left on a method is types and `:constraints`, neither of
+which any action can change — so a compound task's set of applicable methods is
+the same whenever it is decomposed.
+
+**What it removes.** Children generated at the first few nodes:
+
+| Domain | | Algorithm 1 | Algorithm 2 |
+|---|---|---|---|
+| `transport` | root | 6 | **3** |
+| `d18` / `p18` | root | 4 | **2** |
+| `simple_travel` | root | 2 | 2 |
+| `sar3` | root | 2 | 2 |
+
+It halves the branching exactly where several compound tasks are unconstrained
+at once, and is a no-op where only one is — the totally ordered case. The saving
+compounds with depth, since each avoided duplicate is the root of a subtree.
+
+**Rollouts deliberately keep the unrestricted set.** `simulation` is not a
+search over a space to be covered; it is a randomised dive that stops at the
+first solution it reaches. Applying the same restriction to it was measured and
+made things *worse* where it matters most: average rollout time on `transport`
+went from 2826 ms to 5617 ms, though `d18` improved from 157 ms to 115 ms.
+Narrowing the choices removes the lucky first paths a random dive depends on.
+Since Algorithm 2 is complete, a rollout and the tree reach the same set of
+terminal networks, so a value estimated over the unrestricted set still
+estimates the same quantity.
+
+**What it does not fix.** It does not reduce the time budget `transport` needs.
+That is set by rollout cost (§2.3.1), which this leaves alone by design.
+
 
 ### 2.4 MCTS: tree policy, expansion, rollouts, backup
 
@@ -627,10 +671,11 @@ branch over when more than one task is unconstrained. Writing `UC` for the
 unconstrained *compound* tasks and `UA` for the unconstrained *primitive* ones:
 
 * **Algorithm 1** branches over every task in `UA` (apply it) *and* every task
-  in `UC` × every applicable method (decompose it). **This is what
-  `expansion` does** (`cppMCTShop.h`).
+  in `UC` × every applicable method (decompose it). This is what `expansion`
+  used to do.
 * **Algorithm 2** branches over every task in `UA`, but *picks a single*
-  compound task from `UC` and branches only over its methods.
+  compound task from `UC` and branches only over its methods. **This is what
+  `expansion` does now** (§2.3.2).
 * **Algorithm 3** goes further: while `UC` is non-empty it progresses **no**
   action at all — it picks one compound task and branches over its methods.
   Only once `UC` is empty does it branch over applying the tasks in `UA`.
@@ -701,12 +746,50 @@ their setting: this planner's node values come from rollouts over the current
 state, and its score functions read that state, so delaying it delays the signal
 MCTS is steering by.
 
-**Recommendation.** If this is pursued, implement Algorithm 2 first. It is the
-smaller change, it is strictly better than Algorithm 1 on partially ordered
-problems by their analysis, and it does not postpone the state update. Then try
-Algorithm 3 behind a comparison, measuring both against the current behaviour on
-`transport` and `d18` — the two shipped domains with partial order — rather than
-assuming the systematic one wins.
+**Status.** Algorithm 2 is implemented and measured (§2.3.2). Algorithm 3 is
+not. Going further would mean accepting the postponed state update, which is
+the real question for this planner rather than a detail: node values come from
+rollouts over the current state, and its score functions read that state.
+Worth measuring against `transport` and `d18` — the two shipped domains with
+partial order — rather than assuming the systematic one wins.
+
+### 5.5 On method preconditions and interleaving: what the literature says
+
+Separately from systematicity, §2.3 notes that HDDL's compiled method
+preconditions are loose on partially ordered problems. A look for later work
+resolving that found no resolution, but it did find the question sharpened.
+
+* **Höller et al. (2020a)**, the HDDL paper, adopt the compilation and defer the
+  tighter reading — checking exactly before the first action arising from a
+  subtask — to "future extensions", noting a system must support it natively
+  "because a compilation is not easily possible".
+* **Höller & Bercher (2022)** restate the problem in the same terms two years
+  later: in partially ordered planning "the decomposed task might be partially
+  ordered with respect to other tasks and the subtasks might be interleaved",
+  so one "cannot exactly determine the position the precondition is
+  checked/needs to hold", and the definition "was chosen for HDDL due to
+  practical reasons, since it is the most simple way for the planning systems".
+  Their contribution is to make the resulting obligation precise from the
+  verification side: because the synthesised actions are not part of a returned
+  plan, a verifier "need[s] to check whether there exists a position where the
+  precondition holds (in a certain range of the plan)". That existential
+  reading — *holds somewhere in a window* — is the operative semantics, not
+  *holds immediately before*. They also report that no other system they
+  compared against supports the IPC semantics of method preconditions at all.
+* **HDDL 2.1 (2023)** points at a direction rather than settling it. It is a
+  position paper on temporal HDDL, and suggests that the classical
+  decomposition constraints of Erol, Hendler & Nau (1994) — `before`, `after`,
+  `between` — be expressed via PDDL 3.0 trajectory constraints, adding that
+  "method precondition semantics (at start, at end, overall)" can be expressed
+  the same way.
+
+The shape of the resolution, then, is not to pick a better fixed convention but
+to let the modeller say which one they mean: an `overall` method precondition
+would have to hold throughout, `at start` at the point of decomposition. Until
+something like that is standardised, a method precondition in a partially
+ordered domain means only that it held at *some* point before the method's
+subtasks ran. Where a domain needs more than that, the honest encoding is an
+action precondition on the subtask that actually depends on it.
 
 ---
 
@@ -731,6 +814,8 @@ assuming the systematic one wins.
 - Ghallab, M., Nau, D., & Traverso, P. (2016). *Automated Planning and Acting*. Cambridge University Press.
 - Gomes, C. P., Selman, B., & Kautz, H. (1998). Boosting combinatorial search through randomization. *AAAI 1998*.
 - Gregory, P., Long, D., Fox, M., & Beck, J. C. (2012). Planning modulo theories: Extending the planning paradigm. *ICAPS 2012*. https://ojs.aaai.org/index.php/ICAPS/article/view/13505
+- Höller, D., & Bercher, P. (2022). Compiling HTN plan verification problems into HTN planning problems. *ICAPS 2022*. https://bercher.net/publications/2022/Hoeller2022VerificationViaCompilation.pdf
+- Pellier, D., Fiorino, H., Grand, M., Albore, A., & Bailon-Ruiz, R. (2023). HDDL 2.1: Towards defining a formalism and a semantics for temporal HTN planning. arXiv:2306.07353. https://arxiv.org/abs/2306.07353
 - Höller, D., Behnke, G., Bercher, P., Biundo, S., Fiorino, H., Pellier, D., & Alford, R. (2020a). HDDL: An extension to PDDL for expressing hierarchical planning problems. *AAAI 2020*. https://staff.fnwi.uva.nl/g.behnke/papers/Hoeller2020HDDL.pdf
 - Höller, D., Bercher, P., Behnke, G., & Biundo, S. (2020b). HTN planning as heuristic progression search. *JAIR*, 67, 835–880. https://jair.org/index.php/jair/article/view/11282
 - Keller, T., & Helmert, M. (2013). Trial-based heuristic tree search for finite horizon MDPs. *ICAPS 2013*.

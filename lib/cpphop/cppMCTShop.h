@@ -90,6 +90,13 @@ simulation(std::vector<std::string>& plan,
   if (tasks.empty()) {
     return domain.score(state,plan);
   }
+  //Rollouts deliberately keep the unrestricted candidate set. The Algorithm 2
+  //restriction in expansion below removes duplicate *subtrees*, which is what
+  //matters for a search that explores its space; a rollout is a randomised dive
+  //that stops at the first solution, and narrowing its choices measurably
+  //slowed it down (§2.3.2). Both reach the same set of terminal networks, since
+  //Algorithm 2 is complete, so the value a rollout reports is still an estimate
+  //of the same thing.
   std::vector<int> u;
   for (auto &[i,gt] : tasks.GTs) {
     if (gt.incoming.empty()) {
@@ -159,14 +166,25 @@ int expansion(pTree& t,
               int n,
               DomainDef& domain,
               std::mt19937_64& g) {
+    //Höller et al.'s Algorithm 2: branch over every unconstrained primitive
+    //task, but over only a single unconstrained compound one. Which compound
+    //task is decomposed first carries no commitment -- only the choice of
+    //method does -- so branching over that just re-reaches the same networks by
+    //different routes. Sound here only because method applicability no longer
+    //depends on the state: preconditions moved into synthesised actions (2.3),
+    //leaving types and :constraints, which no action can change. The pick is
+    //deterministic (lowest task id) so a node always generates the same
+    //children. Note that simulation above deliberately does NOT do this -- see
+    //the comment there.
     std::vector<int> u;
+    std::vector<int> compound;
     for (auto const& [id,gt] : t[n].tasks.GTs) {
       if (gt.incoming.empty()) {
         if (domain.actions.contains(t[n].tasks[id].head)) {
           u.push_back(id);
         }
         else if (domain.methods.contains(t[n].tasks[id].head)) {
-          u.push_back(id);
+          compound.push_back(id);
         }
         else {
           std::string message = "Invalid task ";
@@ -176,6 +194,9 @@ int expansion(pTree& t,
         }
       }
     } 
+    if (!compound.empty()) {
+      u.push_back(*std::min_element(compound.begin(),compound.end()));
+    }
     if (u.empty()) {
       t[n].deadend = true;
       return n;
