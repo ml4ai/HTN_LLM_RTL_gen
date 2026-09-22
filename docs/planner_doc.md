@@ -1,10 +1,20 @@
-# Algorithmic Provenance of the MCTS HTN Planner
+# The MCTS HTN Planner
 
-This note complements the top-level `README.md`. It records **which algorithms
-the code in `lib/` implements** and **where each piece comes from in the
-planning and MCTS literature**, with pointers to the exact code. It covers the
-MCTS HTN planner (`lib/cpphop/cppMCTShop.h`) and the shared data structures it
-depends on (`lib/typedefs.h`, `lib/kb.h`, `lib/cpphop/loader.h`).
+The working document for this planner. It complements the top-level
+`README.md`, which covers building and running it.
+
+* **§1–§5 — provenance.** Which algorithms the code in `lib/` implements and
+  where each piece comes from in the planning and MCTS literature, with
+  pointers to the code. §4 is the running list of defects, fixed and open.
+* **§6 — efficiency.** Where the time actually goes, measured.
+* **§7 — causal links and timelines.** Whether POCL or timeline-based planning
+  resolves the method-precondition tension of §2.3.
+* **§8 — the to-do list.** Everything outstanding, in the order it makes sense
+  to do it.
+
+§1–§5 cover the MCTS HTN planner (`lib/cpphop/cppMCTShop.h`) and the shared
+data structures it depends on (`lib/typedefs.h`, `lib/kb.h`,
+`lib/cpphop/loader.h`).
 
 Line numbers refer to the `main` branch at commit `9052868`, which predates the
 trim of this repository down to the HTN planner. Files and sections describing
@@ -793,6 +803,520 @@ action precondition on the subtask that actually depends on it.
 
 ---
 
+---
+
+## 6. Efficiency: where the time goes
+
+A measured answer to two questions: where does the time actually go, and was Z3
+the right choice for the knowledge base. Everything below is from profiling and
+instrumenting the current `main`, not from reading the code and guessing.
+
+**The short version.** The planner spends **96–97% of its runtime inside Z3**,
+and **about 2% of that Z3 time is spent solving anything**. The rest is
+building a fresh solver context, interning symbols, and re-parsing the entire
+state as SMT-LIB text — once per query. The queries themselves are trivial:
+ground-fact lookups and small conjunctions over a dozen objects. Z3 was the
+wrong tool for this, and the cost is not subtle.
+
+Memory, by contrast, is fine — peak RSS is 35 MB on the heaviest shipped
+domain. Do not spend effort there yet.
+
+---
+
+### 6.1 Evidence
+
+#### 6.1.1 Profile (macOS `sample`, transport, self-time)
+
+| | share of self-time |
+|---|---|
+| `libz3` | **64.8%** |
+| `libsystem_malloc` | 19.0% |
+| `libsystem_platform` (memcpy/memset/strcmp) | 9.2% |
+| everything else | ~7% |
+
+The planner's own code does not appear above the sampling threshold.
+
+Breaking the Z3 leaves down by what they are doing:
+
+| activity | share |
+|---|---|
+| allocation | 23.2% |
+| `ast_manager` construction (a fresh context per query) | 14.9% |
+| symbol interning / string hashing | 13.0% |
+| rewriting / simplification | 7.9% |
+| SMT-LIB **parsing** | 6.8% |
+| **actual solving** (`smt::context`, `check_sat`) | **2.0%** |
+| other | 32.2% |
+
+#### 6.1.2 Instrumented counts
+
+Rollouts only, from the initial state:
+
+| | transport (3 rollouts, 8028 ms) | d18 (5 rollouts, 760 ms) |
+|---|---|---|
+| time in Z3 | **7688 ms (95.8%)** | **737 ms (97.0%)** |
+| Z3 contexts created | 3590 | 186 |
+| `ask(expr, params)` | 608 calls, 3.70 ms each | 139 calls, 4.10 ms each |
+| `ask_any` (method-precondition checks) | 2979 calls, 1.82 ms each | 47 calls |
+| `update_state` (builds the SMT text) | 379 calls, **8 ms total** | 102 calls, 3 ms |
+| SMT text re-parsed | 1.1 MB | 0.5 MB |
+
+Note `update_state` is *not* the problem — building the string is cheap. The
+problem is that Z3 re-parses it from scratch on every query.
+
+#### 6.1.3 The same query, two engines
+
+"Enumerate bindings of `?l1` such that `(at package_0 ?l1)`", against the
+transport initial state — 42 ground facts, the `at` relation holding 3 tuples:
+
+| engine | per query |
+|---|---|
+| Z3, as the planner does it today | **3.27 ms** |
+| a direct scan of the indexed relation | **0.000012 ms** |
+
+That ratio is ~260,000×, but it is the ratio for *one step in isolation*. The
+honest end-to-end bound is Amdahl's: Z3 is 96% of runtime, so removing it
+entirely caps the whole-planner speedup at roughly **25×**.
+
+#### 6.1.4 Two things that measurement ruled out
+
+* **Memory is not a problem.** Peak RSS 35 MB for transport at `-T 30000`.
+  `pNode` is 336 bytes shallow, `KnowledgeBase` 128; the whole transport state
+  is 42 ground facts, about 1.3 KB of strings. There is real redundancy (§6.3)
+  but it is not currently costing anything worth chasing.
+* **The build is unoptimized and it does not matter — yet.** A plain
+  `cmake ..`, exactly as the README instructs, compiles with
+  `-std=gnu++20 -arch arm64` and **no `-O` flag**, because the project never
+  sets `CMAKE_BUILD_TYPE`. Measured cost today: *none* — d18 rollouts take
+  150 ms either way, because the work is inside a prebuilt `libz3`. Fix it, but
+  expect the payoff only after step 3 moves work back into our own code.
+
+---
+
+### 6.2 Was Z3 the right call?
+
+For the job as written, no — but the instinct behind it was sound.
+
+Z3 buys genuine things: a declarative encoding of the closed-world assumption,
+correct handling of quantifiers and equality, and all-models enumeration for
+free. Writing that by hand is where bugs live. The problem is not that Z3 is
+slow; it is that the code **uses it in the most expensive way available**:
+
+1. Every query constructs a new `z3::context` — a complete AST manager.
+2. The whole state is serialized to SMT-LIB text and **re-parsed per query**.
+3. Each predicate is asserted as a universally quantified biconditional, so
+   every query drags in quantifier machinery (`smt::mk_mam` shows in the
+   profile) to answer what is really a table lookup.
+4. Bindings are enumerated with blocking clauses — a solver call per model —
+   even where the parameters are already pinned to values.
+
+The queries being asked do not need a theorem prover. They are conjunctive
+queries with negation and equality over a finite, fully known set of ground
+facts: a relational/Datalog workload. That is also where the lifted-planning
+literature has landed — Corrêa, Pommerening, Helmert & Francès,
+*Lifted Successor Generation using Query Optimization Techniques*
+([ICAPS 2020](https://icaps20.icaps-conference.org/paper88.html)) treats
+precondition matching in a lifted planner explicitly as conjunctive query
+evaluation and uses join-ordering techniques from databases.
+
+**One structural note.** `loader.h` parses HDDL into a `Sentence` AST and then
+flattens it to an SMT-LIB *string* (`sentence_to_SMT`); `Preconds` is a
+`std::string`. The AST is thrown away. Any direct evaluator needs it kept, so
+that is the hinge the whole plan turns on.
+
+---
+
+### 6.3 Where the wins are
+
+Sequenced in §8. Each is independently verifiable, and the risky one comes
+after its safety net.
+
+**Benchmark harness.**
+
+A script that runs every shipped domain/problem pair at a fixed seed and budget
+and reports wall time, mean rollout time, plan length and final-state facts.
+Nothing after this is verifiable without it. Every later step is judged on: no
+change in plans, measurable change in time.
+
+*The numbers in §6.1 came from throwaway probes in a scratch directory; they
+should be a committed script.*
+
+**Delete dead weight.**
+
+`boost::json` is entirely unused: six `tag_invoke` overloads in `typedefs.h`
+serialize `Grounded_Task`, `TaskGraph`, `TaskNode` and `TaskTree`, and nothing
+calls `value_from` or `value_to` anywhere. They served the plan-recognizer JSON
+output, removed earlier. Deleting them drops a Boost component from three
+`CMakeLists.txt` files.
+
+Also set `CMAKE_BUILD_TYPE` to `Release` when the caller does not specify
+(§6.1.4) — no measurable gain today, but it stops being free to ignore after
+step 3.
+
+**Replace Z3 on the hot path — the whole game.**
+
+Expected: most of the 96%. Do it in three moves, each shippable.
+
+**3a. Keep the AST.** Have the loader retain the parsed `Sentence` alongside
+the SMT string rather than discarding it. Pure addition, no behaviour change,
+and it unblocks everything else.
+
+**3b. Direct evaluator with Z3 as fallback.** Index ground facts as relations —
+one table per predicate, keyed for the access patterns actually used. Write an
+evaluator over the retained AST covering the fragment the shipped domains
+need: conjunction, negation, equality/inequality, and binding enumeration for
+free variables. Anything outside that fragment (nested quantifiers, `imply`)
+falls through to the existing Z3 path.
+
+The de-risking move: during a transition period, run **both** engines and
+assert they agree, behind a build flag. That converts "did I re-implement the
+closed-world semantics correctly" from a hope into a test, over whatever
+domains are exercised. Given that the SMT encoding *is* the current definition
+of correctness, differential testing is the only cheap way to be sure.
+
+**3c. Retire the SMT path** once the evaluator has covered the shipped domains
+and the RTL domains under differential testing, and `smt_state` with it.
+
+**A cheaper alternative if step 3b looks too big:** keep Z3 but stop rebuilding
+the world per query — one persistent context, expressions built through the C++
+API instead of text, `push`/`pop` for the per-query part. That alone removes
+the `ast_manager` construction, the parsing, and most of the interning, so
+perhaps 2–4×. It is a fallback, not the destination: it leaves the quantified
+encoding and the per-model solver calls in place.
+
+**Intern symbols.**
+
+Ground facts are stored as strings like `"(at package_0 city_loc_1)"` and
+**re-parsed constantly** — `parse_predicate` splits them on every `tell` and on
+every fact in every `update_state`. Intern predicate and object names to
+integers once at load, and represent a fact as a small integer tuple. This
+removes the string churn (the 9.2% in `memcpy`/`strcmp`), shrinks the state,
+and makes relation indexing natural. Largely pointless before step 3, since Z3
+wants text anyway.
+
+**Stop copying what does not change.**
+
+Every `KnowledgeBase` — and there is one per search node — carries its own copy
+of the predicate schema and the object map, which are fixed for the whole
+problem, plus a `smt_state` string of 3–5 KB. Share the immutable parts through
+a pointer to one domain-level context; `smt_state` disappears with step 3c.
+
+**Kill the deep copies in the hot path.**
+
+Now worth doing, and not before — at present they are noise next to Z3.
+
+* `simulation` takes `KnowledgeBase state` and `TaskGraph tasks` **by value**
+  and recurses, so each level deep-copies both.
+* `MethodDef::apply` and `MethodDef::apply_binding` take `TaskGraph tasks` by
+  value.
+* `simulation` does `auto task_methods = domain.methods[...]` to shuffle a
+  copy of the method vector — shuffle an index permutation instead.
+* `get_facts()`, `get_parameters()`, `get_effects()`, `get_subtasks()`,
+  `get_orderings()` all return containers by value; several are called per
+  node. Return `const&`.
+* Longer term: a trail-based apply/undo state for rollouts instead of
+  copy-per-node.
+
+**Revisit the domains.**
+
+Independent of all the above and possibly the largest single lever, because it
+attacks the size of the search space rather than the cost per node.
+`transport_domain.hddl` contains the recursive `goto` pattern that Godet et al.
+show causes an exponential blow-up of redundant decompositions — see §8.7.
+
+---
+
+### 6.4 What to expect
+
+| work | expected | confidence |
+|---|---|---|
+| dead weight | 0× (hygiene) | certain |
+| replace Z3 | up to ~25× | high; bounded by measurement, not estimate |
+| intern symbols | small alone; enables the rest | medium |
+| share immutable state | memory, little time | medium |
+| deep copies | only visible after Z3 is gone | medium |
+| domain re-encoding | potentially exponential | unknown until tried |
+
+The single number worth keeping in mind: **2% of the time Z3 is given is spent
+solving**. Everything else it does here is setup for a question that did not
+need it.
+
+---
+
+## 7. Causal links and timelines
+
+§2.3 leaves a loose end: under HDDL's compiled semantics a method precondition
+in a partially ordered domain only has to have held at *some* point before the
+method's subtasks run, and §5.5 found no resolution in the HTN literature. The
+question is whether partial-order causal-link (POCL) planning or timeline-based
+planning supplies the missing mechanism.
+
+**They do — and not by coincidence. That is precisely the problem those
+formalisms were built to solve.** The catch is paradigmatic, not technical.
+
+### 7.1 What a causal link actually is
+
+The tension exists because an ordering constraint is the only tool the HTN
+formalism has here, and *"a happens before b"* cannot express *"p is still true
+when b runs"*. POCL planning has a second tool. A causal link `α → β` records
+not just that `α` produces the fluent `β` needs, but that the fluent must
+**survive the interval between them**. Anything that would falsify it in that
+window is a *threat*, and must be ordered out of the way.
+
+FAPE (Bit-Monnot, Ghallab, Ingrand & Smith 2020) states the mechanism directly:
+
+> "A causal link is created by inserting an additional persistence assertion
+> `[end(β), start(α)] sv = v`, which **prevents any change on the value of the
+> state variable `sv` from the end of β until the start of α**."
+
+That is the exact guarantee HDDL's compilation cannot give. The interleaving
+that breaks a compiled method precondition — some unrelated task running between
+the check and the subtasks it guards — is, in POCL terms, simply a threat to a
+causal link, and threat resolution is a solved problem: demote it, promote it,
+or separate the variables.
+
+### 7.2 Timelines generalise it to intervals
+
+Timeline- and chronicle-based planning goes further. Conditions are asserted
+over explicit temporal intervals against a constraint network, so "holds
+throughout" is expressible directly rather than reconstructed from orderings.
+FAPE treats a conflict between two assertions on the same state variable as a
+flaw of the same family as a POCL threat — it describes conflicting assertions
+as generalising "the notions of open-goals and threats in plan-space planning"
+— and resolves them with separation constraints over temporal *and* object
+variables.
+
+This matters for the specific question because it is what HDDL 2.1's
+`at start` / `at end` / `overall` qualifiers (§5.5) would need underneath them.
+`overall` is a persistence assertion. A formalism with timelines gets that
+qualifier essentially for free; one with only ordering constraints has to
+invent it.
+
+### 7.3 So does FAPE "solve" the tension?
+
+It dissolves it rather than solving it. FAPE has no HDDL-style method
+preconditions to be ambiguous about: a task refinement carries assertions with
+explicit temporal qualification, and the constraint network enforces them. You
+say when the condition must hold, and it holds then.
+
+The honest reading is that **the tension in §2.3 is an artifact of a formalism
+that cannot express interval conditions**, not a deep open problem. The
+literature did not resolve it for HTN because the formalisms that needed it had
+already moved to representations where it does not arise. That also explains the
+shape of HDDL 2.1's proposal: it is importing interval qualifiers into HDDL.
+
+A second, unrelated FAPE mechanism is worth noting because it comes up in §8:
+FAPE distinguishes **task-dependent** actions, which may only be introduced by
+decomposition, from **task-independent** ones, which may also be inserted
+freely. That is a lever on redundant decompositions, not on precondition
+timing, and it is the idea Godet et al. adapt.
+
+### 7.4 What this planner could actually take
+
+Adopting POCL or timelines wholesale would mean replacing the planner. This is
+a **progression** planner: it searches forward through states, and its node
+values come from rollouts over the current state. Causal links and timelines
+are plan-space and constraint-based concepts; a planner built on them refines a
+partial plan rather than advancing a state. That is a different system, not a
+patch — and it would give up the thing progression search buys, which is having
+the state in hand for the rollouts MCTS is steering by.
+
+There is, however, a cheap adaptation that borrows the *idea* without the
+paradigm. Call it a protected-condition set:
+
+* when a synthesised method-precondition action fires, register the literals it
+  checked as **protected**;
+* keep them protected until every subtask of that method has been applied —
+  `pNode::addedTIDs` already records exactly that set;
+* make any action inapplicable if its delete effects would falsify a currently
+  protected literal.
+
+That is POCL threat-checking transposed into progression search, and it yields
+the `overall` reading of a method precondition at roughly the cost of a set
+intersection per action application.
+
+Two caveats, both important:
+
+1. **It is strictly stronger than HDDL.** It rejects plans that HDDL's compiled
+   semantics accepts. That is the point — it is the guarantee a domain author
+   usually wanted — but it means the planner would no longer be HDDL-conformant
+   on partially ordered domains. It should be opt-in, per domain or per flag,
+   not silent.
+2. **It is a commitment, so it can prune solutions.** Protecting a literal
+   forbids orderings that might have been fine because the literal got
+   re-established. A full POCL planner backtracks over threat resolution;
+   protection-by-pruning does not.
+
+Neither caveat is a reason to avoid it, but both are reasons not to make it the
+default without measuring. It is §8.8.
+
+---
+
+## 8. To do
+
+One list, in the order it makes sense to work through it. The rule behind the
+ordering: make the thing measurable, then make it fast, then change what it
+means. Performance work comes before semantics work not because it matters more
+but because every semantic change has to be evaluated by running the planner,
+and right now a single rollout on `transport` costs three seconds.
+
+§8.1–§8.6 come from §6. §8.7–§8.9 are open questions from §4, §5 and §7.
+
+---
+
+### 8.1 Benchmark harness *(prerequisite)*
+
+A committed script that runs every shipped domain/problem pair at fixed seed
+and budget and reports wall time, mean rollout time, plan length and final
+state. Nothing below is verifiable without it, and the numbers in §6.1 came
+from throwaway probes that should not have been throwaway.
+
+**Depends on:** nothing. **Risk:** none.
+
+### 8.2 Delete dead weight
+
+`boost::json` is unused — six `tag_invoke` overloads in `typedefs.h`, no
+callers of `value_from`/`value_to` anywhere. Drops a Boost component from three
+`CMakeLists.txt`. Also set `CMAKE_BUILD_TYPE` to `Release` when the caller does
+not specify: today that is worth nothing measurable (§6.1.4), but it stops
+being free to ignore after §8.4.
+
+**Depends on:** nothing. **Risk:** none. **Payoff:** hygiene.
+
+### 8.3 Keep the parsed AST
+
+Have the loader retain the `Sentence` AST alongside the SMT string instead of
+discarding it in `sentence_to_SMT`. Pure addition, no behaviour change. This is
+the hinge: nothing in §8.4 is possible without it.
+
+**Depends on:** §8.1. **Risk:** none. **Payoff:** none directly.
+
+### 8.4 Replace Z3 on the hot path
+
+The whole game — 96% of runtime, of which 2% is solving (§6.1). Index ground
+facts as relations; evaluate the retained AST directly over them for the
+fragment the domains actually use — conjunction, negation, equality, binding
+enumeration — and fall through to Z3 for anything else. Run both engines and
+assert agreement behind a build flag during the transition: the SMT encoding
+*is* the current definition of correctness, so differential testing is the
+cheap way to know the closed-world semantics survived. Retire the SMT path and
+`smt_state` once the shipped and RTL domains pass.
+
+Fallback if this looks too big: keep Z3 but stop rebuilding the world per query
+— one persistent context, expressions built through the C++ API rather than
+text, `push`/`pop`. Perhaps 2–4×, and it leaves the quantified encoding in
+place.
+
+**Depends on:** §8.3. **Risk:** high — mitigated by differential testing.
+**Payoff:** up to ~25×.
+
+### 8.5 Intern symbols
+
+Facts are stored as strings and re-parsed constantly — `parse_predicate` splits
+them on every `tell` and on every fact in every `update_state`. Intern
+predicates and objects to integers at load; represent a fact as an integer
+tuple. Largely pointless before §8.4, because Z3 wants text anyway.
+
+**Depends on:** §8.4. **Risk:** medium. **Payoff:** removes the string churn.
+
+### 8.6 Stop copying, then stop deep-copying
+
+Two related things, both invisible until §8.4 lands:
+
+* Every `KnowledgeBase` carries its own copy of the predicate schema and object
+  map, which are fixed for the whole problem, plus a 3–5 KB `smt_state`. Share
+  the immutable parts through one domain-level context; `smt_state` disappears
+  with item 4.
+* `simulation` takes `KnowledgeBase` and `TaskGraph` **by value** and recurses;
+  `MethodDef::apply` and `apply_binding` take `TaskGraph` by value;
+  `simulation` copies the whole method vector just to shuffle it; `get_facts`,
+  `get_parameters`, `get_effects`, `get_subtasks`, `get_orderings` all return
+  containers by value. Longer term, a trail-based apply/undo state for rollouts
+  instead of copy-per-node.
+
+**Depends on:** §8.4. **Risk:** low. **Payoff:** memory, and time once Z3 is gone.
+
+### 8.7 Re-encode the recursive `goto` pattern out of the domains
+
+Independent of everything above, needs no planner code, and is plausibly the
+largest single lever because it attacks the *size* of the search space rather
+than the cost per node.
+
+**Paper.** Godet, R., Bit-Monnot, A., & Lesire-Cabaniols, C. (2024). *Redundant
+Decompositions in PO HTN Domains: Goto Considered Harmful.* 7th ICAPS Workshop
+on Hierarchical Planning, 36–44.
+
+It is a **domain modelling** result, not a planner algorithm and not about
+method preconditions. It identifies a pattern common in partially ordered HTN
+domains that makes the number of decompositions explode: a recursive "get me to
+X" compound task, several of which sit unordered relative to each other, each
+able to contribute the same movement actions — so one plan is reachable through
+exponentially many decompositions.
+
+**`transport_domain.hddl` has exactly this pattern.** `get_to` is their `goto`,
+with the same three methods — one hop (`m_direct`), recurse (`m_via`),
+already-there (`m_noop`) — and `m_deliver_ordering_0` puts *two* unordered
+`get_to` subtasks in one network. The default domain is the pathology.
+
+They propose two re-encodings, both in ordinary HTN with no planner support:
+a **mutex** model, and a **(partial) task insertion** model that mimics FAPE's
+task-dependent/task-independent split (§7.3) by adding a recursive `free-move`
+compound task. They report task insertion "clearly dominates" for native PO HTN
+planners, and also that different planners favour different encodings — so
+which one wins here is empirical.
+
+Worth understanding before writing many RTL domains, since this is the pattern
+most likely to recur.
+
+**Depends on:** §8.1, to tell whether it helped. **Risk:** none to the code.
+
+*Attribution note: this is sometimes mis-cited to Alford, Bercher & Aha. That
+is the 2015 task-insertion paper Godet et al. cite as the source of the
+mechanism they mimic; Alford and Bercher organise the workshop.*
+
+### 8.8 Decide what a method precondition should mean here
+
+§7.4 sets out a protected-condition set: register the literals a synthesised
+precondition action checked, keep them protected until the method's subtasks
+have all been applied, and make any action that would falsify one inapplicable.
+POCL threat-checking transposed into progression search, at about the cost of a
+set intersection per action application.
+
+This is a **semantics decision, not an optimisation**. It is strictly stronger
+than HDDL — it rejects plans HDDL accepts — so it must be opt-in, and it prunes
+by commitment rather than backtracking, so it can lose solutions a full POCL
+planner would find. Measure before defaulting it on.
+
+**Depends on:** §8.1 and ideally §8.4, since evaluating it means running the planner
+a lot. **Risk:** medium, and it changes results.
+
+### 8.9 Algorithm 3 (systematic progression)
+
+`expansion` implements Algorithm 2 (§2.3.2). Algorithm 3 would make the search
+fully systematic; §5 records the algorithm, what it would take, and why to be
+careful — it postpones the state update, which is what the rollouts and score
+functions read. Two of the four shipped domains also break the assumptions its
+systematicity theorem needs (§5.4), so it would be sound and complete but not
+fully systematic on them.
+
+Do §8.7 first. Both attack redundant decompositions, and the domain
+re-encoding is free where this is not.
+
+**Depends on:** §8.1 and §8.7. **Risk:** medium. **Payoff:** unknown; measure.
+
+---
+
+### Not on this list, deliberately
+
+* **Memory work.** Peak RSS is 35 MB (§6.1.4). §8.6 tidies real redundancy,
+  but memory is not a problem and should not be treated as one until a domain
+  makes it one.
+* **Goal handling.** The planner ignores `:goal` by design, per standard HTN
+  semantics (§2.1). Left alone deliberately.
+* **Adopting POCL or timelines wholesale.** §7.4 — that is a different planner,
+  and it would give up the state-in-hand that the rollouts depend on.
+
+---
 
 ## References
 
@@ -801,21 +1325,23 @@ action precondition on the subtask that actually depends on it.
 - Auer, P., Cesa-Bianchi, N., & Fischer, P. (2002). Finite-time analysis of the multiarmed bandit problem. *Machine Learning*, 47, 235–256.
 - Behnke, G., Höller, D., & Biundo, S. (2017). This is a solution! (… but is it though?) – Verifying solutions of hierarchical planning problems. *ICAPS 2017*.
 - Bercher, P., Alford, R., & Höller, D. (2019). A survey on hierarchical planning – One abstract idea, many concrete realizations. *IJCAI 2019*.
+- Bit-Monnot, A., Ghallab, M., Ingrand, F., & Smith, D. E. (2020). FAPE: a constraint-based planner for generative and hierarchical temporal planning. arXiv:2010.13121. https://arxiv.org/abs/2010.13121
 - Brenner, M., & Nebel, B. (2009). Continual planning and acting in dynamic multiagent environments. *JAAMAS*, 19(3), 297–331.
 - Browne, C. B., et al. (2012). A survey of Monte Carlo tree search methods. *IEEE TCIAIG*, 4(1), 1–43.
 - Cazenave, T., & Jouandeau, N. (2007). On the parallelization of UCT. *Computer Games Workshop 2007*.
 - Chaslot, G. M. J.-B., Winands, M. H. M., & van den Herik, H. J. (2008). Parallel Monte-Carlo tree search. *CG 2008*.
 - Chaslot, G. M. J.-B., Winands, M. H. M., van den Herik, H. J., Uiterwijk, J. W. H. M., & Bouzy, B. (2008). Progressive strategies for Monte-Carlo tree search. *New Mathematics and Natural Computation*, 4(3), 343–357.
 - Clark, K. L. (1978). Negation as failure. In *Logic and Data Bases*, 293–322.
+- Corrêa, A. B., Pommerening, F., Helmert, M., & Francès, G. (2020). Lifted successor generation using query optimization techniques. *ICAPS 2020*, 80–89. https://icaps20.icaps-conference.org/paper88.html
 - Coulom, R. (2006). Efficient selectivity and backup operators in Monte-Carlo tree search. *CG 2006*.
 - de Moura, L., & Bjørner, N. (2008). Z3: An efficient SMT solver. *TACAS 2008*.
 - Erol, K., Hendler, J., & Nau, D. S. (1994). HTN planning: Complexity and expressivity. *AAAI 1994*.
 - Geier, T., & Bercher, P. (2011). On the decidability of HTN planning with task insertion. *IJCAI 2011*.
 - Ghallab, M., Nau, D., & Traverso, P. (2016). *Automated Planning and Acting*. Cambridge University Press.
+- Godet, R., Bit-Monnot, A., & Lesire-Cabaniols, C. (2024). Redundant decompositions in PO HTN domains: goto considered harmful. *7th ICAPS Workshop on Hierarchical Planning (HPlan 2024)*, 36–44. https://icaps24.icaps-conference.org/program/workshops/hplan/HPlanProceedings-2024.pdf
 - Gomes, C. P., Selman, B., & Kautz, H. (1998). Boosting combinatorial search through randomization. *AAAI 1998*.
 - Gregory, P., Long, D., Fox, M., & Beck, J. C. (2012). Planning modulo theories: Extending the planning paradigm. *ICAPS 2012*. https://ojs.aaai.org/index.php/ICAPS/article/view/13505
 - Höller, D., & Bercher, P. (2022). Compiling HTN plan verification problems into HTN planning problems. *ICAPS 2022*. https://bercher.net/publications/2022/Hoeller2022VerificationViaCompilation.pdf
-- Pellier, D., Fiorino, H., Grand, M., Albore, A., & Bailon-Ruiz, R. (2023). HDDL 2.1: Towards defining a formalism and a semantics for temporal HTN planning. arXiv:2306.07353. https://arxiv.org/abs/2306.07353
 - Höller, D., Behnke, G., Bercher, P., Biundo, S., Fiorino, H., Pellier, D., & Alford, R. (2020a). HDDL: An extension to PDDL for expressing hierarchical planning problems. *AAAI 2020*. https://staff.fnwi.uva.nl/g.behnke/papers/Hoeller2020HDDL.pdf
 - Höller, D., Bercher, P., Behnke, G., & Biundo, S. (2020b). HTN planning as heuristic progression search. *JAIR*, 67, 835–880. https://jair.org/index.php/jair/article/view/11282
 - Keller, T., & Helmert, M. (2013). Trial-based heuristic tree search for finite horizon MDPs. *ICAPS 2013*.
@@ -823,13 +1349,13 @@ action precondition on the subtask that actually depends on it.
 - Lahiri, S. K., Nieuwenhuis, R., & Oliveras, A. (2006). SMT techniques for fast predicate abstraction. *CAV 2006*.
 - McDermott, D., et al. (1998). PDDL – The Planning Domain Definition Language. Tech. rep. CVC TR-98-003, Yale.
 - Nau, D., Au, T.-C., Ilghami, O., Kuter, U., Murdock, J. W., Wu, D., & Yaman, F. (2003). SHOP2: An HTN planning system. *JAIR*, 20, 379–404. https://arxiv.org/abs/1106.4869
-- Patra, S., Mason, J., Kumar, A., Ghallab, M., Traverso, P., & Nau, D. (2020). Integrating acting, planning, and learning in hierarchical operational models. *ICAPS 2020*. https://ojs.aaai.org/index.php/ICAPS/article/view/6743
 - Patra, S., Mason, J., Ghallab, M., Nau, D., & Traverso, P. (2021). Deliberative acting, planning and learning with hierarchical operational models. *Artificial Intelligence*, 299. https://arxiv.org/abs/2010.01909
+- Patra, S., Mason, J., Kumar, A., Ghallab, M., Traverso, P., & Nau, D. (2020). Integrating acting, planning, and learning in hierarchical operational models. *ICAPS 2020*. https://ojs.aaai.org/index.php/ICAPS/article/view/6743
 - Pednault, E. P. D. (1989). ADL: Exploring the middle ground between STRIPS and the situation calculus. *KR 1989*.
+- Pellier, D., Fiorino, H., Grand, M., Albore, A., & Bailon-Ruiz, R. (2023). HDDL 2.1: Towards defining a formalism and a semantics for temporal HTN planning. arXiv:2306.07353. https://arxiv.org/abs/2306.07353
 - Reiter, R. (1978). On closed world data bases. In *Logic and Data Bases*, 55–76.
+Related but not cited above: Shao, T., Zhang, H., Cheng, K., Zhang, K., & Bie, L. (2021). The hierarchical task network planning method based on Monte Carlo tree search. *Knowledge-Based Systems*, 107067.
 - Schadd, M. P. D., Winands, M. H. M., van den Herik, H. J., Chaslot, G. M. J.-B., & Uiterwijk, J. W. H. M. (2008). Single-player Monte-Carlo tree search. *CG 2008*.
 - Sohrabi, S., Baier, J. A., & McIlraith, S. A. (2009). HTN planning with preferences. *IJCAI 2009*.
-- Winands, M. H. M., Björnsson, Y., & Saito, J.-T. (2008). Monte-Carlo tree search solver. *CG 2008*.
 - Wichlacz, J., Höller, D., Torralba, Á., & Hoffmann, J. (2020). Applying Monte-Carlo tree search in HTN planning. *SoCS 2020*. https://ojs.aaai.org/index.php/SOCS/article/view/18538 (code: https://github.com/minecraft-saar/MCTS-JSHOP)
-
-Related but not cited above: Shao, T., Zhang, H., Cheng, K., Zhang, K., & Bie, L. (2021). The hierarchical task network planning method based on Monte Carlo tree search. *Knowledge-Based Systems*, 107067.
+- Winands, M. H. M., Björnsson, Y., & Saito, J.-T. (2008). Monte-Carlo tree search solver. *CG 2008*.

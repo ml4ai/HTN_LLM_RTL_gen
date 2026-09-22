@@ -66,7 +66,7 @@ It uses a task decomposition method similar to
 instead of using Depth-First Search, it runs a time-limited MCTS per each
 planning decision in order to estimate the single best grounded plan according
 to a user-defined score function. See
-[docs/PLANNER\_PROVENANCE.md](docs/PLANNER_PROVENANCE.md) for a detailed
+[docs/planner\_doc.md](docs/planner_doc.md) for a detailed
 account of which algorithms the code implements and where each piece comes from
 in the planning and MCTS literature.
 
@@ -133,7 +133,7 @@ leans on this: rollouts go from 14 ms to 17 ms on `simple_travel` and from
 89 ms to 155 ms on `d18`, but from 166 ms to about 3 s on `transport`. Writing
 methods so their free variables come from task parameters or `:constraints`
 avoids it almost entirely. See
-[docs/PLANNER\_PROVENANCE.md](docs/PLANNER_PROVENANCE.md) §2.3.1.
+[docs/planner\_doc.md](docs/planner_doc.md) §2.3.1.
 
 If the budget is too small to evaluate even one option, the planner says so and
 exits non-zero rather than reporting an empty plan.
