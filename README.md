@@ -120,23 +120,15 @@ must be predefined in a similar way to the "delivery\_one" function mentioned ab
 
 `--time_limit` (or `-T`) is the budget for **each planning decision**, and MCTS
 always spends all of it, so the total run is roughly the budget times the number
-of decisions. The default of 20000 ms is the smallest round value that solves
-the transport domain above, and at 29 decisions that is about 17 minutes of
-wall clock. Smaller domains want a much lower value: `simple_travel` solves at
-`-T 500`, and passing a budget larger than a domain needs only makes the run
-longer, never better.
+of decisions. At the default of 1000 ms the transport domain above takes about
+30 seconds over its 29 decisions. Passing a budget larger than a domain needs
+only makes the run longer, never better: `simple_travel` is comfortable at
+`-T 500`.
 
-Transport needs that much because of how HDDL method-precondition timing
-interacts with its domain. Under the older SHOP timing a method precondition
-also served to *bind* the method's free variables — `(at ?p ?l1)` is what
-determines `?l1`. Under HDDL timing the precondition is only a test, so every
-type-consistent binding becomes a branch and the synthesised check rejects the
-bad ones afterwards. How much that costs depends entirely on how much a domain
-leans on this: rollouts go from 14 ms to 17 ms on `simple_travel` and from
-89 ms to 155 ms on `d18`, but from 166 ms to about 3 s on `transport`. Writing
-methods so their free variables come from task parameters or `:constraints`
-avoids it almost entirely. See
-[docs/planner\_doc.md](docs/planner_doc.md) §2.3.1.
+Preconditions are evaluated directly against an index of the ground facts
+rather than by a solver, which is what makes those numbers what they are — the
+same run needed `-T 20000` and about 17 minutes before that change. See
+[docs/planner\_doc.md](docs/planner_doc.md) §6 for the measurements.
 
 If the budget is too small to evaluate even one option, the planner says so and
 exits non-zero rather than reporting an empty plan.

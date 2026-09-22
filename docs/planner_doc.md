@@ -1092,6 +1092,39 @@ Two caveats worth keeping in mind:
 
 ---
 
+### 6.6 After: the direct evaluator
+
+§8.4 replaced Z3 on the query path with a join over indexed relations
+(`lib/evaluator.h`). Median rollout time, same seeds and domains as §6.1:
+
+| Domain | Z3 | direct | |
+|---|---|---|---|
+| `transport` | 2188.88 ms | **32.23 ms** | 68x |
+| `sar3` | 121.34 ms | **0.98 ms** | 124x |
+| `d18_gather` | 127.71 ms | **1.07 ms** | 119x |
+| `d18_p18` | 71.71 ms | **0.73 ms** | 98x |
+| `forall_test` | 19.85 ms | **0.06 ms** | 330x |
+| `atom_test` | 5.63 ms | **0.03 ms** | 188x |
+| `simple_travel` | 19.16 ms | **4.73 ms** | 4x |
+
+The §6.1.3 estimate was that removing Z3 caps the whole-planner speedup at
+about 25x, by Amdahl's law on its 96% share. Several domains beat that. The
+bound was not wrong; it was computed against a workload whose *shape* the change
+also altered. Answering a query in microseconds rather than milliseconds means a
+rollout explores its dead ends far more cheaply, so the planner does not merely
+do the same work faster — it reaches useful depth inside a budget that used to
+expire first.
+
+The practical consequence: `transport` solves at the default `-T 1000` in about
+30 seconds. It needed `-T 20000` and about 17 minutes before.
+
+`simple_travel` is the outlier at 4x, for a reason worth keeping in view: its
+rollouts are dominated by recursion through a `get_to`-style task structure
+rather than by query cost, so making queries nearly free does not help much.
+That is the §8.7 problem, not this one.
+
+---
+
 ## 7. Causal links and timelines
 
 §2.3 leaves a loose end: under HDDL's compiled semantics a method precondition
@@ -1282,24 +1315,47 @@ places to look first if something is wrong.
 **Depends on:** §8.1. **Risk:** none — pure addition; the benchmark reports no
 semantic change. **Payoff:** none directly.
 
-### 8.4 Replace Z3 on the hot path
+### 8.4 Replace Z3 on the hot path — **done**
 
-The whole game — 96% of runtime, of which 2% is solving (§6.1). Index ground
-facts as relations; evaluate the retained AST directly over them for the
-fragment the domains actually use — conjunction, negation, equality, binding
-enumeration — and fall through to Z3 for anything else. Run both engines and
-assert agreement behind a build flag during the transition: the SMT encoding
-*is* the current definition of correctness, so differential testing is the
-cheap way to know the closed-world semantics survived. Retire the SMT path and
-`smt_state` once the shipped and RTL domains pass.
+`lib/evaluator.h` answers preconditions by joining over the indexed relations
+`KnowledgeBase` now keeps beside its facts. It covers the fragment the domains
+use — atoms, `and`, `or`, `not`, equality, inequality, and binding enumeration
+— and returns nullopt for anything else, which sends the query down the
+existing Z3 path. Nothing lost, only speed gained, and only where the evaluator
+is sure. Both the precondition path (`ActionDef::apply`, `MethodDef::apply`)
+and the effect path (`apply_binding`: conditional effects and `forall` ranges)
+go through it. See §6.6 for what it bought and §6.2 for why it was the right
+shape.
 
-Fallback if this looks too big: keep Z3 but stop rebuilding the world per query
-— one persistent context, expressions built through the C++ API rather than
-text, `push`/`pop`. Perhaps 2–4×, and it leaves the quantified encoding in
-place.
+**Correctness was established by differential testing, not by inspection.**
+Building with `-DHTN_DIFFERENTIAL_EVAL` runs both engines on every query the
+direct path claims and throws unless they agree as sets. Every domain and the
+whole test suite were run that way.
 
-**Depends on:** §8.3. **Risk:** high — mitigated by differential testing.
-**Payoff:** up to ~25×.
+It found a real disagreement, and the bug was mine. When a method's subtask
+mentions a parameter the method does not bind, `MethodDef::apply_binding` falls
+back to using the parameter's *name* as its value, so a grounded task can carry
+`room` where an object belongs. The string path then emits `(= room room)`,
+which Z3 reads as a tautology and discards, leaving the variable free to
+enumerate. The evaluator had bound it to the literal `"room"` and found
+nothing. Reproducing Z3's reading fixed it — and the episode is the argument
+for the flag: nothing about that is visible from reading either engine alone.
+
+**This step changes results, and that is expected.** The two engines return the
+same *set* of bindings but in different orders, so the planner's shuffles land
+differently and it commits to different — equally valid — plans. `sar3` now
+routes a victim via `player_3` instead of `player_2`, same length, same score.
+The benchmark's semantic fields therefore moved, and its baseline was retaken.
+Set equality under the differential flag is the correctness claim; the
+fingerprint is not.
+
+**Still outstanding here.** The SMT path remains as the fallback, so `smt_state`
+is still built on every `update_state` even though nothing reads it for the
+shipped domains. Retiring it is real work — it is what `ask` consumes — and
+belongs with §8.5, which changes the representation anyway.
+
+**Depends on:** §8.3. **Risk:** was high; discharged by differential testing.
+**Payoff:** 68x–330x per rollout, and the default budget back to 1000 ms.
 
 ### 8.5 Intern symbols
 

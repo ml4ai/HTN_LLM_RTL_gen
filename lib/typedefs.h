@@ -9,6 +9,7 @@
 #include <iterator>
 #include "kb.h"
 #include "expr.h"
+#include "evaluator.h"
 #include <optional>
 #include "util.h"
 #include <boost/variant/recursive_wrapper.hpp>
@@ -207,7 +208,13 @@ class ActionDef {
             else {
               wc = e.condition;
             }
-            auto pass = new_kb.ask(wc,this->parameters);
+            Args wc_fixed;
+            for (int i = 0; i < args.size(); i++) {
+              wc_fixed.push_back({this->parameters[i].first,args[i].second});
+            }
+            auto pass = eval::solve_query(new_kb,e.condition_ast,wc,
+                                          this->parameters,wc_fixed,
+                                          "conditional effect");
             if (!pass.empty()) {
               auto pred = e.pred;
               std::string et = "("+pred.first;
@@ -228,6 +235,7 @@ class ActionDef {
           if (e.condition == "__NONE__") {
             Params params;
             std::string vt = "(and";
+            std::vector<expr::Ptr> vt_parts;
             for (auto const& [var,types] : faparams) {
               std::pair<std::string,std::string> arg;
               arg.first = var;
@@ -235,10 +243,14 @@ class ActionDef {
               params.push_back(arg);
               for (auto const& t : types) {
                 vt += " ("+t+" "+var+")";
+                vt_parts.push_back(expr::make_atom(t,{{var,true}}));
               }
             }
             vt += ")";
-            auto bindings = new_kb.ask(vt,params);
+            auto vt_ast = vt_parts.empty() ? nullptr
+                                           : expr::make_connective(expr::Kind::And,vt_parts);
+            auto bindings = eval::solve_query(new_kb,vt_ast,vt,params,Args{},
+                                              "forall range");
             for (auto &b : bindings) {
               auto pred = e.pred;
               std::string et = "("+pred.first;
@@ -263,6 +275,7 @@ class ActionDef {
           else {
             Params params;
             std::string vt = "(and";
+            std::vector<expr::Ptr> vt_parts;
             for (auto const& [var,types] : faparams) {
               std::pair<std::string,std::string> arg;
               arg.first = var;
@@ -270,9 +283,12 @@ class ActionDef {
               params.push_back(arg);
               for (auto const& t : types) {
                 vt += " ("+t+" "+var+")";
+                vt_parts.push_back(expr::make_atom(t,{{var,true}}));
               }
             }
             vt += ")";
+            auto vt_ast = vt_parts.empty() ? nullptr
+                                           : expr::make_connective(expr::Kind::And,vt_parts);
 
             //A quantified variable shadows an action parameter of the same
             //name, so drop those parameters and let the binding supply the
@@ -298,7 +314,8 @@ class ActionDef {
               condP.push_back(std::make_pair(var,"__Object__"));
             }
 
-            auto bindings = new_kb.ask(vt,params);
+            auto bindings = eval::solve_query(new_kb,vt_ast,vt,params,Args{},
+                                              "forall range");
             for (auto &b : bindings) {
               //Rebuilt per binding. Appending each binding onto a shared list
               //left the previous binding's equalities in place, so from the
@@ -318,7 +335,8 @@ class ActionDef {
               else {
                 wc = e.condition;
               }
-              auto pass = new_kb.ask(wc,condP);
+              auto pass = eval::solve_query(new_kb,e.condition_ast,wc,condP,b_args,
+                                            "forall conditional effect");
               if (!pass.empty()) {
                 auto pred = e.pred;
                 std::string et = "("+pred.first;
@@ -417,44 +435,34 @@ class ActionDef {
 
       std::vector<KnowledgeBase> new_states = {};
 
+      //What the `(= param value)` prefix of pc says, as an environment: the
+      //direct evaluator takes the pinned parameters as bindings rather than as
+      //conjuncts to re-derive.
+      Args fixed;
+      for (int i = 0; i < args.size(); i++) {
+        fixed.push_back({this->parameters[i].first,args[i].second});
+      }
+
       //A synthesised method-precondition check has no effects and arrives with
       //every parameter already pinned by args, so at most one binding can
       //satisfy pc and the resulting state is just the current one. Asking for
       //satisfiability skips enumerating that single model, which matters
       //because HDDL timing puts one of these in front of every method.
       if (this->artificial) {
-        if (pc == "__NONE__" || kb.ask_any(pc,this->parameters)) {
+        auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed);
+        bool holds = direct ? *direct
+                            : (pc == "__NONE__" || kb.ask_any(pc,this->parameters));
+        if (holds) {
           new_states.push_back(kb);
         }
         return std::make_pair(token,new_states);
       }
 
-      if (pc != "__NONE__") {
-        if (this->parameters.empty()) {
-          auto pass = kb.ask(pc);
-          if (pass) {
-            Args b = {};
-            new_states.push_back(this->apply_binding(kb,b));
-          }
-        }
-        else {
-          auto bindings = kb.ask(pc,this->parameters);
-          for (auto &b : bindings) {
-            new_states.push_back(this->apply_binding(kb,b)); 
-          }
-        }
-      }
-      else {
-        if (this->parameters.empty()) {
-          Args b = {};
-          new_states.push_back(this->apply_binding(kb,b));
-        }
-        else {
-          auto bindings = kb.ask("",this->parameters);
-          for (auto &b : bindings) {
-            new_states.push_back(this->apply_binding(kb,b));
-          }
-        }
+      auto bindings = eval::solve_query(kb,this->precondition_ast,pc,
+                                        this->parameters,fixed,
+                                        this->head.c_str());
+      for (auto &b : bindings) {
+        new_states.push_back(this->apply_binding(kb,b));
       }
       return std::make_pair(token,new_states);
     }
@@ -639,32 +647,17 @@ class MethodDef {
       std::vector<std::pair<std::vector<int>,TaskGraph>> groundings;
       std::vector<int> out = tasks[i].outgoing;
       tasks.remove_node(i);
-      if (pc != "__NONE__") {
-        if (this->parameters.empty()) {
-          auto pass = kb.ask(pc);
-          if (pass) {
-            Args b = {};
-            groundings.push_back(this->apply_binding(b,tasks,out));
-          }
-        }
-        else {
-          auto bindings = kb.ask(pc,this->parameters);
-          for (auto &b : bindings) {
-            groundings.push_back(this->apply_binding(b,tasks,out)); 
-          }
-        }
+      //As in ActionDef::apply: the `(= param value)` prefix becomes an
+      //environment rather than part of the formula.
+      Args fixed;
+      for (int i = 0; i < args.size(); i++) {
+        fixed.push_back({this->task.second[i].first,args[i].second});
       }
-      else {
-        if (this->parameters.empty()) {
-          Args b = {};
-          groundings.push_back(this->apply_binding(b,tasks,out));
-        }
-        else {
-          auto bindings = kb.ask("",this->parameters);
-          for (auto &b : bindings) {
-            groundings.push_back(this->apply_binding(b,tasks,out));
-          }
-        }
+      auto bindings = eval::solve_query(kb,this->precondition_ast,pc,
+                                        this->parameters,fixed,
+                                        this->head.c_str());
+      for (auto &b : bindings) {
+        groundings.push_back(this->apply_binding(b,tasks,out));
       }
       return groundings;
     }

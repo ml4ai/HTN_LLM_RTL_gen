@@ -131,6 +131,12 @@ class KnowledgeBase {
       std::unordered_map<std::string,std::string> objects;
       //header, (header arg1 arg2 ...), ... 
       std::unordered_map<std::string, std::unordered_set<std::string>> facts;
+      //The same facts with their arguments already split out: predicate head ->
+      //list of argument tuples. `facts` stays the source of truth; this is a
+      //derived index, rebuilt by update_state alongside smt_state and stale in
+      //exactly the same circumstances. It exists so a query can be answered by
+      //looking at tuples instead of by re-parsing strings.
+      std::unordered_map<std::string, std::vector<std::vector<std::string>>> relations;
       //belief state in smt form;
       std::string smt_state;
 
@@ -228,6 +234,15 @@ class KnowledgeBase {
       //automatically by default, but it can be called manually too (see tell()
       //for default settings).
       void update_state() {
+        //Derived index first, so it is never stale while smt_state is fresh.
+        this->relations.clear();
+        for (auto const& [head,fs] : this->facts) {
+          auto& rel = this->relations[head];
+          rel.reserve(fs.size());
+          for (auto const& f : fs) {
+            rel.push_back(this->parse_predicate(f).second);
+          }
+        }
         this->smt_state = "(declare-datatype __Object__ (";
         for (auto const& [o1,o2] : this->objects) {
           this->smt_state += o1+" ";
@@ -403,6 +418,27 @@ class KnowledgeBase {
       //prints smt_state string
       void print_smt_state() {
         std::cout << this->smt_state << std::endl;
+      }
+
+      //Argument tuples of one predicate, empty if it holds of nothing. Used by
+      //the direct evaluator; see evaluator.h.
+      std::vector<std::vector<std::string>> const& get_relation(std::string const& head) const {
+        static const std::vector<std::vector<std::string>> none;
+        auto it = this->relations.find(head);
+        return it == this->relations.end() ? none : it->second;
+      }
+
+      //Objects of a given type. Types are unary predicates asserted for every
+      //object and all of its ancestors (see initialize), so a type's extension
+      //is just its relation.
+      std::vector<std::string> type_extension(std::string const& type) const {
+        std::vector<std::string> objs;
+        for (auto const& tup : this->get_relation(type)) {
+          if (tup.size() == 1) {
+            objs.push_back(tup[0]);
+          }
+        }
+        return objs;
       }
 
       std::unordered_set<std::string> get_facts(std::string head) {
