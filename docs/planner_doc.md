@@ -9,8 +9,10 @@ The working document for this planner. It complements the top-level
 * **§6 — efficiency.** Where the time actually goes, measured.
 * **§7 — causal links and timelines.** Whether POCL or timeline-based planning
   resolves the method-precondition tension of §2.3.
-* **§8 — the to-do list.** Everything outstanding, in the order it makes sense
-  to do it.
+* **§8 — done.** Completed work, in the order it was done, with what each step
+  was measured to buy.
+* **§9 — remaining.** What is left, in the order to do it, with the reasoning
+  behind that order.
 
 §1–§5 cover the MCTS HTN planner (`lib/cpphop/cppMCTShop.h`) and the shared
 data structures it depends on (`lib/typedefs.h`, `lib/kb.h`,
@@ -279,7 +281,7 @@ not exercise the redundancy the restriction exists to remove: its road graph is
 complete, so the recursive `get_to` method never contributes an action. On
 instances that do exercise it, the interleaving of unordered top-level tasks is
 the dominant cost (§8.7.6), and restricting `simulation` is worth re-measuring
-against those rather than against this one. That is §8.10.
+against those rather than against this one. That is §9.2.
 
 **What it does not fix.** It does not reduce the time budget `transport` needs.
 That is set by rollout cost (§2.3.1), which this leaves alone by design.
@@ -783,11 +785,13 @@ state, and its score functions read that state, so delaying it delays the signal
 MCTS is steering by.
 
 **Status.** Algorithm 2 is implemented and measured (§2.3.2). Algorithm 3 is
-not. Going further would mean accepting the postponed state update, which is
-the real question for this planner rather than a detail: node values come from
-rollouts over the current state, and its score functions read that state.
-Worth measuring against `transport` and `d18` — the two shipped domains with
-partial order — rather than assuming the systematic one wins.
+not; it is §9.3. Going further would mean accepting the postponed state update,
+which is the real question for this planner rather than a detail: node values
+come from rollouts over the current state, and its score functions read that
+state. Worth measuring rather than assuming the systematic one wins — and
+against the chain instances of §8.7 rather than only the shipped `transport`
+and `d18`, since §8.7.1 found the shipped transport instance cannot exercise
+the redundancy at issue.
 
 ### 5.5 On method preconditions and interleaving: what the literature says
 
@@ -954,7 +958,7 @@ that is the hinge the whole plan turns on.
 
 ### 6.3 Where the wins are
 
-Sequenced in §8. Each is independently verifiable, and the risky one comes
+Sequenced in §8 and §9. Each is independently verifiable, and the risky one comes
 after its safety net.
 
 **Benchmark harness.**
@@ -1055,7 +1059,7 @@ re-encoding that costs no planner code. But it did not answer the question it
 was expected to. The shipped transport instance turns out not to exercise the
 pattern at all (§8.7.1), and on instances that do, the dominant redundancy is
 the interleaving of unordered top-level tasks rather than the `goto` pattern
-itself (§8.7.6). That is planner work, and it is §8.10.*
+itself (§8.7.6). That is planner work, and it is §9.2.*
 
 ---
 
@@ -1219,7 +1223,7 @@ literature did not resolve it for HTN because the formalisms that needed it had
 already moved to representations where it does not arise. That also explains the
 shape of HDDL 2.1's proposal: it is importing interval qualifiers into HDDL.
 
-A second, unrelated FAPE mechanism is worth noting because it comes up in §8:
+A second, unrelated FAPE mechanism is worth noting because it comes up in §8.7:
 FAPE distinguishes **task-dependent** actions, which may only be introduced by
 decomposition, from **task-independent** ones, which may also be inserted
 freely. That is a lever on redundant decompositions, not on precondition
@@ -1262,20 +1266,27 @@ Two caveats, both important:
    protection-by-pruning does not.
 
 Neither caveat is a reason to avoid it, but both are reasons not to make it the
-default without measuring. It is §8.8.
+default without measuring. It is §9.6.
 
 ---
 
-## 8. To do
+## 8. Done
 
-One list, in the order it makes sense to work through it. The rule behind the
-ordering: make the thing measurable, then make it fast, then change what it
-means. Performance work comes before semantics work not because it matters more
-but because every semantic change has to be evaluated by running the planner,
-and right now a single rollout on `transport` costs three seconds.
+Completed work, in the order it was done. §9 is what is left, in the order to
+do it. The two are separate sections because they are read for different
+reasons: this one is a record of what was measured and what it bought, and the
+numbering is kept stable so that references to it from §2, §6 and §7 stay
+valid.
 
-§8.1–§8.6 come from §6. §8.7–§8.9 are open questions from §4, §5 and §7.
-§8.10 came out of doing §8.7.
+§8.1–§8.6 came from §6 and attacked the cost of a node. §8.7 came from §4 and
+§5 and attacked the number of nodes. The rule behind that sequence was: make
+the thing measurable, then make it fast, then change what it means.
+
+Cumulative effect on median rollout time, against the original Z3
+implementation: `transport` 362×, `simple_travel` 479×, `sar3` 578×,
+`d18_gather` 912×, `d18_p18` 478×, `forall_test` 993×, `atom_test` 563× — plus
+15× again on the largest chain instance any encoding solves, from §8.7, which
+is a different kind of win and is measured on different instances.
 
 ---
 
@@ -1390,7 +1401,7 @@ belongs with §8.5, which changes the representation anyway.
 **Depends on:** §8.3. **Risk:** was high; discharged by differential testing.
 **Payoff:** 68x–330x per rollout, and the default budget back to 1000 ms.
 
-### 8.5 Representation — **partly done**
+### 8.5 Cheaper state representation — **done**
 
 Re-profiling after §8.4 redirected this item. The premise had been string
 churn from re-parsing facts; with Z3 off the query path the profile was
@@ -1427,14 +1438,14 @@ Median rollout time, against the §6.6 numbers:
 Unlike §8.4 this is behaviour-preserving, and the deterministic plan
 fingerprints are unchanged throughout.
 
-**What is left, and why interning is still the name of this item.** The profile
-is still **48.7% malloc**. Relations hold `std::string`, so every argument of
-every fact is a separate allocation, copied per node; `TaskGraph` and the plan
-vector carry strings too. Interning predicates and objects to integers at load
-— the original plan — is the change that removes that, and it is now the
-largest single remaining item. It was not done here because it reaches much
-further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the public
-`get_facts` API all traffic in strings.
+**What this item did not do.** The profile was still **48.7% malloc**
+afterwards. Relations hold `std::string`, so every argument of every fact is a
+separate allocation, copied per node; `TaskGraph` and the plan vector carry
+strings too. Interning predicates and objects to integers at load — the
+original plan for this item, and the reason it was named "representation" —
+is the change that removes that, and it was not done here because it reaches
+much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the
+public `get_facts` API all traffic in strings. **It is now §9.4.**
 
 `simple_travel` did not move at all here, and the explanation offered at the
 time — that its rollouts were bound by recursion through a `get_to`-style task
@@ -1487,18 +1498,16 @@ fallback for an expression the evaluator declines — `imply`, `exists`, a
 quantified precondition, or ground text `parse_ground` will not read — but on
 these domains nothing reaches it.
 
-**What is left.** The profile is **53.5% malloc, 30.3% our own code, 10%
-memcpy/memset**. The allocation is `KnowledgeBase` and `TaskGraph` copies whose
-contents are `std::string`: one per search node, one per binding in
-`apply_binding`. Two things would move it, larger first:
+**What is left, and where it went.** The profile after this item is **53.5%
+malloc, 30.3% our own code, 10% memcpy/memset**. The allocation is
+`KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
+per search node, one per binding in `apply_binding`. Two things would move it,
+larger first, and both are now items of their own: **§9.4** (interning, which
+§8.5 also left open) and **§9.5** (a trail-based state).
 
-* **Interning** predicates, objects and task names to integers, which §8.5 left
-  open. The more invasive of the two — it reaches into `Grounded_Task`,
-  `TaskGraph`, the evaluator and the public `get_facts` API.
-* **A trail-based state**: apply an action's effects and undo them on the way
-  back out, instead of copying the fact base per successor. A bigger design
-  change than it sounds, since the MCTS tree holds states and not just the
-  rollout, but it removes copying rather than shrinking it.
+They are no longer next, though. §8.7 showed that on the instances that are
+actually hard the binding constraint is the *number* of nodes rather than the
+cost of one, so §9.1–§9.3 come first. See the §9 preamble.
 
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
 of §8.5.
@@ -1709,7 +1718,7 @@ one. That is why `mutex_left` is flat in chain length and still dies on the
 package knob.
 
 This points somewhere specific, and it is planner work rather than domain work,
-so it is **§8.10** rather than part of this item. `expansion` already restricts
+so it is **§9.2** rather than part of this item. `expansion` already restricts
 compound-task branching to one task per node (Algorithm 2, §2.3.2) — which is
 exactly a restriction on interleaving — but `simulation` deliberately does not,
 and rollouts are where all of this time goes.
@@ -1747,7 +1756,134 @@ instance anything solves, and flat where the original grows.
 is the 2015 task-insertion paper Godet et al. cite as the source of the
 mechanism they mimic; Alford and Bercher organise the workshop.*
 
-### 8.8 Decide what a method precondition should mean here
+---
+
+## 9. Remaining work
+
+Ordered by what to do next rather than by when it was thought of. Two things
+reordered it, and both came out of doing §8.7:
+
+* **The bottleneck moved.** §8.1–§8.6 all attacked the *cost of a node*, and
+  returned 362–993× between them. §8.7 was the first item that attacked the
+  *number of nodes*, and it returned 15× on instances where cost-per-node work
+  had stopped helping at all. Chain instance `c` still times out past 300 s;
+  halving the cost of a node does nothing for that. So search-space work comes
+  first now, and the representation work that used to be next is behind it.
+* **Representation work should follow the search changes, not precede them.**
+  Interning reaches into `Grounded_Task`, `TaskGraph`, the evaluator and the
+  public `get_facts` API, and §9.2 and §9.3 both change how `TaskGraph` is used.
+  Doing it first means doing parts of it twice.
+
+**This order assumes the goal is to plan on harder instances.** If the
+near-term goal is instead to generate and run many *small* RTL domains, the
+search space is not what hurts, and §9.4 and §9.6 should come first.
+
+§9.1–§9.3 are search space. §9.4–§9.5 are cost per node, and are what §8.5 and
+§8.6 left behind. §9.6 is semantics. §9.7 is hygiene and can be folded in
+anywhere.
+
+---
+
+### 9.1 Bound rollout depth
+
+`simulation` is an unbounded depth-first search with no cycle detection and no
+depth limit, so a domain whose recursion can cycle does not make a rollout
+fail — it makes it hang. Every encoding in §8.7 needs one-way roads for exactly
+this reason, and that requirement is what stands between this planner and the
+IPC instances the `goto` literature is actually measured on.
+
+A depth bound makes rollouts total. `simulation` already returns
+`std::optional<double>` and its callers already handle `nullopt`, so the
+plumbing exists.
+
+**There is a correctness trap in it, and it is the reason this is not a
+five-minute change.** A failed rollout currently *proves* the node is a dead
+end, because the DFS is complete on a finite space — that is what justifies
+marking the node dead on first failure (§2.4). A rollout that stopped because
+it hit a depth limit proves nothing. If the two are not distinguishable at the
+call site, the planner will mark live subtrees as refuted and prune them. The
+bound therefore needs a third outcome, not a second.
+
+The bound also has to be generous enough that no shipped domain reaches it, or
+the benchmark's semantic fields move for reasons that have nothing to do with
+the change.
+
+**Depends on:** nothing. **Risk:** low, given the caveat above is respected.
+**Payoff:** none directly — it unblocks §9.2, two-way road graphs, and the IPC
+instances.
+
+### 9.2 Restrict interleaving in `simulation`
+
+§8.7.6 found that in `transport` the dominant redundancy is not the `goto`
+attribution Godet et al. describe but the **interleaving of unordered top-level
+tasks**: adding one package to chain instance b defeats every encoding tried,
+while adding one location leaves the original solving it in 174 ms. Three
+unordered `deliver` tasks of four ordered subtasks each admit 12!/(4!)³ ≈
+34 650 interleavings, against 70 for two.
+
+`expansion` already restricts this — Algorithm 2 branches over a single
+unconstrained compound task per node (§2.3.2) — but `simulation` deliberately
+does not, and rollouts are where essentially all the time goes.
+
+This was measured once and rejected (§2.3.2). The case for revisiting it is not
+that the earlier measurement was wrong but that it was taken on the shipped
+transport instance, which §8.7.1 later showed cannot exercise the pattern at
+all: its road graph is complete, which makes the recursive method's
+precondition unsatisfiable. Retake it on `transport_chain_{b,c,d}`.
+
+**Depends on:** §8.1, the §8.7 instances, and §9.1 if the restriction lets a
+rollout wander further than it used to. **Risk:** medium — it changes results.
+**Payoff:** unknown, but it is the knob the §8.7 data says is dominant.
+
+### 9.3 Algorithm 3 (systematic progression)
+
+`expansion` implements Algorithm 2 (§2.3.2). Algorithm 3 would make the search
+fully systematic; §5 records the algorithm, what it would take, and why to be
+careful — it postpones the state update, which is what the rollouts and the
+score functions read. Two of the four shipped domains also break the
+assumptions its systematicity theorem needs (§5.4), so it would be sound and
+complete but not fully systematic on them.
+
+**Do §9.2 first.** It is the same idea — restricting how much interleaving the
+search branches over — applied to the rollouts, where the time actually goes,
+and it is far cheaper to try. If §9.2 turns out to be a loss, this very likely
+is too, and the experiment will have cost an afternoon instead of a week.
+
+**Depends on:** §8.1, §8.7 and §9.2. **Risk:** medium. **Payoff:** unknown;
+measure.
+
+### 9.4 Intern predicates, objects and task names
+
+Left over from §8.5, which is where the reasoning is. After §8.6 the profile is
+**53.5% malloc, 30.3% our own code, 10% memcpy/memset**, and the allocation is
+`KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
+per search node, one per binding in `apply_binding`. Every argument of every
+fact is a separate allocation, copied per node.
+
+Interning them to integers at load is the change that removes it, and it is the
+largest remaining cost-per-node item. It was not done in §8.5 because it
+reaches much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator
+and the public `get_facts` API all traffic in strings. That reach is also why
+it belongs after §9.2 and §9.3, which change how `TaskGraph` is used.
+
+**Depends on:** §8.4; sequenced after §9.3. **Risk:** medium — wide, mechanical,
+and the differential-eval flag from §8.4 does not cover it. **Payoff:** the
+largest single remaining cost-per-node item.
+
+### 9.5 Trail-based apply/undo state
+
+Also left over from §8.6. Apply an action's effects and undo them on the way
+back out, instead of copying the fact base per successor. It removes copying
+rather than shrinking it, which is why it comes after §9.4 shrinks what there is
+to copy.
+
+A bigger design change than it sounds: the MCTS tree holds states, not just the
+rollout, so the trail cannot simply be unwound at every level.
+
+**Depends on:** §9.4. **Risk:** medium-high. **Payoff:** removes the copy rather
+than making it cheaper.
+
+### 9.6 Decide what a method precondition should mean here
 
 §7.4 sets out a protected-condition set: register the literals a synthesised
 precondition action checked, keep them protected until the method's subtasks
@@ -1760,68 +1896,44 @@ than HDDL — it rejects plans HDDL accepts — so it must be opt-in, and it pru
 by commitment rather than backtracking, so it can lose solutions a full POCL
 planner would find. Measure before defaulting it on.
 
-**Depends on:** §8.1 and ideally §8.4, since evaluating it means running the planner
-a lot. **Risk:** medium, and it changes results.
+It sits last among the substantive items for the reason §8's sequence gave:
+every semantic change has to be evaluated by running the planner a great deal,
+and that is cheaper after §9.1–§9.5. It is not blocked by any of them, so if the
+research needs it sooner, it can move.
 
-### 8.9 Algorithm 3 (systematic progression)
+**Depends on:** §8.1 and §8.4. **Risk:** medium, and it changes results.
 
-`expansion` implements Algorithm 2 (§2.3.2). Algorithm 3 would make the search
-fully systematic; §5 records the algorithm, what it would take, and why to be
-careful — it postpones the state update, which is what the rollouts and score
-functions read. Two of the four shipped domains also break the assumptions its
-systematicity theorem needs (§5.4), so it would be sound and complete but not
-fully systematic on them.
+### 9.7 Loose ends
 
-§8.7 came first, and changed what this one should be measured against. Both
-attack redundant decompositions, but §8.7.6 found that the redundancy which
-actually dominates `transport` is interleaving rather than decomposition order,
-and the chain instances it produced are where that is visible. Do §8.10 before
-this: it is the same restriction applied to the rollouts, which is where the
-time goes, and it is much cheaper to try.
+Both are recorded as open items in §4.2 and neither is worth its own work
+session:
 
-**Depends on:** §8.1, §8.7 and ideally §8.10. **Risk:** medium.
-**Payoff:** unknown; measure.
-
-### 8.10 Restrict interleaving in `simulation`, and measure it on instances that need it
-
-§8.7.6 found that in `transport` the dominant redundancy is not the `goto`
-attribution Godet et al. describe but the **interleaving of unordered top-level
-tasks**: adding one package to chain instance b defeats every encoding tried,
-while adding one location leaves the original solving it in 174 ms.
-
-`expansion` already restricts this — Algorithm 2 branches over a single
-unconstrained compound task per node (§2.3.2) — but `simulation` deliberately
-does not, and rollouts are where essentially all the time goes. The measurement
-behind that decision was taken on the shipped transport instance, which
-§8.7.1 showed does not exercise the pattern at all. It should be retaken on the
-chain instances, where it does.
-
-Two things to try, cheapest first:
-
-1. Give `simulation` the same Algorithm 2 restriction and re-measure on
-   `transport_chain_{b,c,d}`. This was measured before and rejected; the
-   argument for revisiting it is only that the earlier instance could not see
-   the effect.
-2. Bound rollout depth. Independently of any of this, `simulation` is an
-   unbounded DFS with no cycle detection, which is why every encoding in §8.7
-   needs one-way roads to terminate. A depth bound would make rollouts total
-   and let the IPC instances be used directly.
-
-**Depends on:** §8.1 and the §8.7 instances. **Risk:** medium — (1) changes
-results. **Payoff:** unknown; it is the knob the §8.7 data says is dominant.
-
+* **Item 17 — the tests only run from `<source>/build`.** `test_loader`,
+  `test_parser` and `test_MCTS_planner` reach their domains through
+  `../../domains/...`. From anywhere else they compile, link, and then fail at
+  run time. This cost real time during §8.7: run from the wrong directory,
+  `test_loader` exits 201 and looks exactly like a genuine assertion failure.
+  Passing the domain directory in at configure time fixes it.
+* **Item 18 — semantics to document.** Goals are ignored (§2.1); the search
+  space is non-systematic, so duplicate subtrees occur (§2.3).
 
 ---
 
 ### Not on this list, deliberately
 
-* **Memory work.** Peak RSS is 35 MB (§6.1.4). §8.6 tidies real redundancy,
-  but memory is not a problem and should not be treated as one until a domain
-  makes it one.
+* **Memory work.** Peak RSS is 35 MB (§6.1.4). §8.6 tidied real redundancy, but
+  memory is not a problem and should not be treated as one until a domain makes
+  it one.
 * **Goal handling.** The planner ignores `:goal` by design, per standard HTN
   semantics (§2.1). Left alone deliberately.
 * **Adopting POCL or timelines wholesale.** §7.4 — that is a different planner,
   and it would give up the state-in-hand that the rollouts depend on.
+* **Giving the planner a heuristic.** Named here because §8.7 kept running into
+  its absence: the encodings that work for PandaPi and Aries assume a heuristic
+  to replace the guidance they give up, and this planner's rollouts are
+  uniformly random. That makes it the largest structural difference between
+  this system and the ones the literature measures. It is a research direction
+  rather than a to-do, and nothing on the list above depends on it.
 
 ---
 
