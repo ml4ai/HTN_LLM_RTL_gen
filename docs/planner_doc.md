@@ -785,14 +785,13 @@ their setting: this planner's node values come from rollouts over the current
 state, and its score functions read that state, so delaying it delays the signal
 MCTS is steering by.
 
-**Status.** Algorithm 2 is implemented and measured (§2.3.2). Algorithm 3 is
-not; it is §9.1. Going further would mean accepting the postponed state update,
-which is the real question for this planner rather than a detail: node values
-come from rollouts over the current state, and its score functions read that
-state. Worth measuring rather than assuming the systematic one wins — and
-against the chain instances of §8.7 rather than only the shipped `transport`
-and `d18`, since §8.7.1 found the shipped transport instance cannot exercise
-the redundancy at issue.
+**Status.** Both are implemented and measured: Algorithm 2 is the default
+(§2.3.2), Algorithm 3 is `--algorithm 3` (§8.10). The postponed state update
+was indeed the real question rather than a detail, and it decides the result —
+Algorithm 3 is 1.58× faster on the encoding with the most compound branching to
+remove and 1.4–1.7× slower where a mutex has already removed it, at identical
+plan quality. The caution above was right to insist on measurement: neither
+algorithm wins outright.
 
 ### 5.5 On method preconditions and interleaving: what the literature says
 
@@ -1268,7 +1267,7 @@ Two caveats, both important:
    protection-by-pruning does not.
 
 Neither caveat is a reason to avoid it, but both are reasons not to make it the
-default without measuring. It is §9.4.
+default without measuring. It is §9.3.
 
 ---
 
@@ -1449,7 +1448,7 @@ strings too. Interning predicates and objects to integers at load — the
 original plan for this item, and the reason it was named "representation" —
 is the change that removes that, and it was not done here because it reaches
 much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the
-public `get_facts` API all traffic in strings. **It is now §9.2.**
+public `get_facts` API all traffic in strings. **It is now §9.1.**
 
 `simple_travel` did not move at all here, and the explanation offered at the
 time — that its rollouts were bound by recursion through a `get_to`-style task
@@ -1506,12 +1505,13 @@ these domains nothing reaches it.
 malloc, 30.3% our own code, 10% memcpy/memset**. The allocation is
 `KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
 per search node, one per binding in `apply_binding`. Two things would move it,
-larger first, and both are now items of their own: **§9.2** (interning, which
-§8.5 also left open) and **§9.3** (a trail-based state).
+larger first, and both are now items of their own: **§9.1** (interning, which
+§8.5 also left open) and **§9.2** (a trail-based state).
 
 They are no longer next, though. §8.7 showed that on the instances that are
 actually hard the binding constraint is the *number* of nodes rather than the
-cost of one, so §9.1 comes first. See the §9 preamble.
+cost of one. That line of work is now finished — §8.7 through §8.10 — so these
+are next. See the §9 preamble.
 
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
 of §8.5.
@@ -1932,13 +1932,77 @@ behaviour-preserving: the benchmark reports no semantic change.
 **Payoff:** none. The value here is the falsification, which removes a wrong
 reason for prioritising §9.1.
 
+### 8.10 Algorithm 3: systematic progression — **done, kept opt-in**
+
+§5 records the algorithm, what it would take and why to be careful. What it
+took was one line in `expansion`, exactly as §5.3 predicted: while any compound
+task is unconstrained, drop the unconstrained primitive tasks instead of
+branching over them too, so no action progresses until the decomposition is
+finished. `--algorithm 2|3` selects it; 2 remains the default.
+
+**Quality is identical, and reading plan length would have said otherwise.**
+The first comparison showed Algorithm 3 returning 18-action plans where
+Algorithm 2 returned 14, which looks like a clear loss. It is not: the extra
+actions are `noop`s, which `delivery_chain` does not count, and the **drive
+counts and scores are identical in all 30 runs measured** — 3 drives / 0.625 on
+`chain_a`, 4 / 0.600 on `chain_b`, 5 / 0.583 on `chain_d`. Algorithm 2 also
+returns 18 actions once given 10 iterations rather than 6, so the shorter plan
+was Algorithm 2 getting lucky on a small budget, not Algorithm 3 doing worse.
+
+**It is a no-op where it cannot help.** `simple_travel`, `sar3`, `d18_gather`,
+`d18_p18`, `forall_test` and `atom_test` produce byte-identical plans under
+both algorithms, because only one compound task is ever unconstrained in them.
+So it costs nothing on the domains that cannot benefit.
+
+**Where it can help, the effect splits by encoding rather than by instance
+size.** Median over five seeds at eight iterations, drive counts equal
+throughout:
+
+| case | Algorithm 2 | Algorithm 3 | |
+|---|---|---|---|
+| `chain_a` / `original` | 11 424 ms | **7 221 ms** | **1.58× faster** |
+| `chain_b` / `mutex_left` | **1 305 ms** | 2 256 ms | 1.7× slower |
+| `chain_d` / `mutex_left` | **2 141 ms** | 3 042 ms | 1.4× slower |
+
+That is §5.4's tradeoff appearing as a domain split, and the mechanism is
+legible. `original` keeps three `get_to` methods and so has the most duplicate
+decomposition for systematicity to remove; `mutex_left` has already serialised
+that work behind the lock, so there is little duplication left and all that
+remains is the postponed state update — which this planner feels more than most,
+because its node values come from rollouts over the current state and its score
+functions read it.
+
+**Variance is high and the medians are the claim.** Seed 99 reverses the sign
+on `chain_a`/`original` (Alg 2 7 350 ms against Alg 3 18 651 ms). Wall time is
+also not monotone in iterations — Algorithm 2 on that case takes 15 374 ms at
+six iterations and 9 171 ms at ten, because better decisions mean fewer commits
+and backtracks. Single runs here are worth very little, which is why this was
+repeated across seeds rather than generalised from the first table.
+
+**Why the default stays at 2.** The shipped domains are unaffected either way,
+so the default is decided by the chain instances, where it is `mutex_left` that
+matters: §8.7 concluded that the mutex encoding is the one to write, and that
+encoding prefers Algorithm 2. Systematicity would be the other argument for
+switching, and it is weaker than it looks — §5.4 records that three of the four
+shipped domains break Assumption 2, so Algorithm 3 would be sound and complete
+but still not fully systematic on them.
+
+The honest summary is Holler et al.'s own: "only an empirical evaluation can
+show which algorithm should be used in practice", and for this planner the
+answer is that it depends on the domain, so it is a switch rather than a
+decision.
+
+**Depends on:** §8.1, §8.7. **Risk:** none — default unchanged, benchmark reports
+no semantic change, ctest 4/4. **Payoff:** 1.58× on the encoding with the most
+compound branching; nothing, or a mild loss, elsewhere.
+
 ---
 
 ## 9. Remaining work
 
 Ordered by what to do next rather than by when it was thought of. Two things
-reordered it, and both came out of doing §8.7. (§8.8 and §8.9 have since been
-done out of this list. §8.8 changed nothing about the order; §8.9 was a
+reordered it, and both came out of doing §8.7. (§8.8, §8.9 and §8.10 have since
+been done out of this list. §8.8 changed nothing about the order; §8.9 was a
 negative result that removed one of §9.1's two reasons for being first — see
 there.)
 
@@ -1950,51 +2014,19 @@ there.)
   first now, and the representation work that used to be next is behind it.
 * **Representation work should follow the search changes, not precede them.**
   Interning reaches into `Grounded_Task`, `TaskGraph`, the evaluator and the
-  public `get_facts` API, and §9.1 changes how `TaskGraph` is used.
+  public `get_facts` API, which §8.10 has now stopped changing underneath it.
   Doing it first means doing parts of it twice.
 
 **This order assumes the goal is to plan on harder instances.** If the
 near-term goal is instead to generate and run many *small* RTL domains, the
-search space is not what hurts, and §9.2 and §9.4 should come first.
+search space is not what hurts, and §9.1 and §9.3 should come first.
 
-§9.1 is search space. §9.1–§9.2 are cost per node, and are what §8.5 and §8.6
-left behind. §9.3 is semantics. §9.4 is hygiene and can be folded in anywhere.
+§9.1 is search space. §9.1–§9.1 are cost per node, and are what §8.5 and §8.6
+left behind. §9.2 is semantics. §9.3 is hygiene and can be folded in anywhere.
 
 ---
 
-### 9.1 Algorithm 3 (systematic progression)
-
-`expansion` implements Algorithm 2 (§2.3.2). Algorithm 3 would make the search
-fully systematic; §5 records the algorithm, what it would take, and why to be
-careful — it postpones the state update, which is what the rollouts and the
-score functions read. Two of the four shipped domains also break the
-assumptions its systematicity theorem needs (§5.4), so it would be sound and
-complete but not fully systematic on them.
-
-**§8.9 already tried the cheap half of this, and it lost.** The same idea —
-restricting how much interleaving the search branches over — applied to the
-*rollouts*, where the time actually goes. Every strategy tried was slower than
-leaving them alone, Algorithm 3 among them, and none made instance c solvable.
-
-How much that transfers is a real question and should not be waved either way.
-It does **not** transfer directly: rollouts are uninformed randomised dives
-that depend on diverse first paths, which is exactly what a restriction takes
-away, whereas the tree has UCT to supply exploration, so the mechanism that
-sank §8.9 has no analogue in `expansion`. What §8.9 does establish is narrower
-and still useful — that **restricting decomposition order is not what makes
-instance c hard**, because forbidding interleaving outright did not move it.
-That was one of the two reasons this item was near the front, and it is gone.
-The other reason, systematicity for its own sake, stands.
-
-So: still worth doing, no longer obviously first, and worth being honest that
-its expected payoff is now lower than when it was written. The thing to measure
-is whether removing duplicate subtrees pays for the postponed state update —
-not whether it fixes instance c, which §8.9 has already answered.
-
-**Depends on:** §8.1 and §8.7. **Risk:** medium. **Payoff:** unknown, and
-lower than §8.9 was expected to make it look; measure.
-
-### 9.2 Intern predicates, objects and task names
+### 9.1 Intern predicates, objects and task names
 
 Left over from §8.5, which is where the reasoning is. After §8.6 the profile is
 **53.5% malloc, 30.3% our own code, 10% memcpy/memset**, and the allocation is
@@ -2006,26 +2038,26 @@ Interning them to integers at load is the change that removes it, and it is the
 largest remaining cost-per-node item. It was not done in §8.5 because it
 reaches much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator
 and the public `get_facts` API all traffic in strings. That reach is also why
-it belongs after §9.1, which changes how `TaskGraph` is used.
+it belonged after the search-space work, which is now done (§8.10).
 
 **Depends on:** §8.4; sequenced after §9.1. **Risk:** medium — wide, mechanical,
 and the differential-eval flag from §8.4 does not cover it. **Payoff:** the
 largest single remaining cost-per-node item.
 
-### 9.3 Trail-based apply/undo state
+### 9.2 Trail-based apply/undo state
 
 Also left over from §8.6. Apply an action's effects and undo them on the way
 back out, instead of copying the fact base per successor. It removes copying
-rather than shrinking it, which is why it comes after §9.2 shrinks what there is
+rather than shrinking it, which is why it comes after §9.1 shrinks what there is
 to copy.
 
 A bigger design change than it sounds: the MCTS tree holds states, not just the
 rollout, so the trail cannot simply be unwound at every level.
 
-**Depends on:** §9.2. **Risk:** medium-high. **Payoff:** removes the copy rather
+**Depends on:** §9.1. **Risk:** medium-high. **Payoff:** removes the copy rather
 than making it cheaper.
 
-### 9.4 Decide what a method precondition should mean here
+### 9.3 Decide what a method precondition should mean here
 
 §7.4 sets out a protected-condition set: register the literals a synthesised
 precondition action checked, keep them protected until the method's subtasks
@@ -2040,12 +2072,12 @@ planner would find. Measure before defaulting it on.
 
 It sits last among the substantive items for the reason §8's sequence gave:
 every semantic change has to be evaluated by running the planner a great deal,
-and that is cheaper after §9.1–§9.2. It is not blocked by any of them, so if the
+and that is cheaper after §9.1–§9.1. It is not blocked by any of them, so if the
 research needs it sooner, it can move.
 
 **Depends on:** §8.1 and §8.4. **Risk:** medium, and it changes results.
 
-### 9.5 Loose ends
+### 9.4 Loose ends
 
 Both are recorded as open items in §4.2 and neither is worth its own work
 session:

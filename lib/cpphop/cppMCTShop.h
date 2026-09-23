@@ -271,7 +271,8 @@ simulation(std::vector<std::string>& plan,
 int expansion(pTree& t,
               int n,
               DomainDef& domain,
-              std::mt19937_64& g) {
+              std::mt19937_64& g,
+              int algorithm) {
     //Höller et al.'s Algorithm 2: branch over every unconstrained primitive
     //task, but over only a single unconstrained compound one. Which compound
     //task is decomposed first carries no commitment -- only the choice of
@@ -281,7 +282,14 @@ int expansion(pTree& t,
     //leaving types and :constraints, which no action can change. The pick is
     //deterministic (lowest task id) so a node always generates the same
     //children. Note that simulation above deliberately does NOT do this -- see
-    //the comment there.
+    //the comment there, and 8.9 for why mirroring it there is a loss.
+    //
+    //algorithm == 3 is Holler et al.'s Algorithm 3, the systematic one: while
+    //any compound task is unconstrained, progress NO action at all. It differs
+    //from Algorithm 2 by one line below, and trades away the thing progression
+    //search exists for -- having the current state in hand -- because it
+    //postpones the state update. The authors are explicit that Algorithm 2 may
+    //win in practice and that only measurement settles it (5.4).
     std::vector<int> u;
     std::vector<int> compound;
     for (auto const& [id,gt] : t[n].tasks.GTs) {
@@ -301,6 +309,11 @@ int expansion(pTree& t,
       }
     } 
     if (!compound.empty()) {
+      //The one line that separates the two algorithms: Algorithm 3 drops the
+      //unconstrained primitive tasks entirely while a compound one is waiting.
+      if (algorithm == 3) {
+        u.clear();
+      }
       u.push_back(*std::min_element(compound.begin(),compound.end()));
     }
     if (u.empty()) {
@@ -376,6 +389,7 @@ seek_planMCTS(pTree& t,
               int max_depth,
               int max_decisions,
               int restrict_rollouts,
+              int algorithm,
               long& cutoffs) {
   int stuck_counter = 10;
   //A global cap on committed decisions, separate from stuck_counter, which
@@ -485,7 +499,7 @@ seek_planMCTS(pTree& t,
         }
         else {
           m[n].state.update_state();
-          int n_p = expansion(m,n,domain,g);
+          int n_p = expansion(m,n,domain,g,algorithm);
           m[n_p].state.update_state();
           double ar = 0.0;
           bool bp = true;
@@ -655,7 +669,8 @@ cppMCTShop(DomainDef& domain,
            int max_iterations = 0,
            int max_depth = kDefaultMaxRolloutDepth,
            int max_decisions = kDefaultMaxDecisions,
-           int restrict_rollouts = 0) {
+           int restrict_rollouts = 0,
+           int algorithm = 2) {
     domain.set_scorer(scorer);
     pTree t;
     TaskTree tasktree;
@@ -685,7 +700,7 @@ cppMCTShop(DomainDef& domain,
     long cutoffs = 0;
     auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c, g,
                              max_iterations, max_depth, max_decisions, restrict_rollouts,
-                             cutoffs);
+                             algorithm, cutoffs);
     //A rollout that hit the bound is not evidence of anything, so if many did,
     //the search was steering on much less information than it appears to have.
     //Say so: a bound set too low for the domain otherwise looks exactly like a

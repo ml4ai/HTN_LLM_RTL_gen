@@ -97,6 +97,7 @@ int main(int argc, char* argv[]) {
   int max_depth = kDefaultMaxRolloutDepth;
   int max_decisions = kDefaultMaxDecisions;
   int restrict_rollouts = 0;
+  int algorithm = 2;
   double c = sqrt(2.0);
   bool do_plan = false, show_state = false;
 
@@ -116,6 +117,7 @@ int main(int argc, char* argv[]) {
       ("exp_param,c", po::value<double>(&c), "exploration parameter, default = sqrt(2)")
       ("max_depth", po::value<int>(&max_depth), "depth bound for a rollout; default = 1000")
       ("max_decisions", po::value<int>(&max_decisions), "backstop on committed decisions; default = 1000")
+      ("algorithm", po::value<int>(&algorithm), "progression algorithm for expansion: 2 (default) branches over all unconstrained primitives plus one compound; 3 progresses no action while any compound task is unconstrained")
       ("restrict_rollouts", po::value<int>(&restrict_rollouts), "rollout candidate set: 0 = every unconstrained task (default), 1 = Algorithm 2 with expansion's lowest-id pick, 2 = Algorithm 2 with a random pick")
       ("show_state", po::bool_switch(&show_state), "also print the sorted final state")
     ;
@@ -229,6 +231,7 @@ int main(int argc, char* argv[]) {
         std::cout << "time_limit=" << time_limit << "\n";
       }
       std::cout << "simulations=" << r << "\n";
+      std::cout << "algorithm=" << algorithm << "\n";
       //The planner narrates to stdout; the harness speaks key=value, so park
       //its output while it runs.
       std::ostringstream sink;
@@ -240,7 +243,7 @@ int main(int argc, char* argv[]) {
       size_t plan_len = 0;
       std::string state_canon;
       try {
-        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions,restrict_rollouts);
+        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions,restrict_rollouts,algorithm);
         auto& end = results.t[results.end];
         plan_len = end.plan.size();
         for (size_t i = 0; i < end.plan.size(); i++) {
