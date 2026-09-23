@@ -858,9 +858,14 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     TaskDefs subtasks;
     std::unordered_map<std::string,std::vector<std::string>> orderings;
     if (m.task_network.subtasks) {
-      auto sts = get_subtasks(m.task_network.subtasks->subtasks,ttypes);    
-      if (m.task_network.subtasks->ordering_kw == "ordered-tasks" || 
-          m.task_network.subtasks->ordering_kw == "ordered-subtasks") {
+      auto sts = get_subtasks(m.task_network.subtasks->subtasks,ttypes);
+      //An empty subtask network is legal HDDL -- `:subtasks ()`, which a
+      //method that ends a recursion uses -- and leaves sts empty. The chain
+      //below indexes sts[0], so it must not run on one. The else branch
+      //handles the empty case already: every loop in it is over sts.
+      if (!sts.empty() &&
+          (m.task_network.subtasks->ordering_kw == "ordered-tasks" ||
+           m.task_network.subtasks->ordering_kw == "ordered-subtasks")) {
         subtasks[sts[0].first] = sts[0].second;
         for (int i = 1; i < sts.size(); i++) {
           subtasks[sts[i].first] = sts[i].second;

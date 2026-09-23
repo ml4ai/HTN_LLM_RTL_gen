@@ -1,0 +1,63 @@
+;; A loader fixture, not a planning problem -- there is no matching problem
+;; file and nothing plans over it. It exists so that test_loader can check both
+;; HDDL spellings of an empty subtask network:
+;;
+;;   :subtasks ()           an empty network
+;;   :ordered-subtasks ()   the same thing, said with the ordered keyword
+;;
+;; Both are legal HDDL (<subtask-defs> ::= () | <subtask-def> | (and ...)) and
+;; both must load to a method with no subtasks and no orderings. The second
+;; spelling used to segfault: the loader's ordered branch opens by indexing
+;; sts[0], which reads past the end of an empty vector. transport_insert.hddl
+;; needs an empty method to end its recursion, but it uses the first spelling,
+;; so it would not have caught that.
+
+(define (domain empty_method_test)
+	(:requirements :typing :hierarchy)
+	(:types
+		widget - object
+	)
+	(:predicates
+		(done ?arg0 - widget)
+	)
+
+	(:task settle
+		:parameters (?w - widget)
+	)
+
+	(:task settle_ordered
+		:parameters (?w - widget)
+	)
+
+	(:method m_settle_stop
+		:parameters (?w - widget)
+		:task (settle ?w)
+		:subtasks ()
+	)
+
+	(:method m_settle_go
+		:parameters (?w - widget)
+		:task (settle ?w)
+		:subtasks (and
+		 (task0 (finish ?w))
+		)
+	)
+
+	(:method m_settle_ordered_stop
+		:parameters (?w - widget)
+		:task (settle_ordered ?w)
+		:ordered-subtasks ()
+	)
+
+	(:action finish
+		:parameters (?w - widget)
+		:precondition
+			(and
+				(not (done ?w))
+			)
+		:effect
+			(and
+				(done ?w)
+			)
+	)
+)

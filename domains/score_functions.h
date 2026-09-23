@@ -20,6 +20,41 @@ double delivery_one(KnowledgeBase& kb,std::vector<std::string>& plan) {
 }
 
 
+//For the transport chain problems of scripts/gen_transport_chain.py, which
+//vary in size, so the destinations cannot be written into the scorer the way
+//delivery_one writes them. Each problem states them as static (dest ?p ?l)
+//facts instead; a package is delivered when the matching (at ?p ?l) holds.
+//
+//Complete delivery always outranks partial delivery, and among complete plans
+//fewer drives scores higher. That second part is what makes the four 8.7
+//encodings comparable on plan quality: the insert model is free to emit a
+//drive nothing asked for, and this is what notices.
+double delivery_chain(KnowledgeBase& kb, std::vector<std::string>& plan) {
+  auto facts = kb.get_facts();
+  auto const& dests = facts["dest"];
+  if (dests.empty()) {
+    return 0.0;
+  }
+  double delivered = 0.0;
+  for (auto const& d : dests) {
+    //"(dest package_0 city_loc_3)" -> "(at package_0 city_loc_3)"
+    if (facts["at"].contains("(at"+d.substr(5))) {
+      delivered += 1.0;
+    }
+  }
+  double frac = delivered/dests.size();
+  if (frac < 1.0) {
+    return 0.5*frac;
+  }
+  int drives = 0;
+  for (auto const& a : plan) {
+    if (a.find("drive") != std::string::npos) {
+      drives++;
+    }
+  }
+  return 0.5 + 0.5/(1.0 + drives);
+}
+
 double simple(KnowledgeBase& kb, std::vector<std::string>& plan) {
   return 1.0;
 }
@@ -71,6 +106,7 @@ double sar3(KnowledgeBase& kb, std::vector<std::string>& plan) {
 }
 
 Scorers scorers = Scorers({{"delivery_one", delivery_one},
+                           {"delivery_chain", delivery_chain},
                            {"travel_one", travel_one},
                            {"sar3",sar3},
                            {"simple", simple}});

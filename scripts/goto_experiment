@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Compare the four transport encodings of planner_doc.md 8.7.
+
+    scripts/goto_experiment                    # the whole grid
+    scripts/goto_experiment --only mutex       # one variant
+    scripts/goto_experiment --instances a,b    # smaller instances only
+    scripts/goto_experiment --rollouts 5 --timeout 120
+
+Godet, Bit-Monnot & Lesire-Cabaniols (HPlan 2024) identify a recursive "bring
+me to X" task as an anti-pattern in partially ordered HTN domains: several such
+tasks sitting unordered with respect to each other can each contribute the same
+movement actions, so one plan is reachable through exponentially many
+decompositions. They propose two rewrites. This runs all four encodings against
+the same instances so the question can be answered for *this* planner rather
+than assumed from their results, which were measured on planners with
+heuristics.
+
+What to read:
+
+  roll ms    Median rollout time. Rollouts dominate runtime, and here they are
+             also the cleanest signal, because every cost in this experiment is
+             the size of the space a rollout searches -- not the cost of a node.
+
+  score      delivery_chain: 0.5 + 0.5/(1 + drives) once every package is at
+             its destination, 0.5 * (fraction delivered) before that. Equal
+             scores across variants mean they found equally short plans, which
+             is what makes the timing comparison fair. It is also how the
+             insert model's extra drives would show up, since that model is
+             free to emit a drive nothing asked for.
+
+  TIMEOUT    A single rollout did not finish. Not a crash -- the search space
+             is simply too large. Reported, not hidden.
+
+Instances come from scripts/gen_transport_chain.py.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+DOMAINS = os.path.join(ROOT, "domains")
+
+# name, domain file, whether the problem must carry the extra free_drive task
+VARIANTS = [
+    ("original",   "transport_original.hddl",   False),
+    ("common",     "transport_common.hddl",     False),
+    ("mutex",      "transport_mutex.hddl",      False),
+    ("mutex_left", "transport_mutex_left.hddl", False),
+    ("insert",     "transport_insert.hddl",     True),
+]
+
+# name -> a short description of the instance, for the header. The ladder moves
+# one knob at a time; see scripts/gen_transport_chain.py for why.
+INSTANCES = {
+    "a": "4 loc, 2 pkg -- 3 drives, 4 get_to",
+    "b": "5 loc, 2 pkg -- 4 drives, 4 get_to",
+    "c": "5 loc, 3 pkg -- 4 drives, 6 get_to  (b + a package)",
+    "d": "6 loc, 2 pkg -- 5 drives, 4 get_to  (b + a location)",
+}
+
+
+def find_bench(explicit):
+    if explicit:
+        return explicit
+    cand = os.path.join(ROOT, "build", "apps", "bench", "planner_bench")
+    if os.path.isfile(cand) and os.access(cand, os.X_OK):
+        return cand
+    sys.exit("error: planner_bench not found. Build it first, or pass --bench PATH.")
+
+
+def run_one(bench, domain, problem, rollouts, seed, timeout):
+    cmd = [bench,
+           "-D", os.path.join(DOMAINS, domain),
+           "-P", os.path.join(DOMAINS, problem),
+           "-F", "delivery_chain", "-s", str(seed),
+           "--rollouts", str(rollouts)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"timeout": True}
+    if proc.returncode != 0:
+        return {"error": (proc.stderr or proc.stdout).strip()[:160]}
+    out = {}
+    for line in proc.stdout.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k] = v
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--rollouts", type=int, default=5)
+    ap.add_argument("--seed", type=int, default=2022)
+    ap.add_argument("--timeout", type=float, default=300.0,
+                    help="seconds per (variant, instance) before giving up")
+    ap.add_argument("--only", help="run only variants whose name contains this")
+    ap.add_argument("--instances", default="a,b,c,d")
+    ap.add_argument("--bench", help="path to planner_bench")
+    args = ap.parse_args()
+
+    bench = find_bench(args.bench)
+    variants = [v for v in VARIANTS if not args.only or args.only in v[0]]
+    instances = [i.strip() for i in args.instances.split(",") if i.strip()]
+
+    worst = 0
+    for inst in instances:
+        print(f"\ninstance {inst}  ({INSTANCES.get(inst, '?')})")
+        print(f"  {'encoding':<12}{'roll ms (med)':>14}{'  score':<14}{'failed':>8}")
+        print("  " + "-" * 48)
+        for name, domain, needs_insert in variants:
+            problem = f"transport_chain_{inst}{'_insert' if needs_insert else ''}.hddl"
+            res = run_one(bench, domain, problem, args.rollouts, args.seed, args.timeout)
+            if res.get("timeout"):
+                print(f"  {name:<12}{'TIMEOUT':>14}  (> {args.timeout:g}s)")
+                worst = max(worst, 1)
+                continue
+            if "error" in res:
+                print(f"  {name:<12}  ERROR: {res['error']}")
+                worst = 2
+                continue
+            scores = res.get("rollout_scores", "").split(",")
+            uniq = sorted(set(scores))
+            shown = uniq[0] if len(uniq) == 1 else f"{len(uniq)} distinct"
+            print(f"  {name:<12}{res.get('rollout_ms_median', '?'):>14}"
+                  f"  {shown:<12}{res.get('rollout_failed', '?'):>8}")
+    return worst
+
+
+if __name__ == "__main__":
+    sys.exit(main())

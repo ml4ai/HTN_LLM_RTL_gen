@@ -1,0 +1,207 @@
+;; Transport, "insert" encoding -- variant 4 of 4 for planner_doc.md 8.7.
+;;
+;; Godet et al.'s (2024) second fix, and the one they report "clearly
+;; dominates" for native PO HTN planners. It mimics FAPE's split between
+;; task-dependent actions, which may only arrive by decomposition, and
+;; task-independent ones, which may also be inserted freely (planner_doc.md
+;; 7.3), without needing a planner that supports task insertion.
+;;
+;; Every recursive method of get_to is deleted, leaving only the one that does
+;; nothing. A get_to therefore no longer *produces* drives -- it only asserts,
+;; through noop's precondition, that the vehicle is where it should be. The
+;; drives come instead from a new free_drive task, one per vehicle, sitting
+;; unordered in the initial task network and recursing until it chooses to
+;; stop.
+;;
+;; The number of decompositions of a given drive sequence is then constant:
+;; free_drive is the only task that can emit drives, and there is one of it.
+;;
+;; The model is strictly more permissive than the others -- nothing forbids
+;; free_drive from inserting a drive no get_to needed -- so plans may contain
+;; useless drives. Every solution of the original model is still a solution
+;; here, and every shortest plan is still shortest. delivery_chain penalises
+;; the extra drives, so a longer plan scores lower.
+
+(define (domain transport_variant)
+	(:requirements :negative-preconditions :typing :hierarchy)
+	(:types
+		package - locatable
+		capacity_number - object
+		location - object
+		target - object
+		vehicle - locatable
+		locatable - object
+	)
+	(:predicates
+		(road ?arg0 - location ?arg1 - location)
+		(at ?arg0 - locatable ?arg1 - location)
+		(in ?arg0 - package ?arg1 - vehicle)
+		(capacity ?arg0 - vehicle ?arg1 - capacity_number)
+		(capacity_predecessor ?arg0 - capacity_number ?arg1 - capacity_number)
+		(dest ?arg0 - package ?arg1 - location)
+	)
+
+	(:task deliver
+		:parameters (?p - package ?l - location)
+	)
+
+	(:task get_to
+		:parameters (?v - vehicle ?l - location)
+	)
+
+	(:task free_drive
+		:parameters (?v - vehicle)
+	)
+
+	(:task load
+		:parameters (?v - vehicle ?l - location ?p - package)
+	)
+
+	(:task unload
+		:parameters (?v - vehicle ?l - location ?p - package)
+	)
+
+	(:method m_deliver_ordering_0
+		:parameters (?l1 - location ?l2 - location ?p - package ?v - vehicle)
+		:task (deliver ?p ?l2)
+        :precondition (and
+                        (at ?p ?l1)
+                      )
+		:subtasks (and
+		 (task0 (get_to ?v ?l1))
+		 (task1 (load ?v ?l1 ?p))
+		 (task2 (get_to ?v ?l2))
+		 (task3 (unload ?v ?l2 ?p))
+		)
+		:ordering (and
+			(< task0 task1)
+			(< task1 task2)
+			(< task2 task3)
+		)
+	)
+
+	(:method m_unload_ordering_0
+		:parameters (?l - location ?p - package ?s1 - capacity_number ?s2 - capacity_number ?v - vehicle)
+		:task (unload ?v ?l ?p)
+        :precondition (and
+                        (at ?v ?l)
+                        (capacity_predecessor ?s1 ?s2)
+                        (capacity ?v ?s1)
+                        (in ?p ?v)
+                      )
+		:subtasks (and
+		 (task0 (drop ?v ?l ?p ?s1 ?s2))
+		)
+	)
+
+	(:method m_load_ordering_0
+		:parameters (?l - location ?p - package ?s1 - capacity_number ?s2 - capacity_number ?v - vehicle)
+		:task (load ?v ?l ?p)
+        :precondition (and
+                        (at ?v ?l)
+                        (at ?p ?l)
+                        (capacity_predecessor ?s1 ?s2)
+                        (capacity ?v ?s2)
+                        (not (in ?p ?v))
+                      )
+		:subtasks (and
+		 (task0 (pick_up ?v ?l ?p ?s1 ?s2))
+		)
+	)
+
+
+	(:method m_free_drive_ordering_0
+		:parameters (?l1 - location ?l2 - location ?v - vehicle)
+		:task (free_drive ?v)
+        :precondition (and
+                        (at ?v ?l1)
+                        (road ?l1 ?l2)
+                      )
+		:subtasks (and
+		 (task0 (drive ?v ?l1 ?l2))
+		 (task1 (free_drive ?v))
+		)
+		:ordering (and
+			(< task0 task1)
+		)
+	)
+
+	;; Ends the recursion. A method with an empty subtask network: the
+	;; free_drive task simply leaves the network.
+	(:method m_stop_free_drive_ordering_0
+		:parameters (?v - vehicle)
+		:task (free_drive ?v)
+		:subtasks ()
+	)
+
+	(:method m_i_am_there_ordering_0
+		:parameters (?l - location ?v - vehicle)
+		:task (get_to ?v ?l)
+        :precondition (and
+                        (at ?v ?l)
+                      )
+		:subtasks (and
+		 (task0 (noop ?v ?l))
+		)
+	)
+
+	(:action drive
+		:parameters (?v - vehicle ?l1 - location ?l2 - location)
+		:precondition
+			(and
+				(at ?v ?l1)
+				(road ?l1 ?l2)
+			)
+		:effect
+			(and
+				(not (at ?v ?l1))
+				(at ?v ?l2)
+			)
+	)
+
+	(:action noop
+		:parameters (?v - vehicle ?l2 - location)
+		:precondition
+			(and
+				(at ?v ?l2)
+			)
+		:effect ()
+	)
+
+	(:action pick_up
+		:parameters (?v - vehicle ?l - location ?p - package ?s1 - capacity_number ?s2 - capacity_number)
+		:precondition
+			(and
+				(at ?v ?l)
+				(at ?p ?l)
+				(capacity_predecessor ?s1 ?s2)
+				(capacity ?v ?s2)
+                (not (in ?p ?v))
+			)
+		:effect
+			(and
+				(not (at ?p ?l))
+				(in ?p ?v)
+				(capacity ?v ?s1)
+				(not (capacity ?v ?s2))
+			)
+	)
+
+	(:action drop
+		:parameters (?v - vehicle ?l - location ?p - package ?s1 - capacity_number ?s2 - capacity_number)
+		:precondition
+			(and
+				(at ?v ?l)
+				(in ?p ?v)
+				(capacity_predecessor ?s1 ?s2)
+				(capacity ?v ?s1)
+			)
+		:effect
+			(and
+				(not (in ?p ?v))
+				(at ?p ?l)
+				(capacity ?v ?s2)
+				(not (capacity ?v ?s1))
+			)
+	)
+)

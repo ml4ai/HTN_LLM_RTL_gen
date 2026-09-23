@@ -59,6 +59,11 @@ CONFIGS = [
     ("d18_p18",       "d18.hddl",              "p18.hddl",                         "simple",        50, 12,  2000, 5),
     ("forall_test",   "forall_test.hddl",      "forall_test_problem.hddl",         "simple",       100, 30,   300, 5),
     ("atom_test",     "atom_test.hddl",        "atom_test_problem.hddl",           "simple",       200, 30,   300, 5),
+    # One of the 8.7 encodings, so the transport_* variant domains and the
+    # delivery_chain scorer stay covered by the regression harness. The other
+    # four are slower and are compared against each other by
+    # scripts/goto_experiment, which is where that question belongs.
+    ("chain_mutex",   "transport_mutex_left.hddl", "transport_chain_b.hddl",       "delivery_chain", 20, 6, 4000, 5),
 ]
 
 SEMANTIC = ["rollout_scores", "rollout_failed", "plan_ok", "plan_len", "plan", "final_state_hash"]

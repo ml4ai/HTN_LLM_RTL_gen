@@ -273,6 +273,14 @@ Since Algorithm 2 is complete, a rollout and the tree reach the same set of
 terminal networks, so a value estimated over the unrestricted set still
 estimates the same quantity.
 
+**That measurement is narrower than it reads.** It was taken on the shipped
+`transport_problem.hddl`, and §8.7.1 later established that this instance does
+not exercise the redundancy the restriction exists to remove: its road graph is
+complete, so the recursive `get_to` method never contributes an action. On
+instances that do exercise it, the interleaving of unordered top-level tasks is
+the dominant cost (§8.7.6), and restricting `simulation` is worth re-measuring
+against those rather than against this one. That is §8.10.
+
 **What it does not fix.** It does not reduce the time budget `transport` needs.
 That is set by rollout cost (§2.3.1), which this leaves alone by design.
 
@@ -587,6 +595,18 @@ current.
 `domains/atom_test.hddl` covers both: two atoms used in a precondition, a
 delete effect, an add effect and the initial state, plus an action carrying an
 empty `(and)` precondition. `test_MCTS_planner` asserts the resulting state.
+
+19. **An empty subtask network segfaulted the loader.** HDDL allows a method to
+    decompose into nothing — `<subtask-defs> ::= () | ...` — and a method that
+    ends a recursion is exactly what wants it. `loadDomain`'s ordered branch
+    opens by indexing `sts[0]`, so `:ordered-subtasks ()` read past the end of
+    an empty vector; the planner exited 139 (`SIGSEGV`) on such a domain. The
+    unordered spelling `:subtasks ()` happened to be safe, since every loop in
+    that branch is over `sts`. Found while building the task-insertion encoding
+    of §8.7, whose `free_drive` recursion needs a base case with no subtasks.
+    `domains/empty_method_test.hddl` is a loader-only fixture carrying both
+    spellings, and `test_loader` was confirmed to fail against the unfixed
+    loader.
 
 ### 4.2 Open
 
@@ -1030,6 +1050,13 @@ attacks the size of the search space rather than the cost per node.
 `transport_domain.hddl` contains the recursive `goto` pattern that Godet et al.
 show causes an exponential blow-up of redundant decompositions — see §8.7.
 
+*Done, and it was a lever: 15× on the largest instance anything solves, from a
+re-encoding that costs no planner code. But it did not answer the question it
+was expected to. The shipped transport instance turns out not to exercise the
+pattern at all (§8.7.1), and on instances that do, the dominant redundancy is
+the interleaving of unordered top-level tasks rather than the `goto` pattern
+itself (§8.7.6). That is planner work, and it is §8.10.*
+
 ---
 
 ### 6.4 What to expect
@@ -1042,6 +1069,11 @@ show causes an exponential blow-up of redundant decompositions — see §8.7.
 | share immutable state | memory, little time | medium |
 | deep copies | only visible after Z3 is gone | medium |
 | domain re-encoding | potentially exponential | unknown until tried |
+
+*Outcome of the last row: 15× on the largest instance any encoding solves, and
+flat where the original grows — but from the mutex rewrite applied to a base
+the paper does not apply it to, while the encoding the paper recommends was
+3 000× worse than the one it replaces. §8.7.*
 
 The single number worth keeping in mind: **2% of the time Z3 is given is spent
 solving**. Everything else it does here is setup for a question that did not
@@ -1243,6 +1275,7 @@ but because every semantic change has to be evaluated by running the planner,
 and right now a single rollout on `transport` costs three seconds.
 
 §8.1–§8.6 come from §6. §8.7–§8.9 are open questions from §4, §5 and §7.
+§8.10 came out of doing §8.7.
 
 ---
 
@@ -1470,11 +1503,7 @@ contents are `std::string`: one per search node, one per binding in
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
 of §8.5.
 
-### 8.7 Re-encode the recursive `goto` pattern out of the domains
-
-Independent of everything above, needs no planner code, and is plausibly the
-largest single lever because it attacks the *size* of the search space rather
-than the cost per node.
+### 8.7 Re-encode the recursive `goto` pattern out of the domains — **done**
 
 **Paper.** Godet, R., Bit-Monnot, A., & Lesire-Cabaniols, C. (2024). *Redundant
 Decompositions in PO HTN Domains: Goto Considered Harmful.* 7th ICAPS Workshop
@@ -1485,24 +1514,234 @@ method preconditions. It identifies a pattern common in partially ordered HTN
 domains that makes the number of decompositions explode: a recursive "get me to
 X" compound task, several of which sit unordered relative to each other, each
 able to contribute the same movement actions — so one plan is reachable through
-exponentially many decompositions.
+n^k decompositions, for n such tasks and k movement actions.
 
 **`transport_domain.hddl` has exactly this pattern.** `get_to` is their `goto`,
-with the same three methods — one hop (`m_direct`), recurse (`m_via`),
-already-there (`m_noop`) — and `m_deliver_ordering_0` puts *two* unordered
-`get_to` subtasks in one network. The default domain is the pathology.
+with the same three methods — one hop, recurse, already-there — and
+`m_deliver_ordering_0` puts *two* unordered `get_to` subtasks in one network.
 
-They propose two re-encodings, both in ordinary HTN with no planner support:
-a **mutex** model, and a **(partial) task insertion** model that mimics FAPE's
+They propose two re-encodings, both in ordinary HTN with no planner support: a
+**mutex** model, and a **(partial) task insertion** model that mimics FAPE's
 task-dependent/task-independent split (§7.3) by adding a recursive `free-move`
-compound task. They report task insertion "clearly dominates" for native PO HTN
-planners, and also that different planners favour different encodings — so
-which one wins here is empirical.
+compound task. They report that task insertion "clearly dominates" for native
+PO HTN planners.
 
-Worth understanding before writing many RTL domains, since this is the pattern
-most likely to recur.
+**On this planner it does not.** It is the worst of the five encodings by more
+than three orders of magnitude, and the rewrite they use as their improved
+baseline is also a loss. What helps is one half of the *other* rewrite, applied
+to a base they do not apply it to.
 
-**Depends on:** §8.1, to tell whether it helped. **Risk:** none to the code.
+#### 8.7.1 The instances had to be built first
+
+The shipped `transport_problem.hddl` does not exercise the pattern at all, and
+that is provable from the domain text rather than merely observed. The
+recursive method's precondition is
+
+    (at ?v ?l1) ∧ (road ?l2 ?l3) ∧ ¬(road ?l1 ?l3) ∧ ¬(at ?v ?l2) ∧ ¬(at ?v ?l3)
+
+and the instance has three locations with all six directed roads present.
+`(at ?v ?l1)` pins `?l1` to where the vehicle is. `¬(road ?l1 ?l3)` then forces
+`?l3 = ?l1`, since a road exists between every pair of distinct locations. But
+that makes `¬(at ?v ?l3)` contradict `(at ?v ?l1)`. The conjunction is
+unsatisfiable, so the method can never contribute an action here.
+
+Measurement agrees and prices it: deleting the method leaves the same
+distribution of rollout scores with no failures — nine of ten rollouts at
+0.625 and one at 0.600, in both cases — while cutting rollouts from 712 nodes
+to 429. (The individual scores come out in a different *order*, because
+removing a method changes how many draws the RNG is asked for; the multiset is
+what is meaningful.) So roughly 40% of a rollout on the shipped instance was
+spent generating bindings for a method whose precondition then rejected every
+one of them.
+
+That is why §6.1's transport profile shows nothing of this, and why the
+experiment needed new instances. `scripts/gen_transport_chain.py` generates
+them, and the shape is load-bearing in two ways:
+
+* **A chain**, so paths are longer than one hop and the recursion actually
+  fires.
+* **One-way** roads, so it terminates. This planner's rollouts are an unbounded
+  depth-first search with no cycle detection or depth limit, and on a two-way
+  chain the recursion can oscillate between two locations forever — in the
+  left-recursive encoding as readily as the right-recursive one. With one-way
+  roads every recursive step strictly advances along the chain in all five
+  encodings. That constraint is a fact about this planner, not about the
+  domains, and it is the first thing that would have to change to run these
+  encodings on the IPC instances.
+
+The ladder moves one knob at a time from instance `b`: packages set n (two
+`get_to` subtasks each), chain length sets k.
+
+#### 8.7.2 Results
+
+Five encodings, five rollouts each at seed 2022. Median rollout time, and mean
+search nodes visited per rollout. Nodes were counted with temporary
+instrumentation in `simulation`, removed afterwards.
+
+| | **a** 4 loc, 2 pkg | **b** 5 loc, 2 pkg | **c** = b + a package | **d** = b + a location |
+|---|---|---|---|---|
+| | 3 drives, 4 `get_to` | 4 drives, 4 `get_to` | 4 drives, 6 `get_to` | 5 drives, 4 `get_to` |
+| `original` | 7.6 ms / 1 385 | 97.8 ms / 24 156 | — | 174.1 ms / 80 082 |
+| `common` | 51.8 ms / 7 921 | 55.1 ms / 22 194 | — | 49.7 ms / 79 825 |
+| `mutex` | 9.8 ms / 1 103 | 17.8 ms / 4 745 | — | 24.4 ms / 7 529 |
+| **`mutex_left`** | 9.5 ms / 2 925 | **13.1 ms / 1 469** | — | **11.4 ms / 1 378** |
+| `insert` | 37 702 ms / 4 646 976 | — | — | — |
+
+An em dash is a timeout: a single run of five rollouts did not finish in 300 s.
+
+Within each instance every encoding that finished returned the same score, so
+all of them found equally short plans and the timing comparison is between
+equal outcomes. `delivery_chain` rewards fewer drives precisely so that the
+insert model's freedom to emit an unasked-for drive would show up here; it did
+not, on the one instance insert could finish.
+
+**Node counts track time, so this is search-space size and not cost per node.**
+That is the point of the whole item: every other step in §8 made nodes cheaper,
+and this one makes there be fewer of them. The one place the two disagree is
+`common` at instance d, which visits the same number of nodes as `original`
+(79 825 vs 80 082) while taking a third of the time. That is unexplained; with
+a median over five rollouts against a mean over the same five, it may be
+nothing. It does not affect any of the conclusions below, all of which rest on
+differences of one to three orders of magnitude.
+
+#### 8.7.3 The two rewrites in `common` are independent, and only measuring them separately makes the result legible
+
+What the paper calls the `common` version of transport bundles two changes:
+drop the one-hop method, and flip the recursion from left (`get_to` an
+intermediate, then drive) to right (drive one hop, then `get_to` again).
+Splitting them, on instance a:
+
+| | nodes per rollout |
+|---|---|
+| left recursion + one-hop method (= `original`) | 1 385 |
+| left recursion, one-hop method removed | *domain is incomplete — every rollout fails* |
+| right recursion + one-hop method | 7 729 |
+| right recursion, one-hop method removed (= `common`) | 7 921 |
+
+**The direction of the recursion is the dominant term, and here it is a loss.**
+The reason is visible in the domain text. The left-recursive method carries a
+goal-directed guard: `(road ?l2 ?l3)` forces the intermediate to neighbour the
+*target*, and `(not (road ?l1 ?l3))` forbids recursing at all when a direct hop
+exists. Together they make the recursion walk backwards from the destination
+and stop as soon as it meets the vehicle. The right-recursive form has no
+equivalent — `(road ?l1 ?ln)` says only "drive somewhere" — so the search
+wanders forward and discovers its mistakes late.
+
+The second row is the reason the one-hop method cannot simply be dropped here:
+`(not (road ?l1 ?l3))` presupposes it. Without it a one-hop journey has no
+applicable method at all.
+
+Godet et al. report the same split by planner rather than by encoding — Aries,
+which chains backwards, prefers left recursion; PandaPi and LinearComplex,
+which chain forwards, prefer right. This planner chains forwards through
+*states*, so the naive expectation is that it should behave like PandaPi. It
+does not, and the reason is that PandaPi has the FF heuristic to tell it which
+way to wander. This planner's rollouts are uninformed. The guard in the
+left-recursive method is the only guidance there is, so discarding it costs
+more than the better state visibility buys.
+
+#### 8.7.4 The mutex helps, and helps more as instances grow
+
+The mutex rewrite makes a `get_to` take the vehicle's lock before it may emit
+any drive and hold it until the vehicle arrives, so no other `get_to` can
+contribute drives in the middle of one's sequence. It collapses the number of
+decompositions of a given drive sequence from exponential in the number of
+unordered `get_to` tasks to linear in it.
+
+Applied to the paper's `common` base it recovers most of what right recursion
+lost. **Applied to the `original` left-recursive base — which the paper does
+not do, and which `transport_mutex_left.hddl` is — it is the best encoding by a
+wide margin, and its cost barely moves with instance size at all:** 2 925 →
+1 469 → 1 378 nodes across a, b, d, against `original`'s 1 385 → 24 156 →
+80 082. Against `original` at instance d that is **15× in time and 58× in
+nodes**.
+
+The flatness makes sense once the mechanism is clear. On a one-way chain the
+drive sequence itself is forced; the only thing there was to search was which
+`get_to` should contribute which drive, and the lock removes exactly that.
+
+#### 8.7.5 Task insertion is catastrophic here, and it is the insertion that does it
+
+`insert` needed 4 646 976 nodes on the smallest instance where `original`
+needed 1 385, and timed out everywhere else.
+
+The obvious suspect was grounding width rather than the idea itself. In this
+encoding the drives come from a `free_drive` task whose method has two free
+location parameters, so under HDDL precondition timing (§2.3.1) it enumerates
+L² bindings and the synthesised check rejects them one step later. A probe that
+threads the vehicle's location through `free_drive`'s task parameters narrows
+that to L:
+
+| instance a | nodes per rollout |
+|---|---|
+| `insert`, L² grounding (as the paper models it) | 4 646 976 |
+| `insert`, L grounding (location threaded through the task) | 1 516 457 |
+| `original` | 1 385 |
+
+So grounding width is worth 3×, and the remaining **1 100×** is not it. The
+cause is insertion freedom itself. `free_drive` sits unordered against
+everything, so at *every* node of the search it is a candidate, and the
+hierarchy no longer says anything about which drives to emit or when. The
+model buys decomposition uniqueness by giving up the guidance that made the
+decompositions worth having.
+
+That is a good trade for PandaPi and Aries, which have a heuristic and a CSP
+solver respectively to replace what was given up. It is a ruinous one for a
+uniformly random depth-first rollout, which has nothing.
+
+#### 8.7.6 What the redundancy actually is here, and what is left of it
+
+Instance c is the sharpest result in the table and it is a negative one.
+Adding one package to instance b defeats **every** encoding, `mutex_left`
+included, while adding one location to the same instance leaves `original`
+solving it in 174 ms.
+
+Godet et al.'s n^k does not predict that: a package takes n from 4 to 6 at
+k = 4, a location takes k from 4 to 5 at n = 4, and those are comparable. The
+asymmetry says the dominant cost in this domain is not the `goto` attribution
+their paper is about. It is the **interleaving of the unordered top-level
+`deliver` tasks**, which grows far faster: three unordered tasks of four
+ordered subtasks each admit 12!/(4!)³ ≈ 34 650 interleavings against 8!/(4!)²
+= 70 for two.
+
+The mutex fixes the attribution redundancy and does not touch the interleaving
+one. That is why `mutex_left` is flat in chain length and still dies on the
+package knob.
+
+This points somewhere specific, and it is planner work rather than domain work,
+so it is **§8.10** rather than part of this item. `expansion` already restricts
+compound-task branching to one task per node (Algorithm 2, §2.3.2) — which is
+exactly a restriction on interleaving — but `simulation` deliberately does not,
+and rollouts are where all of this time goes.
+
+#### 8.7.7 What to carry into the RTL domains
+
+* **Prefer rewrites that remove choice without removing information.** That is
+  the whole difference between the mutex, which is a clean win, and both the
+  right-recursion flip and task insertion, which are losses. A planner with a
+  heuristic can afford to trade guidance for a smaller space. This one cannot,
+  and will not be able to until it has one.
+* **Encoding results do not transfer between planners.** The paper's own
+  conclusion says as much — "planner-independent modeling remains a
+  far-fetched goal" — and this is a clean instance of it: their recommended
+  encoding is this planner's worst, by 3 000×.
+* **Watch the number of unordered top-level tasks before the depth of any
+  recursion.** In this domain it was the more expensive knob by far.
+* **Recursive tasks need a termination argument that does not depend on the
+  search.** Every encoding here relies on one-way roads. Without a depth bound
+  or cycle detection in `simulation`, a domain that can cycle will hang a
+  rollout rather than fail it.
+
+**Artifacts.** `domains/transport_{original,common,mutex,mutex_left,insert}.hddl`,
+the instances from `scripts/gen_transport_chain.py`, and `scripts/goto_experiment`,
+which reruns the grid. One encoding is in the regression harness as
+`chain_mutex` so the variant domains and the `delivery_chain` scorer stay
+covered; comparing the five against each other belongs in the experiment
+script, not the benchmark.
+
+**Depends on:** §8.1. **Risk:** none to the planner — the one code change was
+a loader crash this turned up (§4.1 note 19). **Payoff:** 15× on the largest
+instance anything solves, and flat where the original grows.
 
 *Attribution note: this is sometimes mis-cited to Alford, Bercher & Aha. That
 is the 2015 task-insertion paper Godet et al. cite as the source of the
@@ -1533,10 +1772,44 @@ functions read. Two of the four shipped domains also break the assumptions its
 systematicity theorem needs (§5.4), so it would be sound and complete but not
 fully systematic on them.
 
-Do §8.7 first. Both attack redundant decompositions, and the domain
-re-encoding is free where this is not.
+§8.7 came first, and changed what this one should be measured against. Both
+attack redundant decompositions, but §8.7.6 found that the redundancy which
+actually dominates `transport` is interleaving rather than decomposition order,
+and the chain instances it produced are where that is visible. Do §8.10 before
+this: it is the same restriction applied to the rollouts, which is where the
+time goes, and it is much cheaper to try.
 
-**Depends on:** §8.1 and §8.7. **Risk:** medium. **Payoff:** unknown; measure.
+**Depends on:** §8.1, §8.7 and ideally §8.10. **Risk:** medium.
+**Payoff:** unknown; measure.
+
+### 8.10 Restrict interleaving in `simulation`, and measure it on instances that need it
+
+§8.7.6 found that in `transport` the dominant redundancy is not the `goto`
+attribution Godet et al. describe but the **interleaving of unordered top-level
+tasks**: adding one package to chain instance b defeats every encoding tried,
+while adding one location leaves the original solving it in 174 ms.
+
+`expansion` already restricts this — Algorithm 2 branches over a single
+unconstrained compound task per node (§2.3.2) — but `simulation` deliberately
+does not, and rollouts are where essentially all the time goes. The measurement
+behind that decision was taken on the shipped transport instance, which
+§8.7.1 showed does not exercise the pattern at all. It should be retaken on the
+chain instances, where it does.
+
+Two things to try, cheapest first:
+
+1. Give `simulation` the same Algorithm 2 restriction and re-measure on
+   `transport_chain_{b,c,d}`. This was measured before and rejected; the
+   argument for revisiting it is only that the earlier instance could not see
+   the effect.
+2. Bound rollout depth. Independently of any of this, `simulation` is an
+   unbounded DFS with no cycle detection, which is why every encoding in §8.7
+   needs one-way roads to terminate. A depth bound would make rollouts total
+   and let the IPC instances be used directly.
+
+**Depends on:** §8.1 and the §8.7 instances. **Risk:** medium — (1) changes
+results. **Payoff:** unknown; it is the knob the §8.7 data says is dominant.
+
 
 ---
 

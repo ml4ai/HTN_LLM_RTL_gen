@@ -194,6 +194,57 @@ BOOST_AUTO_TEST_CASE(test_apply) {
 
 }
 
+//`:subtasks ()` -- a method whose subtask network is empty -- is legal HDDL and
+//is how the task-insertion encoding of 8.7 ends its recursion: free_drive
+//decomposes into nothing and simply leaves the task network. It is worth its
+//own assertion because the loader's ordered-subtask branch indexes sts[0], so
+//an empty network used to read past the end of a vector, and because no
+//shipped domain had one until transport_insert.hddl.
+BOOST_AUTO_TEST_CASE(test_empty_subtask_network) {
+    auto domain = loadDomain("../../domains/transport_insert.hddl").first;
+
+    auto& free_drive = domain.methods["free_drive"];
+    BOOST_TEST(free_drive.size() == 2);
+
+    int empty = 0, recursive = 0;
+    for (auto& m : free_drive) {
+        if (m.get_subtasks().empty()) {
+            empty++;
+            BOOST_TEST(m.get_orderings().empty());
+            //An empty network carries no state precondition either, so nothing
+            //was synthesised for it.
+            BOOST_TEST(m.get_preconditions() == "__NONE__");
+        }
+        else {
+            recursive++;
+        }
+    }
+    BOOST_TEST(empty == 1);
+    BOOST_TEST(recursive == 1);
+
+    //And get_to keeps only the method that does nothing: in this encoding a
+    //get_to asserts a condition rather than producing drives.
+    BOOST_TEST(domain.methods["get_to"].size() == 1);
+
+    //Both HDDL spellings of an empty network, including the one no shipped
+    //domain uses. `:ordered-subtasks ()` reached the loader's ordered branch,
+    //which opens by indexing sts[0] -- reading past the end of an empty
+    //vector. Before the guard this exited 139 (SIGSEGV).
+    auto fixture = loadDomain("../../domains/empty_method_test.hddl").first;
+    for (auto const& task : {"settle", "settle_ordered"}) {
+        int empty = 0;
+        for (auto& m : fixture.methods[task]) {
+            if (m.get_subtasks().empty()) {
+                empty++;
+                BOOST_TEST(m.get_orderings().empty());
+            }
+        }
+        BOOST_TEST_CONTEXT(task) {
+            BOOST_TEST(empty == 1);
+        }
+    }
+}
+
 //The loader keeps a structured form of every precondition and effect condition
 //alongside the SMT string it hands to Z3 (lib/expr.h). Nothing evaluates it
 //yet -- the direct evaluator is the next step -- so the only thing worth
@@ -209,6 +260,11 @@ BOOST_AUTO_TEST_CASE(test_expr_ast_matches_smt) {
       "../../domains/d18.hddl",
       "../../domains/forall_test.hddl",
       "../../domains/atom_test.hddl",
+      "../../domains/transport_original.hddl",
+      "../../domains/transport_common.hddl",
+      "../../domains/transport_mutex.hddl",
+      "../../domains/transport_mutex_left.hddl",
+      "../../domains/transport_insert.hddl",
     };
 
     int checked = 0;
