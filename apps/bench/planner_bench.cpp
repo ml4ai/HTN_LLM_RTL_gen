@@ -94,6 +94,8 @@ static std::string canonical_state(KnowledgeBase& kb) {
 int main(int argc, char* argv[]) {
   std::string dom_file, prob_file, score_fun = "simple";
   int seed = 2022, rollouts = 0, time_limit = 1000, r = 5, iterations = 0;
+  int max_depth = kDefaultMaxRolloutDepth;
+  int max_decisions = kDefaultMaxDecisions;
   double c = sqrt(2.0);
   bool do_plan = false, show_state = false;
 
@@ -111,6 +113,8 @@ int main(int argc, char* argv[]) {
       ("time_limit,T", po::value<int>(&time_limit), "planner budget per decision in ms, default = 1000")
       ("simulations,r", po::value<int>(&r), "rollouts per MCTS cycle, default = 5")
       ("exp_param,c", po::value<double>(&c), "exploration parameter, default = sqrt(2)")
+      ("max_depth", po::value<int>(&max_depth), "depth bound for a rollout; default = 1000")
+      ("max_decisions", po::value<int>(&max_decisions), "backstop on committed decisions; default = 1000")
       ("show_state", po::bool_switch(&show_state), "also print the sorted final state")
     ;
     po::variables_map vm;
@@ -163,16 +167,24 @@ int main(int argc, char* argv[]) {
       std::mt19937_64 g(seed);
       std::vector<double> ms;
       std::ostringstream scores;
-      int failed = 0;
+      int failed = 0, cut = 0;
       for (int i = 0; i < rollouts; i++) {
         std::vector<std::string> plan;
         auto t0 = std::chrono::steady_clock::now();
-        auto rs = simulation(plan,state,tasks,domain,g);
+        auto rs = simulation(plan,state,tasks,domain,g,max_depth);
         ms.push_back(std::chrono::duration<double,std::milli>(
                        std::chrono::steady_clock::now()-t0).count());
         if (i) scores << ",";
-        if (rs) {
-          scores << std::fixed << std::setprecision(6) << *rs;
+        //"fail" and "cutoff" are reported apart because they mean different
+        //things: the first is a proof that the initial network is a dead end,
+        //the second only that the depth bound bit. A baseline where these two
+        //swapped would be a behaviour change worth failing on.
+        if (rs.status == RolloutStatus::Solved) {
+          scores << std::fixed << std::setprecision(6) << rs.score;
+        }
+        else if (rs.status == RolloutStatus::Cutoff) {
+          scores << "cutoff";
+          cut++;
         }
         else {
           scores << "fail";
@@ -191,6 +203,8 @@ int main(int argc, char* argv[]) {
                     : 0.5*(sorted[sorted.size()/2 - 1] + sorted[sorted.size()/2]);
       std::cout << "rollouts=" << rollouts << "\n";
       std::cout << "rollout_failed=" << failed << "\n";
+      std::cout << "rollout_cutoff=" << cut << "\n";
+      std::cout << "max_depth=" << max_depth << "\n";
       std::cout << std::fixed << std::setprecision(2);
       std::cout << "rollout_ms_median=" << median << "\n";
       std::cout << "rollout_ms_mean=" << sum/ms.size() << "\n";
@@ -223,7 +237,7 @@ int main(int argc, char* argv[]) {
       size_t plan_len = 0;
       std::string state_canon;
       try {
-        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations);
+        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions);
         auto& end = results.t[results.end];
         plan_len = end.plan.size();
         for (size_t i = 0; i < end.plan.size(); i++) {

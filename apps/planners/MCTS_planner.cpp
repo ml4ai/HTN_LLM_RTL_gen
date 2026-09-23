@@ -16,6 +16,8 @@ int main(int argc, char* argv[]) {
   int r = 5;
   double c = sqrt(2.0);
   int seed = 2022;
+  int max_depth = kDefaultMaxRolloutDepth;
+  int max_decisions = kDefaultMaxDecisions;
   std::string dom_file = "../domains/transport_domain.hddl";
   std::string prob_file = "../domains/transport_problem.hddl";
   std::string score_fun = "delivery_one";
@@ -28,6 +30,8 @@ int main(int argc, char* argv[]) {
       ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search decision (int), default = 1000. MCTS always spends the whole budget, so lower it for small domains")
       ("simulations,r", po::value<int>(), "Number of simulations per MCTS cycle (int), default = 5")
       ("exp_param,c",po::value<double>(),"The exploration parameter for the planner (double), default = sqrt(2)")
+      ("max_decisions",po::value<int>(),"Backstop on the number of committed decisions before the planner gives up (int), default = 1000. It exists so that a search with no useful signal reports instead of running forever")
+      ("max_depth",po::value<int>(),"Depth bound for a single rollout (int), default = 1000. Rollouts are a depth-first search, so a domain whose decomposition can cycle needs this to terminate; raise it if the planner reports rollouts stopping at the bound")
       ("dom_file,D", po::value<std::string>(),"domain file (string), default = transport_domain.hddl")
       ("prob_file,P",po::value<std::string>(),"problem file (string), default = transport_problem.hddl")
       ("score_fun,F",po::value<std::string>(),"name of score function (string), default = delivery_one")
@@ -55,6 +59,14 @@ int main(int argc, char* argv[]) {
 
     if (vm.count("exp_param")) {
       c = vm["exp_param"].as<double>();
+    }
+
+    if (vm.count("max_depth")) {
+      max_depth = vm["max_depth"].as<int>();
+    }
+
+    if (vm.count("max_decisions")) {
+      max_decisions = vm["max_decisions"].as<int>();
     }
 
     if (vm.count("dom_file")) {
@@ -115,7 +127,7 @@ int main(int argc, char* argv[]) {
         graph_file = problem.head + ".png";
       }
       auto start = std::chrono::high_resolution_clock::now();
-      auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed);
+      auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions);
       auto stop = std::chrono::high_resolution_clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
       cout << "Time taken by planner: "
@@ -128,7 +140,7 @@ int main(int argc, char* argv[]) {
     }
     else {
       auto start = std::chrono::high_resolution_clock::now();
-      cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed);
+      cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions);
       auto stop = std::chrono::high_resolution_clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
       cout << "Time taken by planner: "

@@ -281,7 +281,7 @@ not exercise the redundancy the restriction exists to remove: its road graph is
 complete, so the recursive `get_to` method never contributes an action. On
 instances that do exercise it, the interleaving of unordered top-level tasks is
 the dominant cost (§8.7.6), and restricting `simulation` is worth re-measuring
-against those rather than against this one. That is §9.2.
+against those rather than against this one. That is §9.1.
 
 **What it does not fix.** It does not reduce the time budget `transport` needs.
 That is set by rollout cost (§2.3.1), which this leaves alone by design.
@@ -785,7 +785,7 @@ state, and its score functions read that state, so delaying it delays the signal
 MCTS is steering by.
 
 **Status.** Algorithm 2 is implemented and measured (§2.3.2). Algorithm 3 is
-not; it is §9.3. Going further would mean accepting the postponed state update,
+not; it is §9.2. Going further would mean accepting the postponed state update,
 which is the real question for this planner rather than a detail: node values
 come from rollouts over the current state, and its score functions read that
 state. Worth measuring rather than assuming the systematic one wins — and
@@ -1059,7 +1059,7 @@ re-encoding that costs no planner code. But it did not answer the question it
 was expected to. The shipped transport instance turns out not to exercise the
 pattern at all (§8.7.1), and on instances that do, the dominant redundancy is
 the interleaving of unordered top-level tasks rather than the `goto` pattern
-itself (§8.7.6). That is planner work, and it is §9.2.*
+itself (§8.7.6). That is planner work, and it is §9.1.*
 
 ---
 
@@ -1266,7 +1266,7 @@ Two caveats, both important:
    protection-by-pruning does not.
 
 Neither caveat is a reason to avoid it, but both are reasons not to make it the
-default without measuring. It is §9.6.
+default without measuring. It is §9.5.
 
 ---
 
@@ -1286,7 +1286,9 @@ Cumulative effect on median rollout time, against the original Z3
 implementation: `transport` 362×, `simple_travel` 479×, `sar3` 578×,
 `d18_gather` 912×, `d18_p18` 478×, `forall_test` 993×, `atom_test` 563× — plus
 15× again on the largest chain instance any encoding solves, from §8.7, which
-is a different kind of win and is measured on different instances.
+is a different kind of win and is measured on different instances. §8.8 bought
+no speed at all and is not meant to: it converts two crashes and two hangs into
+reported failures.
 
 ---
 
@@ -1445,7 +1447,7 @@ strings too. Interning predicates and objects to integers at load — the
 original plan for this item, and the reason it was named "representation" —
 is the change that removes that, and it was not done here because it reaches
 much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the
-public `get_facts` API all traffic in strings. **It is now §9.4.**
+public `get_facts` API all traffic in strings. **It is now §9.3.**
 
 `simple_travel` did not move at all here, and the explanation offered at the
 time — that its rollouts were bound by recursion through a `get_to`-style task
@@ -1502,12 +1504,12 @@ these domains nothing reaches it.
 malloc, 30.3% our own code, 10% memcpy/memset**. The allocation is
 `KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
 per search node, one per binding in `apply_binding`. Two things would move it,
-larger first, and both are now items of their own: **§9.4** (interning, which
-§8.5 also left open) and **§9.5** (a trail-based state).
+larger first, and both are now items of their own: **§9.3** (interning, which
+§8.5 also left open) and **§9.4** (a trail-based state).
 
 They are no longer next, though. §8.7 showed that on the instances that are
 actually hard the binding constraint is the *number* of nodes rather than the
-cost of one, so §9.1–§9.3 come first. See the §9 preamble.
+cost of one, so §8.8 and §9.1–§9.2 come first. See the §9 preamble.
 
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
 of §8.5.
@@ -1718,7 +1720,7 @@ one. That is why `mutex_left` is flat in chain length and still dies on the
 package knob.
 
 This points somewhere specific, and it is planner work rather than domain work,
-so it is **§9.2** rather than part of this item. `expansion` already restricts
+so it is **§9.1** rather than part of this item. `expansion` already restricts
 compound-task branching to one task per node (Algorithm 2, §2.3.2) — which is
 exactly a restriction on interleaving — but `simulation` deliberately does not,
 and rollouts are where all of this time goes.
@@ -1756,12 +1758,93 @@ instance anything solves, and flat where the original grows.
 is the 2015 task-insertion paper Godet et al. cite as the source of the
 mechanism they mimic; Alford and Bercher organise the workshop.*
 
+### 8.8 Bound rollout depth — **done**
+
+`simulation` was an unbounded depth-first search with no depth limit and no
+cycle detection, so a domain whose decomposition can cycle did not make a
+rollout fail — it made the process hang or die. Measured on a two-way road
+graph, where §8.7's encodings all needed one-way roads for exactly this reason:
+the left-recursive encoding ran 45 s without finishing where the one-way
+version takes 100 ms, and the right-recursive one exhausted the stack and
+exited 139.
+
+**The type carries the fix.** `simulation` returned `std::optional<double>`,
+where `nullopt` meant "no plan", and callers wrote `if (!rs)`. It now returns
+
+    struct RolloutResult { RolloutStatus status; double score; };
+    enum class RolloutStatus { Solved, Refuted, Cutoff };
+
+with deliberately **no conversion to `bool`**, so the old spelling no longer
+compiles and every call site has to say which failure it means. That is the
+whole point: `Refuted` means the DFS exhausted the subtree, which on a finite
+space is a *proof* of a dead end and is what licenses marking the node dead
+(§2.4). `Cutoff` means the bound bit, and proves nothing.
+
+**The trap is real, and was demonstrated rather than assumed.** A build that
+treats `Cutoff` as `Refuted` — one added line — turns `transport_chain_b`
+at `--max_depth 40` from a 14-action plan into a failure at the root, and
+reports the cause as a time limit rather than as anything to do with depth.
+The correct build solves it, because a cutoff leaves the node expandable:
+`expansion` descends past the cut and the rollout from the deeper node starts
+again with a full budget. That is what keeps the bound from costing solutions.
+
+**A cutoff abandons the rollout immediately.** The first implementation noted
+the cutoff and carried on trying sibling branches, which keeps a rollout
+exhaustive *within* the bound and is badly wrong: a rollout that succeeds
+returns at the first plan it reaches, but one that continues past a cutoff must
+exhaust the entire depth-bounded subtree before it can answer. `chain_b` plans
+in 0.9 s at the default bound and had **not finished after 75 minutes of CPU**
+at a bound of 30. Bailing on the first cutoff brought that to 0.5 s, and costs
+nothing that matters, because `Refuted` is still only returned when no cutoff
+occurred anywhere beneath the node.
+
+**A second backstop was needed, and the depth bound is what exposed it.**
+`stuck_counter` resets to 10 on every successful commit, so it bounds a run of
+consecutive backtracks and never the commit loop as a whole. That was harmless
+while every unsuccessful rollout was a refutation — refuted nodes are marked
+dead, dead options run out, the loop converges. `Cutoff` marks nothing dead, so
+a bound too tight for the domain leaves UCT with no signal, every commit
+effectively random, and commit/backtrack able to alternate without end. A
+global cap on committed decisions (`--max_decisions`, default 1000, against a
+longest shipped plan of 16 actions) turns that into a reported failure naming
+`--max_depth`.
+
+**The default bound is 1000, chosen against measurement.** The deepest rollout
+across every shipped domain and every §8.7 chain instance is 51 — `transport`
+30, `sar3` 19, `d18` 14, `simple_travel` 7, the chain instances 39–51 — so the
+default sits roughly 20× above the worst case seen. It never binds on the
+shipped domains, and the benchmark confirms it: no semantic field moves.
+
+#### 8.8.1 What this does not do, and a prediction it falsified
+
+The item as written claimed this would "unblock two-way road graphs and the IPC
+instances". **That was wrong.** Cycling domains now terminate and report
+instead of hanging or crashing — rollouts on the two-way chain come back
+`cutoff` in 66 ms and 1.1 s for the two encodings — but every rollout cuts off,
+so the search has no signal and cannot solve them. The planner grinds to the
+decision cap and says so; it does not plan.
+
+The follow-up this seemed to imply was cycle detection, and measuring killed
+that too. Counting recursion steps that land on a (state, task network)
+configuration already on the current DFS path: **2 548 of 137 632 nodes (1.9%)
+on the two-way chain, against 8 of 50 175 (0.016%) on the one-way one.** A 120×
+ratio, and still nowhere near enough — eliminating every one of them would not
+dent the blowup. The two-way explosion is *branching*, not cycling: every
+movement decomposition gains a second applicable direction and an uninformed
+DFS has no way to prefer the right one. That is the same gap §8.7 kept running
+into, and it is named under "Not on this list" rather than here.
+
+**Depends on:** nothing. **Risk:** low; discharged by the trap demonstration
+and by the benchmark. **Payoff:** turns two crashes and two hangs into reported
+failures. No effect on any domain that plans today.
+
 ---
 
 ## 9. Remaining work
 
 Ordered by what to do next rather than by when it was thought of. Two things
-reordered it, and both came out of doing §8.7:
+reordered it, and both came out of doing §8.7. (§8.8, the rollout depth bound,
+has since been done out of this list; it changed nothing about the order.)
 
 * **The bottleneck moved.** §8.1–§8.6 all attacked the *cost of a node*, and
   returned 362–993× between them. §8.7 was the first item that attacked the
@@ -1771,48 +1854,20 @@ reordered it, and both came out of doing §8.7:
   first now, and the representation work that used to be next is behind it.
 * **Representation work should follow the search changes, not precede them.**
   Interning reaches into `Grounded_Task`, `TaskGraph`, the evaluator and the
-  public `get_facts` API, and §9.2 and §9.3 both change how `TaskGraph` is used.
+  public `get_facts` API, and §9.1 and §9.2 both change how `TaskGraph` is used.
   Doing it first means doing parts of it twice.
 
 **This order assumes the goal is to plan on harder instances.** If the
 near-term goal is instead to generate and run many *small* RTL domains, the
-search space is not what hurts, and §9.4 and §9.6 should come first.
+search space is not what hurts, and §9.3 and §9.5 should come first.
 
-§9.1–§9.3 are search space. §9.4–§9.5 are cost per node, and are what §8.5 and
-§8.6 left behind. §9.6 is semantics. §9.7 is hygiene and can be folded in
+§9.1–§9.2 are search space. §9.3–§9.4 are cost per node, and are what §8.5 and
+§8.6 left behind. §9.5 is semantics. §9.6 is hygiene and can be folded in
 anywhere.
 
 ---
 
-### 9.1 Bound rollout depth
-
-`simulation` is an unbounded depth-first search with no cycle detection and no
-depth limit, so a domain whose recursion can cycle does not make a rollout
-fail — it makes it hang. Every encoding in §8.7 needs one-way roads for exactly
-this reason, and that requirement is what stands between this planner and the
-IPC instances the `goto` literature is actually measured on.
-
-A depth bound makes rollouts total. `simulation` already returns
-`std::optional<double>` and its callers already handle `nullopt`, so the
-plumbing exists.
-
-**There is a correctness trap in it, and it is the reason this is not a
-five-minute change.** A failed rollout currently *proves* the node is a dead
-end, because the DFS is complete on a finite space — that is what justifies
-marking the node dead on first failure (§2.4). A rollout that stopped because
-it hit a depth limit proves nothing. If the two are not distinguishable at the
-call site, the planner will mark live subtrees as refuted and prune them. The
-bound therefore needs a third outcome, not a second.
-
-The bound also has to be generous enough that no shipped domain reaches it, or
-the benchmark's semantic fields move for reasons that have nothing to do with
-the change.
-
-**Depends on:** nothing. **Risk:** low, given the caveat above is respected.
-**Payoff:** none directly — it unblocks §9.2, two-way road graphs, and the IPC
-instances.
-
-### 9.2 Restrict interleaving in `simulation`
+### 9.1 Restrict interleaving in `simulation`
 
 §8.7.6 found that in `transport` the dominant redundancy is not the `goto`
 attribution Godet et al. describe but the **interleaving of unordered top-level
@@ -1831,11 +1886,11 @@ transport instance, which §8.7.1 later showed cannot exercise the pattern at
 all: its road graph is complete, which makes the recursive method's
 precondition unsatisfiable. Retake it on `transport_chain_{b,c,d}`.
 
-**Depends on:** §8.1, the §8.7 instances, and §9.1 if the restriction lets a
+**Depends on:** §8.1, the §8.7 instances, and §8.8 if the restriction lets a
 rollout wander further than it used to. **Risk:** medium — it changes results.
 **Payoff:** unknown, but it is the knob the §8.7 data says is dominant.
 
-### 9.3 Algorithm 3 (systematic progression)
+### 9.2 Algorithm 3 (systematic progression)
 
 `expansion` implements Algorithm 2 (§2.3.2). Algorithm 3 would make the search
 fully systematic; §5 records the algorithm, what it would take, and why to be
@@ -1844,15 +1899,15 @@ score functions read. Two of the four shipped domains also break the
 assumptions its systematicity theorem needs (§5.4), so it would be sound and
 complete but not fully systematic on them.
 
-**Do §9.2 first.** It is the same idea — restricting how much interleaving the
+**Do §9.1 first.** It is the same idea — restricting how much interleaving the
 search branches over — applied to the rollouts, where the time actually goes,
-and it is far cheaper to try. If §9.2 turns out to be a loss, this very likely
+and it is far cheaper to try. If §9.1 turns out to be a loss, this very likely
 is too, and the experiment will have cost an afternoon instead of a week.
 
-**Depends on:** §8.1, §8.7 and §9.2. **Risk:** medium. **Payoff:** unknown;
+**Depends on:** §8.1, §8.7 and §9.1. **Risk:** medium. **Payoff:** unknown;
 measure.
 
-### 9.4 Intern predicates, objects and task names
+### 9.3 Intern predicates, objects and task names
 
 Left over from §8.5, which is where the reasoning is. After §8.6 the profile is
 **53.5% malloc, 30.3% our own code, 10% memcpy/memset**, and the allocation is
@@ -1864,26 +1919,26 @@ Interning them to integers at load is the change that removes it, and it is the
 largest remaining cost-per-node item. It was not done in §8.5 because it
 reaches much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator
 and the public `get_facts` API all traffic in strings. That reach is also why
-it belongs after §9.2 and §9.3, which change how `TaskGraph` is used.
+it belongs after §9.1 and §9.2, which change how `TaskGraph` is used.
 
-**Depends on:** §8.4; sequenced after §9.3. **Risk:** medium — wide, mechanical,
+**Depends on:** §8.4; sequenced after §9.2. **Risk:** medium — wide, mechanical,
 and the differential-eval flag from §8.4 does not cover it. **Payoff:** the
 largest single remaining cost-per-node item.
 
-### 9.5 Trail-based apply/undo state
+### 9.4 Trail-based apply/undo state
 
 Also left over from §8.6. Apply an action's effects and undo them on the way
 back out, instead of copying the fact base per successor. It removes copying
-rather than shrinking it, which is why it comes after §9.4 shrinks what there is
+rather than shrinking it, which is why it comes after §9.3 shrinks what there is
 to copy.
 
 A bigger design change than it sounds: the MCTS tree holds states, not just the
 rollout, so the trail cannot simply be unwound at every level.
 
-**Depends on:** §9.4. **Risk:** medium-high. **Payoff:** removes the copy rather
+**Depends on:** §9.3. **Risk:** medium-high. **Payoff:** removes the copy rather
 than making it cheaper.
 
-### 9.6 Decide what a method precondition should mean here
+### 9.5 Decide what a method precondition should mean here
 
 §7.4 sets out a protected-condition set: register the literals a synthesised
 precondition action checked, keep them protected until the method's subtasks
@@ -1898,12 +1953,13 @@ planner would find. Measure before defaulting it on.
 
 It sits last among the substantive items for the reason §8's sequence gave:
 every semantic change has to be evaluated by running the planner a great deal,
-and that is cheaper after §9.1–§9.5. It is not blocked by any of them, so if the
+and that is cheaper after §8.8 and §9.1–§9.4. It is not blocked by any of
+them, so if the
 research needs it sooner, it can move.
 
 **Depends on:** §8.1 and §8.4. **Risk:** medium, and it changes results.
 
-### 9.7 Loose ends
+### 9.6 Loose ends
 
 Both are recorded as open items in §4.2 and neither is worth its own work
 session:
