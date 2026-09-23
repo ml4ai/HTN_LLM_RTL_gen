@@ -266,30 +266,37 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
       //before it produced, which is what makes this a join rather than a
       //filtered cross product. Positive atoms are taken first so that they
       //bind variables before a negation or disequality needs them.
-      std::vector<expr::Ptr> ordered;
-      for (auto const& c : e->children) {
-        if (c && (c->kind == expr::Kind::Atom || c->kind == expr::Kind::Equals)) {
-          ordered.push_back(c);
-        }
-      }
-      for (auto const& c : e->children) {
-        if (!(c && (c->kind == expr::Kind::Atom || c->kind == expr::Kind::Equals))) {
-          ordered.push_back(c);
-        }
-      }
+      //Two passes over the children in place rather than a reordered copy of
+      //them: the copy was a vector allocation plus an atomic refcount bump per
+      //child, on every evaluation of every conjunction, to produce an order
+      //that is fixed by the expression anyway. Within each pass the children
+      //keep their written order, exactly as before.
+      auto binds = [](expr::Ptr const& c) {
+        return c && (c->kind == expr::Kind::Atom || c->kind == expr::Kind::Equals);
+      };
       std::vector<Env> envs{env};
-      for (auto const& c : ordered) {
-        std::vector<Env> next;
-        for (auto const& cur : envs) {
-          auto got = solve(kb,c,cur);
-          if (!got) {
-            return std::nullopt;
+      for (int pass = 0; pass < 2 && !envs.empty(); pass++) {
+        for (auto const& c : e->children) {
+          if (binds(c) != (pass == 0)) {
+            continue;
           }
-          next.insert(next.end(),got->begin(),got->end());
-        }
-        envs = std::move(next);
-        if (envs.empty()) {
-          break;
+          std::vector<Env> next;
+          for (auto const& cur : envs) {
+            auto got = solve(kb,c,cur);
+            if (!got) {
+              return std::nullopt;
+            }
+            //Moved: `got` is ours, and an Env copy is an allocation.
+            next.insert(next.end(),std::make_move_iterator(got->begin()),
+                                   std::make_move_iterator(got->end()));
+          }
+          envs = std::move(next);
+          //Stop at the first conjunct nothing satisfies. This matters for more
+          //than speed: a later negation with free variables would make solve()
+          //return nullopt and send a query that is already false to Z3.
+          if (envs.empty()) {
+            break;
+          }
         }
       }
       return envs;
@@ -302,7 +309,8 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
         if (!got) {
           return std::nullopt;
         }
-        out.insert(out.end(),got->begin(),got->end());
+        out.insert(out.end(),std::make_move_iterator(got->begin()),
+                             std::make_move_iterator(got->end()));
       }
       return out;
     }
@@ -465,16 +473,25 @@ inline std::string canonical(std::vector<Binding> bs) {
   return out;
 }
 
-inline std::vector<Binding> solve_query(KnowledgeBase& kb,
-                                        expr::Ptr const& ast,
-                                        std::string const& smt,
-                                        Binding const& params,
-                                        Binding const& fixed,
-                                        char const* what) {
+//smt_of produces the SMT-LIB text of the query, and is called only when that
+//text is actually needed: when the direct evaluator declines the query, or in
+//the differential build. The callers used to build it eagerly -- a `(= param
+//value)` per argument followed by the whole precondition text -- on every
+//action and method application, and on the default build it was almost never
+//read. Taking a callable rather than the string moves that cost onto the path
+//that uses it.
+template <class SmtFn>
+inline std::vector<Binding> solve_query_lazy(KnowledgeBase& kb,
+                                             expr::Ptr const& ast,
+                                             SmtFn&& smt_of,
+                                             Binding const& params,
+                                             Binding const& fixed,
+                                             char const* what) {
   auto direct = ask(kb,ast,params,fixed);
 
 #ifdef HTN_DIFFERENTIAL_EVAL
   if (direct) {
+    std::string smt = smt_of();
     Binding mutable_params = params;
     auto reference = smt == "__NONE__" ? kb.ask("",mutable_params)
                                        : kb.ask(smt,mutable_params);
@@ -492,11 +509,23 @@ inline std::vector<Binding> solve_query(KnowledgeBase& kb,
   if (direct) {
     return *direct;
   }
+  std::string smt = smt_of();
   Binding mutable_params = params;
   if (smt == "__NONE__") {
     return kb.ask("",mutable_params);
   }
   return kb.ask(smt,mutable_params);
+}
+
+//The eager form, for callers that have the text anyway -- the effect paths,
+//which build it alongside the structured form and are cold.
+inline std::vector<Binding> solve_query(KnowledgeBase& kb,
+                                        expr::Ptr const& ast,
+                                        std::string const& smt,
+                                        Binding const& params,
+                                        Binding const& fixed,
+                                        char const* what) {
+  return solve_query_lazy(kb,ast,[&smt]() { return smt; },params,fixed,what);
 }
 
 } // namespace eval

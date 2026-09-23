@@ -80,6 +80,15 @@ struct TaskGraph {
     return id;
   }
 
+  //For a task built only to be inserted -- apply_binding builds one per
+  //subtask per binding. The lvalue overload above copies it, head and argument
+  //vector included, and the original is then discarded.
+  int add_node(Grounded_Task&& GT) {
+    int id = this->nextID++;
+    this->GTs.emplace(id,std::move(GT));
+    return id;
+  }
+
   // gt1 -> gt2
   void add_edge(int gt1, int gt2) {
     this->GTs[gt1].outgoing.push_back(gt2);
@@ -209,6 +218,7 @@ class ActionDef {
               wc = e.condition;
             }
             Args wc_fixed;
+            wc_fixed.reserve(args.size());
             for (int i = 0; i < args.size(); i++) {
               wc_fixed.push_back({this->parameters[i].first,args[i].second});
             }
@@ -406,32 +416,27 @@ class ActionDef {
     }
 
     std::pair<task_token,std::vector<KnowledgeBase>> apply(KnowledgeBase& kb, Args& args) {
-      std::string pc;
-      std::string token = "("+this->head;
-      if (!args.empty()) {
-        //args is indexed in lockstep with this->parameters, so a task invoking
-        //this action with the wrong arity would read past the end of parameters.
-        if (args.size() != this->parameters.size()) {
-          throw std::logic_error("Action "+this->head+" applied with "+
-                                 std::to_string(args.size())+" arguments but declared with "+
-                                 std::to_string(this->parameters.size())+" parameters!");
+      //args is indexed in lockstep with this->parameters, so a task invoking
+      //this action with the wrong arity would read past the end of parameters.
+      if (!args.empty() && args.size() != this->parameters.size()) {
+        throw std::logic_error("Action "+this->head+" applied with "+
+                               std::to_string(args.size())+" arguments but declared with "+
+                               std::to_string(this->parameters.size())+" parameters!");
+      }
+      //The SMT text of the precondition with the arguments pinned. Built only
+      //if something needs it -- the Z3 fallback, or the differential build --
+      //which on the default build is almost never. It used to be built on every
+      //application, and it copies the whole precondition text each time.
+      auto pc_of = [&]() {
+        if (args.empty()) {
+          return this->preconditions;
         }
-        pc = "(and ";
-        for (int i = 0; i < args.size(); i++) {
+        std::string pc = "(and ";
+        for (size_t i = 0; i < args.size(); i++) {
           pc += "(= "+this->parameters[i].first+" "+args[i].second+") ";
-          token += " "+args[i].second;
         }
-        if (this->preconditions != "__NONE__") {
-          pc += this->preconditions + ")";
-        }
-        else {
-          pc += ")";
-        }
-      }
-      else {
-        pc = this->preconditions;
-      }
-      token += ")";
+        return pc + (this->preconditions != "__NONE__" ? this->preconditions+")" : ")");
+      };
 
       std::vector<KnowledgeBase> new_states = {};
 
@@ -439,6 +444,7 @@ class ActionDef {
       //direct evaluator takes the pinned parameters as bindings rather than as
       //conjuncts to re-derive.
       Args fixed;
+      fixed.reserve(args.size());
       for (int i = 0; i < args.size(); i++) {
         fixed.push_back({this->parameters[i].first,args[i].second});
       }
@@ -448,22 +454,43 @@ class ActionDef {
       //satisfy pc and the resulting state is just the current one. Asking for
       //satisfiability skips enumerating that single model, which matters
       //because HDDL timing puts one of these in front of every method.
+      //The token is empty for a synthesised check: it is a search step, never
+      //a plan step, and both callers that read a token skip artificial actions
+      //before doing so. Its head is also the longest string in the domain --
+      //"__mprec_" plus a method name, 28 to 36 characters, past the
+      //small-string buffer -- so building it was a heap allocation per check,
+      //and HDDL timing puts one in front of every method.
       if (this->artificial) {
         auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed);
-        bool holds = direct ? *direct
-                            : (pc == "__NONE__" || kb.ask_any(pc,this->parameters));
+        bool holds;
+        if (direct) {
+          holds = *direct;
+        }
+        else {
+          std::string pc = pc_of();
+          holds = (pc == "__NONE__" || kb.ask_any(pc,this->parameters));
+        }
         if (holds) {
           new_states.push_back(kb);
         }
-        return std::make_pair(token,new_states);
+        return std::make_pair(task_token{},new_states);
       }
 
-      auto bindings = eval::solve_query(kb,this->precondition_ast,pc,
-                                        this->parameters,fixed,
-                                        this->head.c_str());
+      auto bindings = eval::solve_query_lazy(kb,this->precondition_ast,pc_of,
+                                             this->parameters,fixed,
+                                             this->head.c_str());
+      if (bindings.empty()) {
+        //No successor, so nobody reads the token.
+        return std::make_pair(task_token{},new_states);
+      }
       for (auto &b : bindings) {
         new_states.push_back(this->apply_binding(kb,b));
       }
+      std::string token = "("+this->head;
+      for (auto const& a : args) {
+        token += " "+a.second;
+      }
+      token += ")";
       return std::make_pair(token,new_states);
     }
 
@@ -527,25 +554,20 @@ class MethodDef {
       return this->orderings;
     }
 
+    //tasks arrives by value and is always moved in by apply(), so taking it
+    //this way costs nothing; the return moves it back out for the same reason.
     std::pair<std::vector<int>,TaskGraph> apply_binding(Args& args, TaskGraph tasks, std::vector<int>& out) {
       std::unordered_map<std::string,int> gts;
       std::vector<int> addedTIDs;
       for (auto const& [id,s]: this->subtasks) {
         Grounded_Task gt;
         gt.head = s.first;
+        gt.args.reserve(s.second.size());
         for (auto const& pt : s.second) {
-          std::pair<std::string,std::string> arg;
-          arg.first = pt.first;
           std::string val = return_value(pt.first,args);
-          if (val == "__CONST__") {
-            arg.second = pt.first;
-          }
-          else {
-            arg.second = val;
-          }
-          gt.args.push_back(arg);
+          gt.args.emplace_back(pt.first,val == "__CONST__" ? pt.first : std::move(val));
         }
-        gts[id] = tasks.add_node(gt);
+        gts[id] = tasks.add_node(std::move(gt));
         addedTIDs.push_back(gts[id]);
         //find, not operator[]: the latter would insert an empty ordering into
         //this->orderings for every subtask label it is asked about.
@@ -570,50 +592,57 @@ class MethodDef {
           tasks.add_edge(g1->second,g2->second);
         }
       }
-      return std::make_pair(addedTIDs,tasks);
+      //Moved, not copied: make_pair on the named locals copied the whole network.
+      return std::make_pair(std::move(addedTIDs),std::move(tasks));
     }
 
-    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args& args, TaskGraph tasks, int i) {
-      std::string pc;
-      std::string token = "("+this->task.first;
-      if (!args.empty()) {
-        //args is indexed in lockstep with this->task.second, so a task invoked
-        //with the wrong arity would read past the end of the task's parameters.
-        if (args.size() != this->task.second.size()) {
-          throw std::logic_error("Task "+this->task.first+" in method "+this->head+" applied with "+
-                                 std::to_string(args.size())+" arguments but declared with "+
-                                 std::to_string(this->task.second.size())+" parameters!");
-        }
-        pc = "(and ";
-        for (int i = 0; i < args.size(); i++) {
-          pc += "(= "+this->task.second[i].first+" "+args[i].second+") ";
-          token += " "+args[i].second;
-        }
-        if (this->preconditions != "__NONE__") {
-          pc += this->preconditions + ")";
-        }
-        else {
-          pc += ")";
-        }
+    //tasks is taken by const reference and never modified. It used to be taken
+    //by value, then copied again into apply_binding per binding, and again by
+    //apply_binding's return -- 2N+1 copies of the whole task network for N
+    //bindings, where N is the floor, since each binding yields a successor
+    //network of its own. It also means `args`, which callers pass as a
+    //reference *into* this same network, can no longer be invalidated.
+    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args& args, TaskGraph const& tasks, int i) {
+      //args is indexed in lockstep with this->task.second, so a task invoked
+      //with the wrong arity would read past the end of the task's parameters.
+      if (!args.empty() && args.size() != this->task.second.size()) {
+        throw std::logic_error("Task "+this->task.first+" in method "+this->head+" applied with "+
+                               std::to_string(args.size())+" arguments but declared with "+
+                               std::to_string(this->task.second.size())+" parameters!");
       }
-      else {
-        pc = this->preconditions;
-      }
-      token += ")";
+      //As in ActionDef::apply, the SMT text is built only if the Z3 fallback
+      //or the differential build asks for it. (This function also used to
+      //build a "(task args...)" token on every call and never read it.)
+      auto pc_of = [&]() {
+        if (args.empty()) {
+          return this->preconditions;
+        }
+        std::string pc = "(and ";
+        for (size_t k = 0; k < args.size(); k++) {
+          pc += "(= "+this->task.second[k].first+" "+args[k].second+") ";
+        }
+        return pc + (this->preconditions != "__NONE__" ? this->preconditions+")" : ")");
+      };
       std::vector<std::pair<std::vector<int>,TaskGraph>> groundings;
-      std::vector<int> out = tasks[i].outgoing;
-      tasks.remove_node(i);
       //As in ActionDef::apply: the `(= param value)` prefix becomes an
       //environment rather than part of the formula.
       Args fixed;
-      for (int i = 0; i < args.size(); i++) {
-        fixed.push_back({this->task.second[i].first,args[i].second});
+      fixed.reserve(args.size());
+      for (size_t k = 0; k < args.size(); k++) {
+        fixed.push_back({this->task.second[k].first,args[k].second});
       }
-      auto bindings = eval::solve_query(kb,this->precondition_ast,pc,
-                                        this->parameters,fixed,
-                                        this->head.c_str());
+      auto bindings = eval::solve_query_lazy(kb,this->precondition_ast,pc_of,
+                                             this->parameters,fixed,
+                                             this->head.c_str());
+      if (bindings.empty()) {
+        return groundings;
+      }
+      std::vector<int> out = tasks.GTs.at(i).outgoing;
+      groundings.reserve(bindings.size());
       for (auto &b : bindings) {
-        groundings.push_back(this->apply_binding(b,tasks,out));
+        TaskGraph g = tasks;          //the one copy each successor needs
+        g.remove_node(i);
+        groundings.push_back(this->apply_binding(b,std::move(g),out));
       }
       return groundings;
     }

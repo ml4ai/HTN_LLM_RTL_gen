@@ -2127,12 +2127,83 @@ attribution entirely; what remains is the task representation, which is §9.1:
 the benchmark's semantic fields and ctest 4/4. **Payoff:** 1.25×–1.5× on top of
 §8.11, and about 2× cumulative with it.
 
+### 8.13 Stop copying the task side — **done, byte-identical**
+
+§9.1 as written was "intern the task representation", on the evidence that
+`Grounded_Task`, `TaskGraph::GTs` and `Args` held most of the allocation left
+after §8.12. Attributing that allocation to the *operation* that triggered it,
+rather than to the object being built, showed that most of it was not
+representation at all. It was work done and thrown away:
+
+* **`MethodDef::apply` built a `"(task args...)"` token on every call and never
+  read it.**
+* **Both `apply` functions built the SMT text of the precondition eagerly** — a
+  `(= param value)` per argument followed by a copy of the *entire*
+  precondition text — on every action and method application. `solve_query`
+  reads it only when the direct evaluator declines, or in the differential
+  build. It now takes a callable, `solve_query_lazy`, and the text is built on
+  the path that uses it.
+* **`MethodDef::apply` copied the task network 2N+1 times for N bindings**:
+  once into `apply` by value, once into `apply_binding` by value per binding,
+  and once more by `apply_binding`'s `return std::make_pair(addedTIDs,tasks)`,
+  which copies a named local. N is the floor, since each binding yields a
+  successor network of its own. It is now N, with moves in between. The
+  network is taken by `const&`, which also means the `Args&` callers pass — a
+  reference *into* that same network — can no longer be invalidated.
+* **`TaskGraph::add_node` copied every task it inserted**, head and argument
+  vector included, and `apply_binding` then discarded the original. An rvalue
+  overload moves it. The argument vectors were also grown one `push_back` at a
+  time, reallocating as they went; they are now reserved.
+* **A synthesised check's token was built and never read.** Both readers of an
+  action's token skip artificial actions first. It was also the most expensive
+  token to build: `__mprec_` plus a method name is 28–36 characters, past the
+  small-string buffer.
+* **The evaluator rebuilt each conjunction's child order on every call** — a
+  vector and an atomic refcount bump per child, to produce an order fixed by
+  the expression. Two passes over the children in place give the same order
+  with neither.
+
+**This corrects §9.1 as it was written**, which said §8.12's lesson applied
+directly — that the container is the cost and the strings are not, because they
+fit the small-string buffer. That holds for variable and object names. It does
+not hold on the task side: `__mprec_` heads run 28–36 characters and a plan
+entry about 39, so both heap-allocate on every copy.
+
+**Measured by interleaved A/B, not by comparing benchmark runs.** The first
+benchmark comparison reported `transport` 39% *slower*, which was wrong: it set
+two runs minutes apart against each other, `transport`'s median is taken over
+five rollouts, and the small domains are quantised at 0.01 ms, so "50% slower"
+on `simple_travel` was one quantum. Instead each binary ran enough rollouts to
+take about a second, seven repetitions, alternating which ran first. All four
+binaries were timed in one session, so the cumulative column is clean:
+
+| domain | pre-§8.13 | after | |
+|---|---|---|---|
+| `transport` | 1.085 s | 0.676 s | **1.61×** |
+| `chain_b` / `mutex_left` | 1.460 s | 0.885 s | **1.65×** |
+| `d18_p18` | 0.950 s | 0.738 s | 1.29× |
+| `d18_gather` | 1.297 s | 1.016 s | 1.28× |
+| `sar3` | 0.738 s | 0.587 s | 1.26× |
+| `simple_travel` | 0.297 s | 0.248 s | 1.20× |
+
+Per step: the lazy SMT text plus the network copies 1.12–1.41×, the conjunction
+fold 1.00–1.07×, the moves and reserves 1.05–1.10×. The method-heavy domains
+gain most, as the copy arithmetic predicts.
+
+**Byte-identical.** Rollout scores and the RNG state afterwards match the
+pre-§8.13 binary on every domain, so the random stream is untouched — including
+through `GTs.emplace`, which replaced `GTs[id] = GT` and could in principle
+have laid the hash table out differently. ctest 4/4.
+
+**Depends on:** §8.12. **Risk:** low; discharged. **Payoff:** 1.20×–1.65×,
+with no behaviour change.
+
 ---
 
 ## 9. Remaining work
 
 Ordered by what to do next rather than by when it was thought of. Two things
-reordered it, and both came out of doing §8.7. (§8.8–§8.12 have since been done
+reordered it, and both came out of doing §8.7. (§8.8–§8.13 have since been done
 out of this list. §8.8 changed nothing about the order; §8.9 was a
 negative result that removed one of §9.1's two reasons for being first — see
 there.)
@@ -2157,35 +2228,40 @@ left behind. §9.1 is semantics. §9.2 is hygiene and can be folded in anywhere.
 
 ---
 
-### 9.1 Intern the task representation
+### 9.1 Flatten the task network
 
-What §8.12 left of §8.11's second piece. §8.12 did the evaluator's environment
-and answered the question it was sequenced to answer — the approach works, and
-returned 1.25×–1.5× for a change confined to one header. This is the wider
-half. Measured share of what allocation remains:
+What is left of the task side after §8.13 took out the redundant work. It is
+now the largest single bucket: **39.4% of remaining allocation**, which with
+malloc at 44.7% of self-time is roughly **18% of runtime**. Nothing else left
+comes close — the evaluator is 19.5% of allocation, the knowledge base 3.4%.
 
-| | |
-|---|---|
-| `Grounded_Task` construction | 15.3% |
-| `TaskGraph::GTs` — `unordered_map<int,Grounded_Task>` | 8.0% |
-| `Args` / `Binding` — `vector<pair<string,string>>` | 7.5% + 7.3% |
-| `ActionDef::apply`, `MethodDef::apply` / `apply_binding` | 8.8% + 5.7% + 5.1% |
+The cost is structural. Every search node and every successor in a rollout
+holds a `TaskGraph`, which is an `unordered_map<int,Grounded_Task>`: copying
+one allocates a bucket array and a hash node per task, and each
+`Grounded_Task` then carries two edge vectors, an argument vector, and a head
+that for a synthesised check is past the small-string buffer. A flat,
+id-sorted vector would make the copy a single allocation plus the tasks.
 
-`Grounded_Task` holds a task name and a vector of (parameter, value) string
-pairs, and one is built per subtask per binding. The approach is §8.11's —
-intern into the shared schema, reconstruct text on the cold paths — but the
-cold paths are more numerous here: the plan vector, the task tree,
-`grapher.h`, and every plan string the score functions read.
+**Unlike everything since §8.4, this changes behaviour, and that is worth
+deciding on deliberately.** `simulation` collects the unconstrained tasks by
+iterating `GTs` and then shuffles them, so the order it iterates in feeds the
+random stream. A different container iterates in a different order, and every
+rollout score, plan and fingerprint in the benchmark moves — the same
+situation as §8.4, handled the same way: re-baseline, and argue from plan
+quality rather than from identity.
 
-Two things worth knowing before starting. Task and parameter names are **not**
-in the knowledge base's symbol tables, which hold predicates and objects, so
-this needs its own table or an extension of that one. And §8.12's finding
-applies directly: the container is usually the cost and the strings usually are
-not, because they fit in the small-string buffer — so measure whether flattening
-`TaskGraph::GTs` and `Args` alone gets most of it before interning anything.
+There is a real upside to that, independent of speed. At present the planner's
+random choices depend on the iteration order of libc++'s `unordered_map`, which
+is an implementation detail; built against libstdc++ on Linux the same seed
+would already give different plans, and the benchmark's baselines would not
+transfer between machines. An id-sorted container makes the random stream a
+function of the task ids alone.
 
-**Depends on:** §8.11, §8.12. **Risk:** medium-high — the reach is the problem,
-not the idea. **Payoff:** bounded by the shares above.
+Interning the heads would come after this, and is probably not worth it on its
+own: §8.13 removed the paths that built the long ones for nothing.
+
+**Depends on:** §8.13. **Risk:** medium — it changes results by design.
+**Payoff:** bounded by the 18%; expect around 1.1×, plus portable fingerprints.
 
 ### 9.2 Trail-based apply/undo state
 
