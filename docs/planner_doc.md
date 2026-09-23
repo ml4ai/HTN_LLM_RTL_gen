@@ -275,13 +275,14 @@ Since Algorithm 2 is complete, a rollout and the tree reach the same set of
 terminal networks, so a value estimated over the unrestricted set still
 estimates the same quantity.
 
-**That measurement is narrower than it reads.** It was taken on the shipped
-`transport_problem.hddl`, and §8.7.1 later established that this instance does
-not exercise the redundancy the restriction exists to remove: its road graph is
-complete, so the recursive `get_to` method never contributes an action. On
-instances that do exercise it, the interleaving of unordered top-level tasks is
-the dominant cost (§8.7.6), and restricting `simulation` is worth re-measuring
-against those rather than against this one. That is §9.1.
+**That measurement was narrower than it read, and has since been retaken.** It
+was taken on the shipped `transport_problem.hddl`, and §8.7.1 later established
+that this instance does not exercise the redundancy the restriction exists to
+remove: its road graph is complete, so the recursive `get_to` method never
+contributes an action. §8.9 retook it on instances that do exercise it, across
+three restriction strategies, and **reached the same verdict** — so the
+conclusion above stands, and now rests on evidence that can actually see the
+effect. The switch is still in the code (`--restrict_rollouts`), default off.
 
 **What it does not fix.** It does not reduce the time budget `transport` needs.
 That is set by rollout cost (§2.3.1), which this leaves alone by design.
@@ -785,7 +786,7 @@ state, and its score functions read that state, so delaying it delays the signal
 MCTS is steering by.
 
 **Status.** Algorithm 2 is implemented and measured (§2.3.2). Algorithm 3 is
-not; it is §9.2. Going further would mean accepting the postponed state update,
+not; it is §9.1. Going further would mean accepting the postponed state update,
 which is the real question for this planner rather than a detail: node values
 come from rollouts over the current state, and its score functions read that
 state. Worth measuring rather than assuming the systematic one wins — and
@@ -1059,7 +1060,8 @@ re-encoding that costs no planner code. But it did not answer the question it
 was expected to. The shipped transport instance turns out not to exercise the
 pattern at all (§8.7.1), and on instances that do, the dominant redundancy is
 the interleaving of unordered top-level tasks rather than the `goto` pattern
-itself (§8.7.6). That is planner work, and it is §9.1.*
+itself (§8.7.6). That was expected to be planner work; §8.9 tried it and it
+was not.*
 
 ---
 
@@ -1266,7 +1268,7 @@ Two caveats, both important:
    protection-by-pruning does not.
 
 Neither caveat is a reason to avoid it, but both are reasons not to make it the
-default without measuring. It is §9.5.
+default without measuring. It is §9.4.
 
 ---
 
@@ -1447,7 +1449,7 @@ strings too. Interning predicates and objects to integers at load — the
 original plan for this item, and the reason it was named "representation" —
 is the change that removes that, and it was not done here because it reaches
 much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the
-public `get_facts` API all traffic in strings. **It is now §9.3.**
+public `get_facts` API all traffic in strings. **It is now §9.2.**
 
 `simple_travel` did not move at all here, and the explanation offered at the
 time — that its rollouts were bound by recursion through a `get_to`-style task
@@ -1504,12 +1506,12 @@ these domains nothing reaches it.
 malloc, 30.3% our own code, 10% memcpy/memset**. The allocation is
 `KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
 per search node, one per binding in `apply_binding`. Two things would move it,
-larger first, and both are now items of their own: **§9.3** (interning, which
-§8.5 also left open) and **§9.4** (a trail-based state).
+larger first, and both are now items of their own: **§9.2** (interning, which
+§8.5 also left open) and **§9.3** (a trail-based state).
 
 They are no longer next, though. §8.7 showed that on the instances that are
 actually hard the binding constraint is the *number* of nodes rather than the
-cost of one, so §8.8 and §9.1–§9.2 come first. See the §9 preamble.
+cost of one, so §9.1 comes first. See the §9 preamble.
 
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
 of §8.5.
@@ -1708,22 +1710,32 @@ included, while adding one location to the same instance leaves `original`
 solving it in 174 ms.
 
 Godet et al.'s n^k does not predict that: a package takes n from 4 to 6 at
-k = 4, a location takes k from 4 to 5 at n = 4, and those are comparable. The
-asymmetry says the dominant cost in this domain is not the `goto` attribution
-their paper is about. It is the **interleaving of the unordered top-level
-`deliver` tasks**, which grows far faster: three unordered tasks of four
-ordered subtasks each admit 12!/(4!)³ ≈ 34 650 interleavings against 8!/(4!)²
-= 70 for two.
+k = 4, a location takes k from 4 to 5 at n = 4, and those are comparable. So
+the dominant cost in this domain is not the `goto` attribution their paper is
+about. The mutex fixes the attribution redundancy, which is why `mutex_left` is
+flat in chain length — and it still dies on the package knob.
 
-The mutex fixes the attribution redundancy and does not touch the interleaving
-one. That is why `mutex_left` is flat in chain length and still dies on the
-package knob.
+**What the extra cost is was then guessed, and the guess was wrong.** This
+section originally attributed it to the **interleaving of the unordered
+top-level `deliver` tasks**, on the arithmetic that three unordered tasks of
+four ordered subtasks each admit 12!/(4!)³ ≈ 34 650 interleavings against
+8!/(4!)² = 70 for two. That reasoning is sound about interleavings and says
+nothing about whether they are what costs.
 
-This points somewhere specific, and it is planner work rather than domain work,
-so it is **§9.1** rather than part of this item. `expansion` already restricts
-compound-task branching to one task per node (Algorithm 2, §2.3.2) — which is
-exactly a restriction on interleaving — but `simulation` deliberately does not,
-and rollouts are where all of this time goes.
+§8.9 tested it directly, by restricting interleaving in the rollouts three
+different ways — including Algorithm 3, which stops primitive actions
+interleaving with pending decompositions at all. **Instance c times out under
+every one of them, for both encodings, eight configurations in total.** If
+interleaving were the binding constraint, forbidding it would have moved
+something.
+
+The honest state of it: the package knob is far more expensive than the
+location knob, that is measured and reproducible, and the cause is not
+decomposition-order redundancy of any kind this planner can restrict away. The
+likeliest remaining explanation is that a third package simply enlarges the
+space of genuinely distinct valid plans — which is not redundancy at all, and
+not something a restriction can help with — but that has not been measured, and
+it is recorded here as an open question rather than as a second guess.
 
 #### 8.7.7 What to carry into the RTL domains
 
@@ -1838,13 +1850,97 @@ into, and it is named under "Not on this list" rather than here.
 and by the benchmark. **Payoff:** turns two crashes and two hangs into reported
 failures. No effect on any domain that plans today.
 
+### 8.9 Restrict interleaving in the rollouts — **done, and rejected**
+
+A negative result, and the item that produced it was one I wrote myself on the
+strength of §8.7.6's diagnosis. Both the diagnosis and the fix it implied turn
+out not to survive measurement.
+
+`expansion` branches over every unconstrained primitive task but only one
+unconstrained compound task (Algorithm 2, §2.3.2). `simulation` deliberately
+does not, and rollouts are where essentially all the planner's time goes, so
+giving rollouts the same restriction looked like the obvious lever — especially
+after §8.7.6 concluded that interleaving of unordered top-level tasks was the
+dominant cost.
+
+It had been measured once before and rejected (§2.3.2), but that measurement
+was taken on the shipped `transport_problem.hddl`, which §8.7.1 showed cannot
+exercise the pattern at all. Retaking it on instances that can was the point.
+
+**Three strategies, not one.** The restriction has a free choice in it — *which*
+compound task to keep — and the answer for a tree is not obviously the answer
+for a randomised dive:
+
+* **lowest id**, exactly as `expansion` picks it, so the rollout explores the
+  same shape of space the tree does;
+* **random**, which keeps the branching reduction but restores the
+  per-rollout diversity a randomised dive depends on;
+* **Algorithm 3**, the strongest: while any compound task is unconstrained,
+  progress no action at all, so primitives cannot interleave with pending
+  decompositions either.
+
+Median rollout time, same seeds, identical scores throughout — so every column
+is an equal outcome and the comparison is clean:
+
+| case | none | lowest id | random | Algorithm 3 |
+|---|---|---|---|---|
+| `chain_a` / original | **8.9 ms** | 28.8 | 30.5 | 7.8 |
+| `chain_d` / original | **173 ms** | 302 | 168 | 374 |
+| `chain_d` / mutex_left | 12.6 ms | 30.8 | **11.2** | 17.2 |
+| `transport` (shipped) | **5.1 ms** | 7.4 | 5.9 | 6.0 |
+| `d18_gather` | **0.15 ms** | 0.25 | 0.15 | 0.26 |
+| `sar3` | 0.19 ms | 0.19 | 0.19 | — |
+
+**No strategy is a consistent win, and the one `expansion` uses is the worst.**
+Lowest-id costs up to 3.2×. The reason §2.3.2 gave originally — narrowing the
+choices removes the lucky first paths a random dive depends on — survives
+contact with instances that can see the effect.
+
+**A partial vindication that still loses.** The determinism of the pick was
+worth suspecting: every rollout from a node explores compounds in the same
+order, so restriction costs diversity as well as branching. Random picking does
+recover most of the lowest-id penalty (`chain_d`/original 302 → 168,
+`chain_d`/mutex_left 31 → 11, `d18_gather` 0.25 → 0.13). It still does not beat
+leaving rollouts alone, and on `chain_a`/original the restriction costs 3.2×
+however the compound is chosen, so determinism was never the whole story.
+
+#### 8.9.1 The claim this was built on, falsified
+
+§8.7.6 attributed instance c's cost to interleaving of the unordered top-level
+`deliver` tasks. The strongest possible version of this item is the direct test
+of that: Algorithm 3 forbids the interleaving outright.
+
+**Instance c times out under all four strategies, for both encodings — eight
+configurations, 300 s each.** If interleaving were the binding constraint,
+forbidding it would have moved something. It did not move anything.
+
+So §8.7.6 is corrected rather than extended. The package knob really is far
+more expensive than the location knob — that is measured and reproducible — but
+the cause is not decomposition-order redundancy of a kind this planner can
+restrict away. The likeliest remaining explanation is that a third package
+enlarges the space of genuinely distinct valid plans, which is not redundancy
+and not something any restriction helps with. That is a hypothesis, and it is
+recorded as one; it has not been measured.
+
+**What was kept.** `--restrict_rollouts` stays in the code with a default of 0
+(unrestricted), so the question can be re-asked on the RTL domains without a
+patch. §2.3.2 documents the design choice and now has executable evidence
+behind it rather than a single suspect measurement. The default is
+behaviour-preserving: the benchmark reports no semantic change.
+
+**Depends on:** §8.1 and the §8.7 instances. **Risk:** none — default unchanged.
+**Payoff:** none. The value here is the falsification, which removes a wrong
+reason for prioritising §9.1.
+
 ---
 
 ## 9. Remaining work
 
 Ordered by what to do next rather than by when it was thought of. Two things
-reordered it, and both came out of doing §8.7. (§8.8, the rollout depth bound,
-has since been done out of this list; it changed nothing about the order.)
+reordered it, and both came out of doing §8.7. (§8.8 and §8.9 have since been
+done out of this list. §8.8 changed nothing about the order; §8.9 was a
+negative result that removed one of §9.1's two reasons for being first — see
+there.)
 
 * **The bottleneck moved.** §8.1–§8.6 all attacked the *cost of a node*, and
   returned 362–993× between them. §8.7 was the first item that attacked the
@@ -1854,43 +1950,19 @@ has since been done out of this list; it changed nothing about the order.)
   first now, and the representation work that used to be next is behind it.
 * **Representation work should follow the search changes, not precede them.**
   Interning reaches into `Grounded_Task`, `TaskGraph`, the evaluator and the
-  public `get_facts` API, and §9.1 and §9.2 both change how `TaskGraph` is used.
+  public `get_facts` API, and §9.1 changes how `TaskGraph` is used.
   Doing it first means doing parts of it twice.
 
 **This order assumes the goal is to plan on harder instances.** If the
 near-term goal is instead to generate and run many *small* RTL domains, the
-search space is not what hurts, and §9.3 and §9.5 should come first.
+search space is not what hurts, and §9.2 and §9.4 should come first.
 
-§9.1–§9.2 are search space. §9.3–§9.4 are cost per node, and are what §8.5 and
-§8.6 left behind. §9.5 is semantics. §9.6 is hygiene and can be folded in
-anywhere.
+§9.1 is search space. §9.1–§9.2 are cost per node, and are what §8.5 and §8.6
+left behind. §9.3 is semantics. §9.4 is hygiene and can be folded in anywhere.
 
 ---
 
-### 9.1 Restrict interleaving in `simulation`
-
-§8.7.6 found that in `transport` the dominant redundancy is not the `goto`
-attribution Godet et al. describe but the **interleaving of unordered top-level
-tasks**: adding one package to chain instance b defeats every encoding tried,
-while adding one location leaves the original solving it in 174 ms. Three
-unordered `deliver` tasks of four ordered subtasks each admit 12!/(4!)³ ≈
-34 650 interleavings, against 70 for two.
-
-`expansion` already restricts this — Algorithm 2 branches over a single
-unconstrained compound task per node (§2.3.2) — but `simulation` deliberately
-does not, and rollouts are where essentially all the time goes.
-
-This was measured once and rejected (§2.3.2). The case for revisiting it is not
-that the earlier measurement was wrong but that it was taken on the shipped
-transport instance, which §8.7.1 later showed cannot exercise the pattern at
-all: its road graph is complete, which makes the recursive method's
-precondition unsatisfiable. Retake it on `transport_chain_{b,c,d}`.
-
-**Depends on:** §8.1, the §8.7 instances, and §8.8 if the restriction lets a
-rollout wander further than it used to. **Risk:** medium — it changes results.
-**Payoff:** unknown, but it is the knob the §8.7 data says is dominant.
-
-### 9.2 Algorithm 3 (systematic progression)
+### 9.1 Algorithm 3 (systematic progression)
 
 `expansion` implements Algorithm 2 (§2.3.2). Algorithm 3 would make the search
 fully systematic; §5 records the algorithm, what it would take, and why to be
@@ -1899,15 +1971,30 @@ score functions read. Two of the four shipped domains also break the
 assumptions its systematicity theorem needs (§5.4), so it would be sound and
 complete but not fully systematic on them.
 
-**Do §9.1 first.** It is the same idea — restricting how much interleaving the
-search branches over — applied to the rollouts, where the time actually goes,
-and it is far cheaper to try. If §9.1 turns out to be a loss, this very likely
-is too, and the experiment will have cost an afternoon instead of a week.
+**§8.9 already tried the cheap half of this, and it lost.** The same idea —
+restricting how much interleaving the search branches over — applied to the
+*rollouts*, where the time actually goes. Every strategy tried was slower than
+leaving them alone, Algorithm 3 among them, and none made instance c solvable.
 
-**Depends on:** §8.1, §8.7 and §9.1. **Risk:** medium. **Payoff:** unknown;
-measure.
+How much that transfers is a real question and should not be waved either way.
+It does **not** transfer directly: rollouts are uninformed randomised dives
+that depend on diverse first paths, which is exactly what a restriction takes
+away, whereas the tree has UCT to supply exploration, so the mechanism that
+sank §8.9 has no analogue in `expansion`. What §8.9 does establish is narrower
+and still useful — that **restricting decomposition order is not what makes
+instance c hard**, because forbidding interleaving outright did not move it.
+That was one of the two reasons this item was near the front, and it is gone.
+The other reason, systematicity for its own sake, stands.
 
-### 9.3 Intern predicates, objects and task names
+So: still worth doing, no longer obviously first, and worth being honest that
+its expected payoff is now lower than when it was written. The thing to measure
+is whether removing duplicate subtrees pays for the postponed state update —
+not whether it fixes instance c, which §8.9 has already answered.
+
+**Depends on:** §8.1 and §8.7. **Risk:** medium. **Payoff:** unknown, and
+lower than §8.9 was expected to make it look; measure.
+
+### 9.2 Intern predicates, objects and task names
 
 Left over from §8.5, which is where the reasoning is. After §8.6 the profile is
 **53.5% malloc, 30.3% our own code, 10% memcpy/memset**, and the allocation is
@@ -1919,26 +2006,26 @@ Interning them to integers at load is the change that removes it, and it is the
 largest remaining cost-per-node item. It was not done in §8.5 because it
 reaches much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator
 and the public `get_facts` API all traffic in strings. That reach is also why
-it belongs after §9.1 and §9.2, which change how `TaskGraph` is used.
+it belongs after §9.1, which changes how `TaskGraph` is used.
 
-**Depends on:** §8.4; sequenced after §9.2. **Risk:** medium — wide, mechanical,
+**Depends on:** §8.4; sequenced after §9.1. **Risk:** medium — wide, mechanical,
 and the differential-eval flag from §8.4 does not cover it. **Payoff:** the
 largest single remaining cost-per-node item.
 
-### 9.4 Trail-based apply/undo state
+### 9.3 Trail-based apply/undo state
 
 Also left over from §8.6. Apply an action's effects and undo them on the way
 back out, instead of copying the fact base per successor. It removes copying
-rather than shrinking it, which is why it comes after §9.3 shrinks what there is
+rather than shrinking it, which is why it comes after §9.2 shrinks what there is
 to copy.
 
 A bigger design change than it sounds: the MCTS tree holds states, not just the
 rollout, so the trail cannot simply be unwound at every level.
 
-**Depends on:** §9.3. **Risk:** medium-high. **Payoff:** removes the copy rather
+**Depends on:** §9.2. **Risk:** medium-high. **Payoff:** removes the copy rather
 than making it cheaper.
 
-### 9.5 Decide what a method precondition should mean here
+### 9.4 Decide what a method precondition should mean here
 
 §7.4 sets out a protected-condition set: register the literals a synthesised
 precondition action checked, keep them protected until the method's subtasks
@@ -1953,13 +2040,12 @@ planner would find. Measure before defaulting it on.
 
 It sits last among the substantive items for the reason §8's sequence gave:
 every semantic change has to be evaluated by running the planner a great deal,
-and that is cheaper after §8.8 and §9.1–§9.4. It is not blocked by any of
-them, so if the
+and that is cheaper after §9.1–§9.2. It is not blocked by any of them, so if the
 research needs it sooner, it can move.
 
 **Depends on:** §8.1 and §8.4. **Risk:** medium, and it changes results.
 
-### 9.6 Loose ends
+### 9.5 Loose ends
 
 Both are recorded as open items in §4.2 and neither is worth its own work
 session:

@@ -96,6 +96,7 @@ int main(int argc, char* argv[]) {
   int seed = 2022, rollouts = 0, time_limit = 1000, r = 5, iterations = 0;
   int max_depth = kDefaultMaxRolloutDepth;
   int max_decisions = kDefaultMaxDecisions;
+  int restrict_rollouts = 0;
   double c = sqrt(2.0);
   bool do_plan = false, show_state = false;
 
@@ -115,6 +116,7 @@ int main(int argc, char* argv[]) {
       ("exp_param,c", po::value<double>(&c), "exploration parameter, default = sqrt(2)")
       ("max_depth", po::value<int>(&max_depth), "depth bound for a rollout; default = 1000")
       ("max_decisions", po::value<int>(&max_decisions), "backstop on committed decisions; default = 1000")
+      ("restrict_rollouts", po::value<int>(&restrict_rollouts), "rollout candidate set: 0 = every unconstrained task (default), 1 = Algorithm 2 with expansion's lowest-id pick, 2 = Algorithm 2 with a random pick")
       ("show_state", po::bool_switch(&show_state), "also print the sorted final state")
     ;
     po::variables_map vm;
@@ -171,7 +173,7 @@ int main(int argc, char* argv[]) {
       for (int i = 0; i < rollouts; i++) {
         std::vector<std::string> plan;
         auto t0 = std::chrono::steady_clock::now();
-        auto rs = simulation(plan,state,tasks,domain,g,max_depth);
+        auto rs = simulation(plan,state,tasks,domain,g,max_depth,restrict_rollouts);
         ms.push_back(std::chrono::duration<double,std::milli>(
                        std::chrono::steady_clock::now()-t0).count());
         if (i) scores << ",";
@@ -205,6 +207,7 @@ int main(int argc, char* argv[]) {
       std::cout << "rollout_failed=" << failed << "\n";
       std::cout << "rollout_cutoff=" << cut << "\n";
       std::cout << "max_depth=" << max_depth << "\n";
+      std::cout << "restrict_rollouts=" << restrict_rollouts << "\n";
       std::cout << std::fixed << std::setprecision(2);
       std::cout << "rollout_ms_median=" << median << "\n";
       std::cout << "rollout_ms_mean=" << sum/ms.size() << "\n";
@@ -237,7 +240,7 @@ int main(int argc, char* argv[]) {
       size_t plan_len = 0;
       std::string state_canon;
       try {
-        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions);
+        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions,restrict_rollouts);
         auto& end = results.t[results.end];
         plan_len = end.plan.size();
         for (size_t i = 0; i < end.plan.size(); i++) {

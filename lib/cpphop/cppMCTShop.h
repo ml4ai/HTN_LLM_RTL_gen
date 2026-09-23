@@ -124,28 +124,38 @@ simulation(std::vector<std::string>& plan,
            TaskGraph& tasks,
            DomainDef& domain,
            std::mt19937_64& g,
-           int depth_budget) {
+           int depth_budget,
+           int restrict_compound) {
   if (tasks.empty()) {
     return {RolloutStatus::Solved,domain.score(state,plan)};
   }
   if (depth_budget <= 0) {
     return {RolloutStatus::Cutoff,0.0};
   }
-  //Rollouts deliberately keep the unrestricted candidate set. The Algorithm 2
-  //restriction in expansion below removes duplicate *subtrees*, which is what
-  //matters for a search that explores its space; a rollout is a randomised dive
-  //that stops at the first solution, and narrowing its choices measurably
-  //slowed it down (§2.3.2). Both reach the same set of terminal networks, since
-  //Algorithm 2 is complete, so the value a rollout reports is still an estimate
-  //of the same thing.
+  //restrict_compound selects between Algorithm 1 and Algorithm 2 (§2.3.2) for
+  //the rollout's candidate set. `expansion` always uses Algorithm 2: branch
+  //over every unconstrained primitive task but over only ONE unconstrained
+  //compound task, since the order two compound tasks are decomposed in carries
+  //no commitment to the solution -- only the choice of method does.
+  //
+  //Completeness is unaffected either way (Holler et al.'s Theorems 1 and 2
+  //cover both), which matters here beyond performance: a Refuted rollout is a
+  //*proof* of a dead end, and that proof would not survive a restriction that
+  //could lose solutions.
   std::vector<int> u;
+  std::vector<int> compound;
   for (auto &[i,gt] : tasks.GTs) {
     if (gt.incoming.empty()) {
       if (domain.actions.contains(tasks[i].head)) {
         u.push_back(i);
       }
       else if (domain.methods.contains(tasks[i].head)) {
-        u.push_back(i);
+        if (restrict_compound != 0) {
+          compound.push_back(i);
+        }
+        else {
+          u.push_back(i);
+        }
       }
       else {
         std::string message = "Invalid task ";
@@ -153,6 +163,28 @@ simulation(std::vector<std::string>& plan,
         message += " during simulation!";
         throw std::logic_error(message);
       }
+    }
+  }
+  //1 = lowest task id, exactly as expansion picks it, so the rollout explores
+  //the same shape of space the tree does. 2 = a uniformly random one, which
+  //keeps the branching reduction but restores the per-rollout diversity a
+  //randomised dive depends on.
+  //3 = Algorithm 3: while any compound task is unconstrained, progress NO
+  //action at all. This is the strongest of the three, and is here because it
+  //is the direct test of 8.7.6's claim that interleaving is what costs --
+  //Algorithm 2 only restricts which compound task is decomposed first, whereas
+  //this also stops primitive actions from interleaving with pending
+  //decompositions.
+  if (!compound.empty()) {
+    if (restrict_compound == 3) {
+      u.clear();
+      u.push_back(*select_randomly(compound.begin(),compound.end(),g));
+    }
+    else if (restrict_compound == 2) {
+      u.push_back(*select_randomly(compound.begin(),compound.end(),g));
+    }
+    else {
+      u.push_back(*std::min_element(compound.begin(),compound.end()));
     }
   }
   //Tasks remain but every one of them has an incoming edge, so the ordering
@@ -197,7 +229,7 @@ simulation(std::vector<std::string>& plan,
           if (!adef.is_artificial()) {
             gplan.push_back(act.first+"_"+std::to_string(cTask));
           }
-          auto rs = simulation(gplan,ns,gtasks,domain,g,depth_budget-1);
+          auto rs = simulation(gplan,ns,gtasks,domain,g,depth_budget-1,restrict_compound);
           if (rs.status == RolloutStatus::Solved) {
             return rs;
           }
@@ -220,7 +252,7 @@ simulation(std::vector<std::string>& plan,
         if (!all_gts.empty()) {
           std::shuffle(all_gts.begin(),all_gts.end(),g);
           for (auto &gts : all_gts) {
-            auto rs = simulation(plan,state,gts.second,domain,g,depth_budget-1);
+            auto rs = simulation(plan,state,gts.second,domain,g,depth_budget-1,restrict_compound);
             if (rs.status == RolloutStatus::Solved) {
               return rs;
             }
@@ -343,6 +375,7 @@ seek_planMCTS(pTree& t,
               int max_iterations,
               int max_depth,
               int max_decisions,
+              int restrict_rollouts,
               long& cutoffs) {
   int stuck_counter = 10;
   //A global cap on committed decisions, separate from stuck_counter, which
@@ -421,7 +454,8 @@ seek_planMCTS(pTree& t,
                                  m[n].tasks,
                                  domain,
                                  g,
-                                 max_depth);
+                                 max_depth,
+                                 restrict_rollouts);
             //Test this rollout, not the running sum: a failure after a
             //successful rollout leaves a sum that is not -1, so it used to go
             //unnoticed and its -1 was folded into the node's score.
@@ -461,7 +495,8 @@ seek_planMCTS(pTree& t,
                                  m[n_p].tasks,
                                  domain,
                                  g,
-                                 max_depth);
+                                 max_depth,
+                                 restrict_rollouts);
             if (rs.status == RolloutStatus::Refuted) {
               m[n_p].deadend = true;
               backprop(m,n_p,-1.0,1);
@@ -619,7 +654,8 @@ cppMCTShop(DomainDef& domain,
            int seed = 4021,
            int max_iterations = 0,
            int max_depth = kDefaultMaxRolloutDepth,
-           int max_decisions = kDefaultMaxDecisions) {
+           int max_decisions = kDefaultMaxDecisions,
+           int restrict_rollouts = 0) {
     domain.set_scorer(scorer);
     pTree t;
     TaskTree tasktree;
@@ -648,7 +684,8 @@ cppMCTShop(DomainDef& domain,
     std::cout << std::endl;
     long cutoffs = 0;
     auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c, g,
-                             max_iterations, max_depth, max_decisions, cutoffs);
+                             max_iterations, max_depth, max_decisions, restrict_rollouts,
+                             cutoffs);
     //A rollout that hit the bound is not evidence of anything, so if many did,
     //the search was steering on much less information than it appears to have.
     //Say so: a bound set too low for the domain otherwise looks exactly like a
