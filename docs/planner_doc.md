@@ -2068,12 +2068,71 @@ the *task and binding* side, and it splits cleanly into two follow-ups —
 differential-eval flag does not cover it; discharged by the benchmark's
 semantic fields and ctest 4/4. **Payoff:** 1.1×–1.75× depending on domain.
 
+### 8.12 Intern the evaluator's binding environment — **done**
+
+The first of the two pieces §8.11 left, and the one it recommended doing first
+on the grounds that it was the more contained and the larger share: **19.6% +
+7.1% of remaining allocation** sat in `eval::Env`, an
+`unordered_map<string,string>` rebuilt and copied once per candidate binding.
+
+**It is now a flat vector, scanned linearly.** The reasoning is that an `Env` is
+*copied* far more often than it is read — once per candidate binding, and the
+search generates enormous numbers of those — so what matters is the cost of a
+copy, not the asymptotics of a lookup. A hash map copy allocates a bucket array
+plus a node per entry. A `vector<pair<string,string>>` copy is a single
+allocation and a memcpy, because **every variable and object name in these
+domains fits in libc++'s small-string buffer** — the longest measured is 17
+characters against a threshold of 22 — so the strings carry no separate storage
+to chase. The scan is over a method's parameter list, a handful of entries,
+comfortably inside the range where linear beats hashing anyway.
+
+`value_of` also stopped returning `std::optional<std::string>` — a *copy* of the
+value on every call, and it is called per argument per atom — and now returns a
+pointer into the environment, or into the term itself for a constant.
+
+**Values were deliberately left as strings rather than interned to object ids**,
+which was the obvious next step and is wrong. `Equals` and `NotEquals` compare
+whatever the two sides denote, and a term can legitimately denote something
+that is *not* a declared object — the `(= room room)` case from §8.4, where a
+method parameter's own name stands in for a value. Interning would map every
+such name to the same "not an object" id and make two distinct undeclared names
+compare equal. The container was the cost; the values were not.
+
+**Measured against the same baseline as §8.11, no semantic change anywhere:**
+
+| domain | before §8.11 | after §8.11 | after §8.12 | this step alone |
+|---|---|---|---|---|
+| `transport` | 8.81 ms | 7.80 ms | **5.48 ms** | 1.42× |
+| `sar3` | 0.22 ms | 0.16 ms | **0.11 ms** | 1.45× |
+| `d18_gather` | 0.14 ms | 0.09 ms | **0.07 ms** | 1.29× |
+| `d18_p18` | 0.17 ms | 0.10 ms | **0.08 ms** | 1.25× |
+| `simple_travel` | 0.04 ms | 0.03 ms | **0.02 ms** | 1.5× |
+
+Plan times moved with them: `sar3` 13.9 → 6.5 ms, `d18_gather` 8.2 → 3.6 ms,
+`d18_p18` 8.0 → 3.4 ms, all against the pre-§8.11 baseline. The sub-millisecond
+medians are quantised at 0.01 ms, so `transport` is the number to trust.
+
+**What is left.** malloc is now **45.4%** of self-time, down from 52.9% before
+§8.11. String-keyed hash tables have disappeared from the allocation
+attribution entirely; what remains is the task representation, which is §9.1:
+
+| | share of remaining allocation |
+|---|---|
+| `Grounded_Task` construction | 15.3% |
+| `TaskGraph::GTs` (`hash_table<int,Grounded_Task>`) | 8.0% |
+| `Args` / `Binding` (`vector<pair<string,string>>`) | 7.5% + 7.3% |
+| `ActionDef::apply`, `MethodDef::apply` / `apply_binding` | 8.8% + 5.7% + 5.1% |
+
+**Depends on:** §8.11. **Risk:** low — confined to `evaluator.h`; discharged by
+the benchmark's semantic fields and ctest 4/4. **Payoff:** 1.25×–1.5× on top of
+§8.11, and about 2× cumulative with it.
+
 ---
 
 ## 9. Remaining work
 
 Ordered by what to do next rather than by when it was thought of. Two things
-reordered it, and both came out of doing §8.7. (§8.8–§8.11 have since been done
+reordered it, and both came out of doing §8.7. (§8.8–§8.12 have since been done
 out of this list. §8.8 changed nothing about the order; §8.9 was a
 negative result that removed one of §9.1's two reasons for being first — see
 there.)
@@ -2098,37 +2157,35 @@ left behind. §9.1 is semantics. §9.2 is hygiene and can be folded in anywhere.
 
 ---
 
-### 9.1 Intern the task and binding representation
+### 9.1 Intern the task representation
 
-The other half of §8.11, which interned the fact base and left the task side
-alone. Measured share of what allocation remains, attributed to the nearest
-planner frame:
+What §8.12 left of §8.11's second piece. §8.12 did the evaluator's environment
+and answered the question it was sequenced to answer — the approach works, and
+returned 1.25×–1.5× for a change confined to one header. This is the wider
+half. Measured share of what allocation remains:
 
 | | |
 |---|---|
-| `Env` — `unordered_map<string,string>`, copied per candidate binding | 19.6% + 7.1% |
-| `Grounded_Task` construction, `TaskGraph::GTs`, `Args` | 11.3% + 6.3% + 4.5% |
+| `Grounded_Task` construction | 15.3% |
+| `TaskGraph::GTs` — `unordered_map<int,Grounded_Task>` | 8.0% |
+| `Args` / `Binding` — `vector<pair<string,string>>` | 7.5% + 7.3% |
+| `ActionDef::apply`, `MethodDef::apply` / `apply_binding` | 8.8% + 5.7% + 5.1% |
 
-Two independent pieces, and the first is both smaller in reach and larger in
-payoff:
+`Grounded_Task` holds a task name and a vector of (parameter, value) string
+pairs, and one is built per subtask per binding. The approach is §8.11's —
+intern into the shared schema, reconstruct text on the cold paths — but the
+cold paths are more numerous here: the plan vector, the task tree,
+`grapher.h`, and every plan string the score functions read.
 
-1. **The evaluator's environment.** `eval::Env` is a `string`→`string` hash map
-   built and copied per candidate binding. It is confined to `evaluator.h`
-   plus the conversion at its boundary, and §8.11 already made the fact side
-   integer, so the values it stores are ids that get turned back into strings
-   only to be stored as strings.
-2. **`Grounded_Task`, `TaskGraph` and `Args`.** Wider: it reaches the plan
-   vector, the task tree, `grapher.h` and the public API, and every plan string
-   the score functions read. §8.11's approach applies — intern in the shared
-   schema, reconstruct text on the cold paths — but the cold paths here are
-   more numerous.
+Two things worth knowing before starting. Task and parameter names are **not**
+in the knowledge base's symbol tables, which hold predicates and objects, so
+this needs its own table or an extension of that one. And §8.12's finding
+applies directly: the container is usually the cost and the strings usually are
+not, because they fit in the small-string buffer — so measure whether flattening
+`TaskGraph::GTs` and `Args` alone gets most of it before interning anything.
 
-Do (1) first: it is contained, it is the bigger share, and doing it will show
-whether the same approach is worth the wider reach of (2).
-
-**Depends on:** §8.11. **Risk:** medium for (1), higher for (2). **Payoff:**
-bounded by the shares above — on the evidence of §8.11, expect tens of percent
-rather than a multiple.
+**Depends on:** §8.11, §8.12. **Risk:** medium-high — the reach is the problem,
+not the idea. **Payoff:** bounded by the shares above.
 
 ### 9.2 Trail-based apply/undo state
 

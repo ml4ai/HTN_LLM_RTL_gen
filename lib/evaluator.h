@@ -34,7 +34,41 @@ namespace eval {
 using Binding = std::vector<std::pair<std::string,std::string>>;
 
 //Variable name -> value, for the bindings fixed so far.
-using Env = std::unordered_map<std::string,std::string>;
+//
+//A flat vector rather than a hash map, and looked up by linear scan. An Env is
+//*copied* far more often than it is read -- once per candidate binding, and
+//the search generates a great many of those -- so what matters is the cost of
+//copying one, not the asymptotics of a lookup. A hash map copy allocates a
+//bucket array plus a node per entry; this copies as a single allocation and a
+//memcpy, because every variable and object name in these domains fits in
+//libc++'s small-string buffer (the longest measured is 17 characters against a
+//threshold of 22), so the strings carry no separate storage of their own.
+//
+//The scan is over a handful of entries -- a method's parameter list -- which
+//is well inside the range where a linear scan beats hashing anyway.
+using Env = std::vector<std::pair<std::string,std::string>>;
+
+//The value bound to `name`, or nullptr. Returns a pointer into the Env rather
+//than a copy: value_of is called per argument per atom, and a returned
+//std::string would be a copy each time.
+inline std::string const* env_find(Env const& env, std::string const& name) {
+  for (auto const& [n,v] : env) {
+    if (n == name) {
+      return &v;
+    }
+  }
+  return nullptr;
+}
+
+inline void env_set(Env& env, std::string const& name, std::string const& value) {
+  for (auto& [n,v] : env) {
+    if (n == name) {
+      v = value;
+      return;
+    }
+  }
+  env.emplace_back(name,value);
+}
 
 //Can this expression be evaluated directly? Checked once up front so the
 //caller can decide which engine to use before doing any work.
@@ -70,15 +104,13 @@ namespace detail {
 
 //The value a term denotes under env, or nullopt when it is a variable that is
 //still unbound. Constants denote themselves.
-inline std::optional<std::string> value_of(expr::Term const& t, Env const& env) {
+//Constants denote themselves, so the pointer is into the term. Nullptr means a
+//variable that is still unbound.
+inline std::string const* value_of(expr::Term const& t, Env const& env) {
   if (!t.is_variable) {
-    return t.name;
+    return &t.name;
   }
-  auto it = env.find(t.name);
-  if (it == env.end()) {
-    return std::nullopt;
-  }
-  return it->second;
+  return env_find(env,t.name);
 }
 
 inline bool ground(expr::Ptr const& e, Env const& env) {
@@ -133,7 +165,7 @@ inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
   //Everything below then compares integers.
   std::vector<int> want(ar,-1);
   for (size_t i = 0; i < ar; i++) {
-    auto v = value_of(e->args[i],env);
+    auto const* v = value_of(e->args[i],env);
     if (v) {
       want[i] = kb.object_id(*v);
       if (want[i] < 0) {
@@ -168,7 +200,7 @@ inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
     Env next = env;
     for (size_t i = 0; i < ar; i++) {
       if (want[i] < 0) {
-        next[e->args[i].name] = kb.object_name(rel[off+i]);
+        env_set(next,e->args[i].name,kb.object_name(rel[off+i]));
       }
     }
     out.push_back(std::move(next));
@@ -188,8 +220,8 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
 
     case expr::Kind::Equals:
     case expr::Kind::NotEquals: {
-      auto l = value_of(e->args[0],env);
-      auto r = value_of(e->args[1],env);
+      auto const* l = value_of(e->args[0],env);
+      auto const* r = value_of(e->args[1],env);
       if (l && r) {
         bool same = (*l == *r);
         bool want = (e->kind == expr::Kind::Equals);
@@ -202,10 +234,10 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
         //One side unbound: an equality binds it.
         Env next = env;
         if (l) {
-          next[e->args[1].name] = *l;
+          env_set(next,e->args[1].name,*l);
         }
         else {
-          next[e->args[0].name] = *r;
+          env_set(next,e->args[0].name,*r);
         }
         return std::vector<Env>{next};
       }
@@ -330,7 +362,7 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
     if (name == value) {
       continue;
     }
-    env[name] = value;
+    env_set(env,name,value);
   }
 
   auto solved = detail::solve(kb,e,env);
@@ -347,18 +379,18 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
       if (envs.empty()) {
         break;
       }
-      if (base.count(name)) {
+      if (env_find(base,name)) {
         continue;
       }
       std::vector<Env> widened;
       for (auto const& cur : envs) {
-        if (cur.count(name)) {
+        if (env_find(cur,name)) {
           widened.push_back(cur);
           continue;
         }
         for (int oid : kb.type_extension(type)) {
           Env next = cur;
-          next[name] = kb.object_name(oid);
+          next.emplace_back(name,kb.object_name(oid));
           widened.push_back(std::move(next));
         }
       }
@@ -369,12 +401,12 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
       b.reserve(params.size());
       bool complete = true;
       for (auto const& [name,type] : params) {
-        auto it = full.find(name);
-        if (it == full.end()) {
+        auto const* v = env_find(full,name);
+        if (!v) {
           complete = false;
           break;
         }
-        b.push_back({name,it->second});
+        b.push_back({name,*v});
       }
       if (!complete) {
         //Should not happen once the widening above has run, but a partial
