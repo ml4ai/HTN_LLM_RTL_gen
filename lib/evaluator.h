@@ -113,35 +113,65 @@ inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
                                                   expr::Ptr const& e,
                                                   Env const& env) {
   std::vector<Env> out;
+  int pid = kb.predicate_id(e->predicate);
   //A zero-arity predicate is a propositional atom: it holds if its relation is
   //non-empty.
   if (e->args.empty()) {
-    if (!kb.get_relation(e->predicate).empty()) {
+    if (pid >= 0 && !kb.relation_of(pid).empty()) {
       out.push_back(env);
     }
     return out;
   }
-  for (auto const& tup : kb.get_relation(e->predicate)) {
-    if (tup.size() != e->args.size()) {
+  if (pid < 0 || kb.arity_of(pid) != e->args.size()) {
+    return out;
+  }
+  size_t ar = e->args.size();
+  auto const& rel = kb.relation_of(pid);
+
+  //Resolve each argument against the incoming env ONCE rather than per tuple.
+  //A negative entry means the position is free and this atom will bind it.
+  //Everything below then compares integers.
+  std::vector<int> want(ar,-1);
+  for (size_t i = 0; i < ar; i++) {
+    auto v = value_of(e->args[i],env);
+    if (v) {
+      want[i] = kb.object_id(*v);
+      if (want[i] < 0) {
+        return out;   //a constant no object matches: nothing can hold
+      }
+    }
+  }
+
+  for (size_t off = 0; off + ar <= rel.size(); off += ar) {
+    bool ok = true;
+    //Two passes, so that `env` is copied only for a tuple that actually
+    //matches. Copying it per candidate tuple was itself a per-tuple
+    //allocation, and most candidates do not match.
+    for (size_t i = 0; i < ar && ok; i++) {
+      if (want[i] >= 0) {
+        ok = (rel[off+i] == want[i]);
+      }
+      else {
+        //A variable repeated inside one atom -- (road ?l ?l) -- must agree
+        //with its own earlier position.
+        for (size_t j = 0; j < i; j++) {
+          if (want[j] < 0 && e->args[j].name == e->args[i].name &&
+              rel[off+j] != rel[off+i]) {
+            ok = false;
+          }
+        }
+      }
+    }
+    if (!ok) {
       continue;
     }
     Env next = env;
-    bool ok = true;
-    for (size_t i = 0; i < tup.size(); i++) {
-      auto v = value_of(e->args[i],next);
-      if (v) {
-        if (*v != tup[i]) {           //already bound, or a constant: must match
-          ok = false;
-          break;
-        }
-      }
-      else {
-        next[e->args[i].name] = tup[i];   //free variable: this tuple binds it
+    for (size_t i = 0; i < ar; i++) {
+      if (want[i] < 0) {
+        next[e->args[i].name] = kb.object_name(rel[off+i]);
       }
     }
-    if (ok) {
-      out.push_back(std::move(next));
-    }
+    out.push_back(std::move(next));
   }
   return out;
 }
@@ -326,9 +356,9 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
           widened.push_back(cur);
           continue;
         }
-        for (auto const& obj : kb.type_extension(type)) {
+        for (int oid : kb.type_extension(type)) {
           Env next = cur;
-          next[name] = obj;
+          next[name] = kb.object_name(oid);
           widened.push_back(std::move(next));
         }
       }

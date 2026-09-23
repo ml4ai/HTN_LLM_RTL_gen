@@ -1267,7 +1267,7 @@ Two caveats, both important:
    protection-by-pruning does not.
 
 Neither caveat is a reason to avoid it, but both are reasons not to make it the
-default without measuring. It is §9.3.
+default without measuring. It is §9.2.
 
 ---
 
@@ -1448,7 +1448,8 @@ strings too. Interning predicates and objects to integers at load — the
 original plan for this item, and the reason it was named "representation" —
 is the change that removes that, and it was not done here because it reaches
 much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the
-public `get_facts` API all traffic in strings. **It is now §9.1.**
+public `get_facts` API all traffic in strings. **The fact-base half is now
+done (§8.11); the task half is §9.1.**
 
 `simple_travel` did not move at all here, and the explanation offered at the
 time — that its rollouts were bound by recursion through a `get_to`-style task
@@ -1506,7 +1507,7 @@ malloc, 30.3% our own code, 10% memcpy/memset**. The allocation is
 `KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
 per search node, one per binding in `apply_binding`. Two things would move it,
 larger first, and both are now items of their own: **§9.1** (interning, which
-§8.5 also left open) and **§9.2** (a trail-based state).
+§8.5 also left open) and **§9.1** (a trail-based state).
 
 They are no longer next, though. §8.7 showed that on the instances that are
 actually hard the binding constraint is the *number* of nodes rather than the
@@ -1996,13 +1997,84 @@ decision.
 no semantic change, ctest 4/4. **Payoff:** 1.58× on the encoding with the most
 compound branching; nothing, or a mild loss, elsewhere.
 
+### 8.11 Intern the fact base — **done**
+
+§8.5 and §8.6 both ended by naming this as the largest remaining cost-per-node
+item, and re-profiling before starting confirmed the premise still held after
+§8.7–§8.10: **52.9% malloc, 30.8% our own code, 10% memmove/memset/memcmp**,
+against 53.5/30.3/10 measured after §8.6. The search-space work had not moved
+allocation at all, which is what one would hope, since none of it touched the
+representation.
+
+Attributing the allocation to the nearest planner frame put the single biggest
+block at **23.2% in `__hash_table<__hash_value_type<string, …>>`** — the fact
+base, which was `unordered_map<string, vector<vector<string>>>`. Copying one
+cost a hash node with a string key per predicate, a vector per predicate, a
+vector per tuple and a string per argument, and there is one `KnowledgeBase`
+per search node and one per binding in `apply_binding`.
+
+**The fact base is now flat integer arrays.** `Schema` — already shared through
+a `shared_ptr` by every `KnowledgeBase`, so it costs a pointer per copy — gained
+symbol tables interning predicate names and object names once at construction.
+`relations` became
+
+    std::vector<std::vector<int>>   // indexed by predicate id
+
+where tuple k of predicate p occupies `[k*arity, (k+1)*arity)`. Flat rather
+than a vector of tuples, so that copying a state is a handful of integer
+buffers rather than an allocation per predicate, per tuple and per argument.
+
+**The evaluator moved to ids rather than converting at the boundary**, which
+would have given most of the win back. `solve_atom` now resolves each argument
+against the incoming environment **once** instead of once per tuple, and
+compares integers; it materialises a string only for a variable a matching
+tuple actually binds. It also got a second improvement the rewrite made
+obvious: it used to copy the environment for every *candidate* tuple and
+discard it on mismatch, and now copies only for tuples that match.
+
+**Measured, and behaviour-preserving** — the benchmark reports no semantic
+change on any domain:
+
+| domain | rollout time | plan time |
+|---|---|---|
+| `transport` | 11% faster | — |
+| `simple_travel` | 25% faster | 29% faster |
+| `sar3` | 27% faster | 32% faster |
+| `d18_gather` | 36% faster | 43% faster |
+| `d18_p18` | 41% faster | 43% faster |
+
+**One deliberate narrowing.** `tell` now rejects a fact whose predicate is
+unknown, whose arity is wrong, *or whose arguments are not declared objects*.
+The first two were already rejected; the third is new. Previously such a fact
+was stored and could be matched by a query, binding a variable to an object
+that does not exist. Domain `:constants` are safe because the loader merges
+them into the problem's objects before the knowledge base is built, and no
+shipped domain declares any. The change is recorded here because it is
+silent either way: an undeclared object in `:init` used to be accepted and is
+now dropped, and neither version says anything.
+
+**What is left, with numbers.** Re-profiling after the change: **49.3% malloc,
+34.0% our own code**. The share barely moved because the absolute time fell
+too. The string-keyed fact table is gone from the attribution; what remains is
+the *task and binding* side, and it splits cleanly into two follow-ups —
+§9.1 has the detail:
+
+| | share of remaining allocation |
+|---|---|
+| `Env` (`unordered_map<string,string>`, copied per candidate binding) | 19.6% + 7.1% |
+| `Grounded_Task`, `TaskGraph::GTs`, `Args` | 11.3% + 6.3% + 4.5% |
+
+**Depends on:** §8.4. **Risk:** was medium — wide and mechanical, and the
+differential-eval flag does not cover it; discharged by the benchmark's
+semantic fields and ctest 4/4. **Payoff:** 1.1×–1.75× depending on domain.
+
 ---
 
 ## 9. Remaining work
 
 Ordered by what to do next rather than by when it was thought of. Two things
-reordered it, and both came out of doing §8.7. (§8.8, §8.9 and §8.10 have since
-been done out of this list. §8.8 changed nothing about the order; §8.9 was a
+reordered it, and both came out of doing §8.7. (§8.8–§8.11 have since been done
+out of this list. §8.8 changed nothing about the order; §8.9 was a
 negative result that removed one of §9.1's two reasons for being first — see
 there.)
 
@@ -2019,30 +2091,44 @@ there.)
 
 **This order assumes the goal is to plan on harder instances.** If the
 near-term goal is instead to generate and run many *small* RTL domains, the
-search space is not what hurts, and §9.1 and §9.3 should come first.
+search space is not what hurts, and §9.1 and §9.2 should come first.
 
 §9.1 is search space. §9.1–§9.1 are cost per node, and are what §8.5 and §8.6
-left behind. §9.2 is semantics. §9.3 is hygiene and can be folded in anywhere.
+left behind. §9.1 is semantics. §9.2 is hygiene and can be folded in anywhere.
 
 ---
 
-### 9.1 Intern predicates, objects and task names
+### 9.1 Intern the task and binding representation
 
-Left over from §8.5, which is where the reasoning is. After §8.6 the profile is
-**53.5% malloc, 30.3% our own code, 10% memcpy/memset**, and the allocation is
-`KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
-per search node, one per binding in `apply_binding`. Every argument of every
-fact is a separate allocation, copied per node.
+The other half of §8.11, which interned the fact base and left the task side
+alone. Measured share of what allocation remains, attributed to the nearest
+planner frame:
 
-Interning them to integers at load is the change that removes it, and it is the
-largest remaining cost-per-node item. It was not done in §8.5 because it
-reaches much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator
-and the public `get_facts` API all traffic in strings. That reach is also why
-it belonged after the search-space work, which is now done (§8.10).
+| | |
+|---|---|
+| `Env` — `unordered_map<string,string>`, copied per candidate binding | 19.6% + 7.1% |
+| `Grounded_Task` construction, `TaskGraph::GTs`, `Args` | 11.3% + 6.3% + 4.5% |
 
-**Depends on:** §8.4; sequenced after §9.1. **Risk:** medium — wide, mechanical,
-and the differential-eval flag from §8.4 does not cover it. **Payoff:** the
-largest single remaining cost-per-node item.
+Two independent pieces, and the first is both smaller in reach and larger in
+payoff:
+
+1. **The evaluator's environment.** `eval::Env` is a `string`→`string` hash map
+   built and copied per candidate binding. It is confined to `evaluator.h`
+   plus the conversion at its boundary, and §8.11 already made the fact side
+   integer, so the values it stores are ids that get turned back into strings
+   only to be stored as strings.
+2. **`Grounded_Task`, `TaskGraph` and `Args`.** Wider: it reaches the plan
+   vector, the task tree, `grapher.h` and the public API, and every plan string
+   the score functions read. §8.11's approach applies — intern in the shared
+   schema, reconstruct text on the cold paths — but the cold paths here are
+   more numerous.
+
+Do (1) first: it is contained, it is the bigger share, and doing it will show
+whether the same approach is worth the wider reach of (2).
+
+**Depends on:** §8.11. **Risk:** medium for (1), higher for (2). **Payoff:**
+bounded by the shares above — on the evidence of §8.11, expect tens of percent
+rather than a multiple.
 
 ### 9.2 Trail-based apply/undo state
 

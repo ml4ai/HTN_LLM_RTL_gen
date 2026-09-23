@@ -137,6 +137,33 @@ class KnowledgeBase {
         std::vector<std::pair<std::string,std::vector<std::pair<std::string,std::string>>>> predicates;
         //constant, type
         std::unordered_map<std::string,std::string> objects;
+
+        //Symbol tables. Predicate and object names are fixed for the whole
+        //problem, so they are interned once here and the fact base stores
+        //small integers instead of strings. Schema is shared through a
+        //shared_ptr by every KnowledgeBase, so this costs one pointer per
+        //copy rather than a table per search node.
+        std::unordered_map<std::string,int> pred_id;   //name -> index into predicates
+        std::unordered_map<std::string,int> obj_id;    //name -> dense object id
+        std::vector<std::string> obj_name;             //the inverse
+        std::vector<size_t> arity;                     //per predicate
+
+        void intern() {
+          pred_id.clear(); arity.clear();
+          arity.reserve(predicates.size());
+          for (size_t i = 0; i < predicates.size(); i++) {
+            //A repeated predicate name keeps its first id; the signatures are
+            //checked by arity at tell() time, as they were before.
+            pred_id.emplace(predicates[i].first,(int)i);
+            arity.push_back(predicates[i].second.size());
+          }
+          obj_id.clear(); obj_name.clear();
+          obj_name.reserve(objects.size());
+          for (auto const& [name,type] : objects) {
+            obj_id.emplace(name,(int)obj_name.size());
+            obj_name.push_back(name);
+          }
+        }
       };
       std::shared_ptr<const Schema> schema;
       //The fact base: predicate head -> its argument tuples. This used to be
@@ -145,13 +172,31 @@ class KnowledgeBase {
       //KnowledgeBase -- one per search node -- paid for both. The tuples are
       //the useful form, so they are now the only one, and the strings are
       //reconstructed on the rare paths that still want them.
-      std::unordered_map<std::string, std::vector<std::vector<std::string>>> relations;
+      //Indexed by predicate id, each entry a FLAT array of object ids: tuple k
+      //of predicate p occupies [k*arity, (k+1)*arity). Flat rather than a
+      //vector of tuples because the whole point is that a copy of a
+      //KnowledgeBase -- one per search node, one per binding in apply_binding
+      //-- should be a handful of integer buffers rather than an allocation per
+      //predicate, per tuple and per argument.
+      std::vector<std::vector<int>> relations;
 
       static std::string fact_string(std::string const& head,
                                      std::vector<std::string> const& args) {
         std::string f = "("+head;
         for (auto const& a : args) {
           f += " "+a;
+        }
+        return f+")";
+      }
+
+      //Reconstructs "(head a b)" for the cold paths -- printing, get_facts,
+      //and the SMT fallback -- which are the only places that still want a
+      //fact as text.
+      std::string fact_string_at(int pid, size_t off) const {
+        std::string f = "("+this->schema->predicates[pid].first;
+        size_t a = this->schema->arity[pid];
+        for (size_t i = 0; i < a; i++) {
+          f += " "+this->schema->obj_name[this->relations[pid][off+i]];
         }
         return f+")";
       }
@@ -226,15 +271,21 @@ class KnowledgeBase {
           params.push_back(std::make_pair("?o","__Object__"));
           sch.predicates.push_back(std::make_pair(t2.type,params));
         }
+        //The type predicates were just appended above, so intern now that the
+        //signature list is final.
+        sch.intern();
+        this->relations.assign(sch.predicates.size(),{});
         for (auto const& [o1,o2] : sch.objects) {
           int t = typetree.find_type(o2);
+          int oid = sch.obj_id.at(o1);
           for (auto const& [t1,t2] : typetree.types) {
             if (in(t1,typetree.types[t].lineage) ||
                 t2.type == o2) {
               //Type facts are unary: (type object).
-              auto& rel = this->relations[t2.type];
-              if (std::find(rel.begin(),rel.end(),std::vector<std::string>{o1}) == rel.end()) {
-                rel.push_back({o1});
+              int pid = sch.pred_id.at(t2.type);
+              auto& rel = this->relations[pid];
+              if (std::find(rel.begin(),rel.end(),oid) == rel.end()) {
+                rel.push_back(oid);
               }
             } 
           }
@@ -291,8 +342,8 @@ class KnowledgeBase {
           //rejects, which made any domain declaring one unusable.
           if (p.second.empty()) {
             this->smt_state += "(declare-fun "+p.first+" () Bool)\n";
-            auto pf = this->relations.find(p.first);
-            if (pf != this->relations.end() && !pf->second.empty()) {
+            int pid0 = this->predicate_id(p.first);
+            if (pid0 >= 0 && !this->relations[pid0].empty()) {
               this->smt_state += "(assert "+p.first+")\n";
             }
             else {
@@ -300,8 +351,9 @@ class KnowledgeBase {
             }
             continue;
           }
-          if (this->relations.find(p.first) != this->relations.end()) {
-            if (!this->relations[p.first].empty()) {
+          int pid = this->predicate_id(p.first);
+          if (pid >= 0) {
+            if (!this->relations[pid].empty()) {
               this->smt_state += "(declare-fun "+p.first+" (";
               std::string pred_assert = "(assert (forall (";
               int i = 0;
@@ -313,12 +365,13 @@ class KnowledgeBase {
                 i++;
               }
               pred_assert += ") (= ("+p.first+var_assert+") (or ";
-              for (auto const& tup : this->relations[p.first]) {
+              size_t ar = this->schema->arity[pid];
+              auto const& rel = this->relations[pid];
+              for (size_t off = 0; ar > 0 && off + ar <= rel.size(); off += ar) {
                 pred_assert += "(and ";
-                int j = 0;
-                for (auto const& vals : tup) {
-                  pred_assert += "(= x_"+std::to_string(j)+" "+vals+") ";
-                  j++;
+                for (size_t j = 0; j < ar; j++) {
+                  pred_assert += "(= x_"+std::to_string(j)+" "+
+                                 this->schema->obj_name[rel[off+j]]+") ";
                 }
                 pred_assert += ") ";
               }
@@ -360,6 +413,26 @@ class KnowledgeBase {
         }
       }
 
+      //Offset of a tuple in a flat relation, or npos. Arity 0 is the
+      //propositional case: the relation is either empty or holds one sentinel.
+      static size_t find_tuple(std::vector<int> const& rel,
+                               std::vector<int> const& tup,
+                               size_t arity) {
+        if (arity == 0) {
+          return rel.empty() ? std::string::npos : 0;
+        }
+        for (size_t off = 0; off + arity <= rel.size(); off += arity) {
+          bool same = true;
+          for (size_t i = 0; i < arity; i++) {
+            if (rel[off+i] != tup[i]) { same = false; break; }
+          }
+          if (same) {
+            return off;
+          }
+        }
+        return std::string::npos;
+      }
+
       void ensure_smt() {
         if (!this->smt_fresh) {
           this->build_smt_state();
@@ -379,26 +452,46 @@ class KnowledgeBase {
       //manually after all the tells for more optimal performance! 
       bool tell(std::string pred, bool remove = false, bool update_state = true) {
         auto pp = this->parse_predicate(pred);
-        bool not_found = true;
-        for (auto const& p : this->schema->predicates) {
-          if (pp.first == p.first and pp.second.size() == p.second.size()) {
-            not_found = false;
-          }
-        }
-        if (not_found) {
+        int pid = this->predicate_id(pp.first);
+        //Unknown predicate, or the right name at the wrong arity: rejected, as
+        //before. The arity check used to be a scan over every signature.
+        if (pid < 0 || this->schema->arity[pid] != pp.second.size()) {
           return false;
         }
+        //Every argument must be a known object. This is stricter than the old
+        //code, which stored whatever string it was handed -- but a fact over an
+        //undeclared object could never be matched by a query anyway, since
+        //queries range over declared objects.
+        std::vector<int> tup;
+        tup.reserve(pp.second.size());
+        for (auto const& a : pp.second) {
+          auto it = this->schema->obj_id.find(a);
+          if (it == this->schema->obj_id.end()) {
+            return false;
+          }
+          tup.push_back(it->second);
+        }
+        auto& rel = this->relations[pid];
+        size_t a = this->schema->arity[pid];
+        size_t at = this->find_tuple(rel,tup,a);
         if (remove) {
-          auto& rel = this->relations[pp.first];
-          rel.erase(std::remove(rel.begin(),rel.end(),pp.second),rel.end());
+          if (at != std::string::npos) {
+            rel.erase(rel.begin()+at,rel.begin()+at+(a == 0 ? 1 : a));
+          }
           if (update_state) {
             this->update_state();
           }
           return true;
         }
-        auto& rel = this->relations[pp.first];
-        if (std::find(rel.begin(),rel.end(),pp.second) == rel.end()) {
-          rel.push_back(pp.second);
+        if (at == std::string::npos) {
+          if (a == 0) {
+            //A propositional atom has no arguments; one sentinel entry records
+            //that it holds.
+            rel.push_back(0);
+          }
+          else {
+            rel.insert(rel.end(),tup.begin(),tup.end());
+          }
         }
         if (update_state) {
           this->update_state();
@@ -471,12 +564,20 @@ class KnowledgeBase {
         }
         auto holds = [this](std::string const& head,
                             std::vector<std::string> const& args) {
-          for (auto const& tup : this->get_relation(head)) {
-            if (tup == args) {
-              return true;
-            }
+          int pid = this->predicate_id(head);
+          if (pid < 0 || this->schema->arity[pid] != args.size()) {
+            return false;
           }
-          return false;
+          std::vector<int> tup;
+          tup.reserve(args.size());
+          for (auto const& a : args) {
+            int oid = this->object_id(a);
+            if (oid < 0) {
+              return false;
+            }
+            tup.push_back(oid);
+          }
+          return find_tuple(this->relations[pid],tup,args.size()) != std::string::npos;
         };
         auto direct = ::expr::eval_ground(it->second,holds);
 
@@ -510,39 +611,74 @@ class KnowledgeBase {
         std::cout << this->smt_state << std::endl;
       }
 
-      //Argument tuples of one predicate, empty if it holds of nothing. Used by
-      //the direct evaluator; see evaluator.h.
-      std::vector<std::vector<std::string>> const& get_relation(std::string const& head) const {
-        static const std::vector<std::vector<std::string>> none;
-        auto it = this->relations.find(head);
-        return it == this->relations.end() ? none : it->second;
+      //The id-based view the direct evaluator works against; see evaluator.h.
+      //Nothing here allocates.
+      int predicate_id(std::string const& head) const {
+        if (!this->schema) {
+          return -1;
+        }
+        auto it = this->schema->pred_id.find(head);
+        return it == this->schema->pred_id.end() ? -1 : it->second;
       }
 
-      //Objects of a given type. Types are unary predicates asserted for every
-      //object and all of its ancestors (see initialize), so a type's extension
-      //is just its relation.
-      std::vector<std::string> type_extension(std::string const& type) const {
-        std::vector<std::string> objs;
-        for (auto const& tup : this->get_relation(type)) {
-          if (tup.size() == 1) {
-            objs.push_back(tup[0]);
-          }
+      int object_id(std::string const& name) const {
+        if (!this->schema) {
+          return -1;
         }
-        return objs;
+        auto it = this->schema->obj_id.find(name);
+        return it == this->schema->obj_id.end() ? -1 : it->second;
+      }
+
+      std::string const& object_name(int oid) const {
+        return this->schema->obj_name[oid];
+      }
+
+      size_t arity_of(int pid) const {
+        return this->schema->arity[pid];
+      }
+
+      //Flat argument tuples of one predicate: tuple k occupies
+      //[k*arity, (k+1)*arity). Empty if the predicate holds of nothing.
+      std::vector<int> const& relation_of(int pid) const {
+        static const std::vector<int> none;
+        return pid < 0 ? none : this->relations[pid];
+      }
+
+      //Objects of a given type, as ids. Types are unary predicates asserted for
+      //every object and all of its ancestors (see initialize), so a type's
+      //extension is just its relation.
+      std::vector<int> type_extension(std::string const& type) const {
+        int pid = this->predicate_id(type);
+        if (pid < 0 || this->schema->arity[pid] != 1) {
+          return {};
+        }
+        return this->relations[pid];
       }
 
       std::unordered_set<std::string> get_facts(std::string head) {
         std::unordered_set<std::string> out;
-        for (auto const& tup : this->get_relation(head)) {
-          out.insert(fact_string(head,tup));
+        int pid = this->predicate_id(head);
+        if (pid < 0) {
+          return out;
+        }
+        size_t a = this->schema->arity[pid];
+        auto const& rel = this->relations[pid];
+        if (a == 0) {
+          if (!rel.empty()) {
+            out.insert("("+head+")");
+          }
+          return out;
+        }
+        for (size_t off = 0; off + a <= rel.size(); off += a) {
+          out.insert(fact_string_at(pid,off));
         }
         return out;
       } 
 
       void print_facts() {
-        for (auto const& [head,rel] : this->relations) {
-          for (auto const& tup : rel) {
-            std::cout << fact_string(head,tup) << std::endl;
+        for (auto const& [head,fs] : this->get_facts()) {
+          for (auto const& f : fs) {
+            std::cout << f << std::endl;
           }
         }
       }
@@ -550,11 +686,15 @@ class KnowledgeBase {
       std::unordered_map<std::string, std::unordered_set<std::string>>
       get_facts() {
         std::unordered_map<std::string, std::unordered_set<std::string>> out;
-        for (auto const& [head,rel] : this->relations) {
-          auto& set = out[head];
-          for (auto const& tup : rel) {
-            set.insert(fact_string(head,tup));
+        if (!this->schema) {
+          return out;
+        }
+        for (size_t pid = 0; pid < this->relations.size(); pid++) {
+          if (this->relations[pid].empty()) {
+            continue;
           }
+          out[this->schema->predicates[pid].first] =
+            this->get_facts(this->schema->predicates[pid].first);
         }
         return out;
       }
