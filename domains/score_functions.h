@@ -3,7 +3,7 @@
 #include <algorithm>
 
 
-double delivery_one(KnowledgeBase& kb,std::vector<std::string>& plan) {
+inline double delivery_one(KnowledgeBase& kb,std::vector<std::string>& plan) {
   int move_count = 0;
   for (auto const& a : plan) {
     if (a.find("drive") != std::string::npos) {
@@ -29,7 +29,7 @@ double delivery_one(KnowledgeBase& kb,std::vector<std::string>& plan) {
 //fewer drives scores higher. That second part is what makes the four 8.7
 //encodings comparable on plan quality: the insert model is free to emit a
 //drive nothing asked for, and this is what notices.
-double delivery_chain(KnowledgeBase& kb, std::vector<std::string>& plan) {
+inline double delivery_chain(KnowledgeBase& kb, std::vector<std::string>& plan) {
   //Asks the fact index for the dest facts and one lookup per package, rather
   //than rebuilding the whole state as strings with get_facts().
   auto dests = kb.facts_of("dest");
@@ -56,11 +56,11 @@ double delivery_chain(KnowledgeBase& kb, std::vector<std::string>& plan) {
   return 0.5 + 0.5/(1.0 + drives);
 }
 
-double simple(KnowledgeBase& kb, std::vector<std::string>& plan) {
+inline double simple(KnowledgeBase& kb, std::vector<std::string>& plan) {
   return 1.0;
 }
 
-double travel_one(KnowledgeBase& kb, std::vector<std::string>& plan) {
+inline double travel_one(KnowledgeBase& kb, std::vector<std::string>& plan) {
   if (kb.ask("(and (loc me park) (cash me twenty))")) {
     return 1;
   }
@@ -83,7 +83,7 @@ double travel_one(KnowledgeBase& kb, std::vector<std::string>& plan) {
 //regular victims scored nothing for them. And a problem with no victims divided
 //by zero; a NaN in a node's value corrupts UCT's comparisons. With nothing to
 //rescue, every plan has done all there is to do.
-double sar3(KnowledgeBase& kb, std::vector<std::string>& plan) {
+inline double sar3(KnowledgeBase& kb, std::vector<std::string>& plan) {
   double critical = kb.count_facts("vic_is_type_C");
   double regular = std::max(0.0, (double)kb.count_facts("victim") - critical);
   double p_total = critical*50.0 + regular*10.0;
@@ -94,7 +94,9 @@ double sar3(KnowledgeBase& kb, std::vector<std::string>& plan) {
   return points/p_total;
 }
 
-Scorers scorers = Scorers({{"delivery_one", delivery_one},
+//inline: one table for the whole program, however many source files include
+//this header (planner_doc.md 8.20).
+inline Scorers scorers = Scorers({{"delivery_one", delivery_one},
                            {"delivery_chain", delivery_chain},
                            {"travel_one", travel_one},
                            {"sar3",sar3},

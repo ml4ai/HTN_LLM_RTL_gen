@@ -40,3 +40,11 @@ add_test(NAME test_parser COMMAND test_parser)
 add_test(NAME test_kb COMMAND test_kb)
 add_test(NAME test_loader COMMAND test_loader)
 add_test(NAME test_MCTS_planner COMMAND test_MCTS_planner)
+
+# Two translation units that both include every public header: fails to link
+# if a header defines anything not inline (planner_doc.md 8.20).
+find_package(Graphviz REQUIRED)
+add_executable(test_linkage test_linkage.cpp test_linkage_other.cpp)
+target_link_libraries(test_linkage PRIVATE tomcat ${GRAPHVIZ_LIBS} ${Z3_LIBRARIES} ${Boost_LIBRARIES})
+target_include_directories(test_linkage PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ${GRAPHVIZ_INCLUDE_DIRS} ../lib)
+add_test(NAME test_linkage COMMAND test_linkage)

@@ -148,7 +148,7 @@ struct TypeTree {
   }
 };
 
-int find_var(std::vector<std::pair<std::string, std::string>> vars, std::string var) {
+inline int find_var(std::vector<std::pair<std::string, std::string>> vars, std::string var) {
   for (int i = 0; i < vars.size(); i++) {
     if (vars[i].first == var) {
       return i;
@@ -618,9 +618,10 @@ class KnowledgeBase {
         //once and answering from the fact index avoids building the whole SMT
         //encoding and starting a solver for what is a handful of lookups. The
         //parse is cached: these strings are literals in the score function, so
-        //there are only ever a few distinct ones.
+        //there are only ever a few distinct ones. thread_local rather than
+        //static, so planners running in parallel threads do not race on it.
         //`expr` is also the parameter name here, so the namespace needs qualifying.
-        static std::unordered_map<std::string,::expr::Ptr> parsed;
+        thread_local std::unordered_map<std::string,::expr::Ptr> parsed;
         auto it = parsed.find(expr);
         if (it == parsed.end()) {
           it = parsed.emplace(expr,::expr::parse_ground(expr)).first;
@@ -795,10 +796,10 @@ class KnowledgeBase {
         return out;
       } 
 
-      void print_facts() {
+      void print_facts(std::ostream& out = std::cout) {
         for (auto const& [head,fs] : this->get_facts()) {
           for (auto const& f : fs) {
-            std::cout << f << std::endl;
+            out << f << std::endl;
           }
         }
       }

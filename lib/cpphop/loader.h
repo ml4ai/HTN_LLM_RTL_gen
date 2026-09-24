@@ -19,6 +19,12 @@
 #include "validate.h"
 #include <filesystem>
 
+//The loader's workings live in this namespace, where the parser's AST names
+//can be used unqualified. They used to be pulled into the global namespace of
+//every file including this header, where ast::Type collided with the type
+//tree's ::Type (planner_doc.md 8.20). What a caller uses is exported below.
+namespace hddl_loader {
+
 namespace fs = std::filesystem;
 namespace x3 = boost::spirit::x3;
 using namespace ast;
@@ -113,7 +119,7 @@ inline void add_either_types(TypeTree& typetree, EitherTypes const& eithers) {
   }
 }
 
-void get_orderings(Orderings orderings,std::unordered_map<std::string,std::vector<std::string>>& og) {
+inline void get_orderings(Orderings orderings,std::unordered_map<std::string,std::vector<std::string>>& og) {
   if (which_orderings(orderings) == 0) {
     return;
   }
@@ -132,7 +138,7 @@ void get_orderings(Orderings orderings,std::unordered_map<std::string,std::vecto
   return;
 };
 
-std::unordered_set<std::string> type_inference(Sentence sentence, Ptypes& ptypes, std::string var) {
+inline std::unordered_set<std::string> type_inference(Sentence sentence, Ptypes& ptypes, std::string var) {
   std::unordered_set<std::string> types;
   types.insert("__Object__");
   if (sentence.which() == 0) {
@@ -190,7 +196,7 @@ std::unordered_set<std::string> type_inference(Sentence sentence, Ptypes& ptypes
   return types;
 }
 
-std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
+inline std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
   if (sentence.which() == 0) {
     return "__NONE__";
   }
@@ -325,7 +331,7 @@ std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
 //string. The two are kept in step by a round-trip assertion in test_loader:
 //every precondition and effect condition in every shipped domain must render
 //back to the string stored beside it.
-expr::Ptr sentence_to_expr(Sentence sentence, Ptypes& ptypes) {
+inline expr::Ptr sentence_to_expr(Sentence sentence, Ptypes& ptypes) {
   if (sentence.which() == 0) {
     return nullptr;
   }
@@ -425,7 +431,7 @@ expr::Ptr sentence_to_expr(Sentence sentence, Ptypes& ptypes) {
   return nullptr;
 }
 
-std::unordered_set<std::string> type_inference(effect e, Ptypes& ptypes, std::string var) {
+inline std::unordered_set<std::string> type_inference(effect e, Ptypes& ptypes, std::string var) {
   std::unordered_set<std::string> types = {"__Object__"};
   auto pred = e.pred;
   for (int i = 0; i < pred.second.size(); i++) {
@@ -436,9 +442,9 @@ std::unordered_set<std::string> type_inference(effect e, Ptypes& ptypes, std::st
   return types;
 }
 //Forward declaration needed for decompose_effects
-Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes);
+inline Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes);
 
-Effects decompose_effects(Effect effect, Ptypes& ptypes) {
+inline Effects decompose_effects(Effect effect, Ptypes& ptypes) {
   Effects effects = {};
   if (effect.which() == 0) {
     return effects;
@@ -458,7 +464,7 @@ Effects decompose_effects(Effect effect, Ptypes& ptypes) {
   return effects;
 }
 
-Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
+inline Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
   Effects effects = {};
   if (ceffect.which() == 0) {
     auto e = boost::get<ForallCEffect>(ceffect);
@@ -564,7 +570,7 @@ Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
 
 
 
-std::string decompose_constraint(Constraint constraint) {
+inline std::string decompose_constraint(Constraint constraint) {
   if (which_constraint(constraint) == 0) {
     return "__NONE__";
   }
@@ -607,7 +613,7 @@ std::string decompose_constraint(Constraint constraint) {
   return "__NONE__";
 }
 
-std::string decompose_constraints(Constraints constraints) {
+inline std::string decompose_constraints(Constraints constraints) {
   std::string cs = "(and"; 
   if (which_constraints(constraints) == 0) {
     return "__NONE__";
@@ -640,7 +646,7 @@ std::string decompose_constraints(Constraints constraints) {
 
 //Mirrors decompose_constraint. :constraints are (in)equalities over variables
 //and constants only, so this is the whole of it.
-expr::Ptr constraint_to_expr(Constraint constraint) {
+inline expr::Ptr constraint_to_expr(Constraint constraint) {
   int w = which_constraint(constraint);
   if (w != 1 && w != 2) {
     return nullptr;
@@ -666,7 +672,7 @@ expr::Ptr constraint_to_expr(Constraint constraint) {
 }
 
 //Mirrors decompose_constraints, which always wraps in an `and`.
-expr::Ptr constraints_to_expr(Constraints constraints) {
+inline expr::Ptr constraints_to_expr(Constraints constraints) {
   int w = which_constraints(constraints);
   if (w == 1) {
     auto c = constraint_to_expr(boost::get<Constraint>(constraints));
@@ -691,7 +697,7 @@ expr::Ptr constraints_to_expr(Constraints constraints) {
   return nullptr;
 }
 
-std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks subtasks, Tasktypes ttypes) {
+inline std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks subtasks, Tasktypes ttypes) {
   std::vector<std::pair<ID,TaskDef>> subs;
   if (which_subtasks(subtasks) == 0) {
     return subs;
@@ -806,11 +812,11 @@ inline std::string read_hddl_file(std::string const& file) {
                      (std::istreambuf_iterator<char>()));
 }
 
-Domain dom_loader(std::string dom_file) {
+inline Domain dom_loader(std::string dom_file) {
   return parse<Domain>(read_hddl_file(dom_file),dom_file);
 }
 
-std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
+inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
   std::string name = dom.name; 
   TypeTree typetree;
   typetree.add_root("__Object__");
@@ -1025,18 +1031,18 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
 
 //Parses, validates (validate.h) and builds a domain on its own. A problem
 //needs its domain to be checked, so use load() or load_hddl() for the pair.
-std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> loadDomain(std::string dom_file) {
+inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> loadDomain(std::string dom_file) {
   SourceLines lines;
   Domain dom = parse<Domain>(read_hddl_file(dom_file),dom_file,&lines);
   validate_hddl(dom,lines);
   return createDomainDef(dom);
 }
 
-Problem prob_loader(std::string prob_file) {
+inline Problem prob_loader(std::string prob_file) {
   return parse<Problem>(read_hddl_file(prob_file),prob_file);
 }
 
-ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes) {
+inline ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes) {
   std::string head = "__"+prob.name+"__";
   std::string domain_name = prob.domain_name;
 
@@ -1127,7 +1133,7 @@ ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes) {
   return ProblemDef(head,domain_name,objects,initM,initF,goal);
 }
 
-ProblemDef loadProblem(std::string prob_file, Ptypes ptypes, Tasktypes ttypes) {
+inline ProblemDef loadProblem(std::string prob_file, Ptypes ptypes, Tasktypes ttypes) {
   Problem prob = prob_loader(prob_file);
   return createProblemDef(prob,ptypes,ttypes);
 }
@@ -1137,7 +1143,7 @@ ProblemDef loadProblem(std::string prob_file, Ptypes ptypes, Tasktypes ttypes) {
 //are what errors are reported against. Throws ParseError for text the grammar
 //rejects, and HDDLError listing every problem validate.h finds, before
 //anything is built.
-std::pair<DomainDef, ProblemDef> load_hddl(std::string const& dom_text,
+inline std::pair<DomainDef, ProblemDef> load_hddl(std::string const& dom_text,
                                            std::string const& prob_text,
                                            std::string const& dom_name = "domain",
                                            std::string const& prob_name = "problem") {
@@ -1154,6 +1160,21 @@ std::pair<DomainDef, ProblemDef> load_hddl(std::string const& dom_text,
   return std::make_pair(domDef,probDef);
 }
 
-std::pair<DomainDef, ProblemDef> load(std::string dom_file, std::string prob_file) {
+inline std::pair<DomainDef, ProblemDef> load(std::string dom_file, std::string prob_file) {
   return load_hddl(read_hddl_file(dom_file),read_hddl_file(prob_file),dom_file,prob_file);
 }
+
+} // namespace hddl_loader
+
+//The loader's public interface.
+using hddl_loader::load;
+using hddl_loader::load_hddl;
+using hddl_loader::loadDomain;
+using hddl_loader::loadProblem;
+using hddl_loader::createDomainDef;
+using hddl_loader::createProblemDef;
+using hddl_loader::dom_loader;
+using hddl_loader::prob_loader;
+using hddl_loader::read_hddl_file;
+using hddl_loader::Ptypes;
+using hddl_loader::Tasktypes;

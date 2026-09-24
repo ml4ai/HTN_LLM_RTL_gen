@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <iostream>
 #include <tuple>
 #include <unordered_map>
 #include <queue>
@@ -300,7 +301,7 @@ struct Results{
 };
 
 
-std::string return_value(std::string var, Args& args) {
+inline std::string return_value(std::string var, Args& args) {
   for (auto const& a : args) {
     if (var == a.first) {
       return a.second;
@@ -309,7 +310,7 @@ std::string return_value(std::string var, Args& args) {
   return "__CONST__";
 }
 
-Pred create_predicate(std::string head, Params& params) {
+inline Pred create_predicate(std::string head, Params& params) {
   Pred pred;
   pred.first = head;
   pred.second = params;
@@ -866,6 +867,11 @@ struct DomainDef {
   //How method preconditions are read. AtStart by default, which is stricter
   //than HDDL: it rejects plans HDDL's compiled semantics accepts. See 8.16.
   PreconditionMode precondition_mode = PreconditionMode::AtStart;
+  //Where cppMCTShop narrates: the initial and final states, the plan, and any
+  //note about rollouts cut off by the depth bound. Standard output by default,
+  //which is what MCTS_planner shows; nullptr for none, which a program using
+  //the planner as a library will usually want (planner_doc.md 8.20).
+  std::ostream* narration = &std::cout;
   DomainDef(std::string head,
             TypeTree typetree,
             Predicates predicates,

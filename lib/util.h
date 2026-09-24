@@ -79,19 +79,19 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& v) {
 
 const std::string WHITESPACE = " \n\r\t\f\v";
  
-std::string ltrim(const std::string &s)
+inline std::string ltrim(const std::string &s)
 {
     size_t start = s.find_first_not_of(WHITESPACE);
     return (start == std::string::npos) ? "" : s.substr(start);
 }
  
-std::string rtrim(const std::string &s)
+inline std::string rtrim(const std::string &s)
 {
     size_t end = s.find_last_not_of(WHITESPACE);
     return (end == std::string::npos) ? "" : s.substr(0, end + 1);
 }
  
-std::string trim(const std::string &s) {
+inline std::string trim(const std::string &s) {
     return rtrim(ltrim(s));
 }
 
@@ -102,7 +102,7 @@ struct constraints_type : public boost::static_visitor<int> {
 
 };
 
-int which_constraints(ast::Constraints c) {
+inline int which_constraints(ast::Constraints c) {
   return boost::apply_visitor(constraints_type(),c);
 }
 
@@ -113,7 +113,7 @@ struct constraint_type : public boost::static_visitor<int> {
 
 };
 
-int which_constraint(ast::Constraint c) {
+inline int which_constraint(ast::Constraint c) {
   return boost::apply_visitor(constraint_type(),c);
 }
 
@@ -124,7 +124,7 @@ struct subtasks_type : public boost::static_visitor<int> {
 
 };
 
-int which_subtasks(ast::SubTasks s) {
+inline int which_subtasks(ast::SubTasks s) {
   return boost::apply_visitor(subtasks_type(),s);
 }
 
@@ -134,7 +134,7 @@ struct subtask_type : public boost::static_visitor<int> {
 
 };
 
-int which_subtask(ast::SubTask s) {
+inline int which_subtask(ast::SubTask s) {
   return boost::apply_visitor(subtask_type(),s);
 }
 
@@ -145,7 +145,7 @@ struct orderings_type : public boost::static_visitor<int> {
 
 };
 
-int which_orderings(ast::Orderings os) {
+inline int which_orderings(ast::Orderings os) {
   return boost::apply_visitor(orderings_type(),os);
 }
 

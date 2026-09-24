@@ -15,7 +15,7 @@
 #include <limits>
 #include <chrono>
 
-int
+inline int
 selection(pTree& t,
           int v,
           double c,
@@ -64,7 +64,7 @@ selection(pTree& t,
     return v;
 }
 
-void backprop(pTree& t, int n, double r, int sims) {
+inline void backprop(pTree& t, int n, double r, int sims) {
   do {
     //Accumulate everywhere. Overwriting at nodes with no successors, while
     //still adding to sims, made a terminal node selected k times report a mean
@@ -191,7 +191,7 @@ struct RolloutResult {
 //the right-recursive one exhausted the stack and exited 139. Every subtask
 //counts against the budget, decompositions included, because a recursion that
 //never reaches a primitive task is exactly the case being caught.
-RolloutResult
+inline RolloutResult
 simulation(std::vector<std::string>& plan,
            KnowledgeBase& state,
            TaskGraph& tasks,
@@ -356,7 +356,7 @@ simulation(std::vector<std::string>& plan,
   return {RolloutStatus::Refuted,0.0};
 }
 
-int expansion(pTree& t,
+inline int expansion(pTree& t,
               int n,
               DomainDef& domain,
               std::mt19937_64& g,
@@ -484,7 +484,7 @@ int expansion(pTree& t,
     return n;
 }
 
-int
+inline int
 seek_planMCTS(pTree& t,
               TaskTree& tasktree,
               int v,
@@ -743,11 +743,12 @@ seek_planMCTS(pTree& t,
     t[v].successors.push_back(y);
     v = y;
   }
-  std::cout << "Plan found at depth " << t[v].depth;
-  std::cout << std::endl;
-  std::cout << "Final State:" << std::endl;
-  t[v].state.print_facts();
-  std::cout << std::endl;
+  if (auto* out = domain.narration) {
+    *out << "Plan found at depth " << t[v].depth << std::endl;
+    *out << "Final State:" << std::endl;
+    t[v].state.print_facts(*out);
+    *out << std::endl;
+  }
   return v;
 
 }
@@ -813,7 +814,7 @@ inline void check_bound_names(DomainDef& domain, ProblemDef& problem) {
   }
 }
 
-Results
+inline Results
 cppMCTShop(DomainDef& domain,
            ProblemDef& problem,
            Scorer scorer,
@@ -849,10 +850,11 @@ cppMCTShop(DomainDef& domain,
     int v = t.size();
     t[v] = root;
     std::mt19937_64 g(seed);
-    std::cout << std::endl;
-    std::cout << "Initial State:" << std::endl;
-    t[v].state.print_facts();
-    std::cout << std::endl;
+    if (auto* out = domain.narration) {
+      *out << std::endl << "Initial State:" << std::endl;
+      t[v].state.print_facts(*out);
+      *out << std::endl;
+    }
     long cutoffs = 0;
     auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c, g,
                              max_iterations, max_depth, max_decisions, restrict_rollouts,
@@ -861,18 +863,21 @@ cppMCTShop(DomainDef& domain,
     //the search was steering on much less information than it appears to have.
     //Say so: a bound set too low for the domain otherwise looks exactly like a
     //problem the planner cannot solve.
-    if (cutoffs > 0) {
-      std::cout << "\nNote: " << cutoffs << " rollout(s) stopped at the depth "
+    auto* out = domain.narration;
+    if (out && cutoffs > 0) {
+      *out << "\nNote: " << cutoffs << " rollout(s) stopped at the depth "
                 << "bound of " << max_depth << " rather than finishing."
                 << "\n      Those rollouts carry no information. If the plans "
                 << "this domain needs are"
                 << "\n      genuinely deeper than that, raise --max_depth."
                 << std::endl;
     }
-    std::cout << "Plan:";
-    for (auto const& p : t[end].plan) {
-      std::cout << "\n\t " << p;
+    if (out) {
+      *out << "Plan:";
+      for (auto const& p : t[end].plan) {
+        *out << "\n\t " << p;
+      }
+      *out << std::endl;
     }
-    std::cout << std::endl;
     return Results(t,v,end,tasktree);
 }

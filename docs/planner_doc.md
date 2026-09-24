@@ -2743,7 +2743,7 @@ and `test_validation_checks_requirements` in `test_loader`, and
 `test_typed_forall_effects`, `test_either_types` and
 `test_planner_rejects_unbound_names` in `test_MCTS_planner`.
 
-**Still open, on the list as §9.4 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
+**Still open, on the list as §9.3 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
 case-insensitive; and a declaration nothing uses is not reported.
 
 **Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
@@ -2872,6 +2872,66 @@ state.
 compare, by design. **Payoff:** tree-search coverage on every domain, a default
 run a third as long and a `--full` run a sixth, and timing deltas that are signal.
 
+### 8.20 The planner as a library — **done**
+
+The library is header-only, and the functions its headers defined were not
+`inline`. Every executable here is one `.cpp`, so nothing had tripped over it.
+But a program with two source files that both include the planner failed to
+link. A new test, `test_linkage`, builds such a program: two translation units,
+each including every public header. It failed with **50 duplicate symbols**, up
+from the 37 measured in the re-scan, as the loader had grown since. Among them
+were `cppMCTShop`, `expansion`, `simulation`, `load`, `load_hddl`,
+`createDomainDef`, the grapher's functions, `util.h`'s helpers, the score
+functions, and the global `scorers` table.
+
+Every function a header defines is now `inline`, and so is `scorers`, an
+`inline` variable, so there is one table however many files include it. Then
+`test_linkage` links. It plans `simple_travel` from data loaded in the other
+translation unit, to show the two halves are one program. It is now part of
+`ctest`, so a non-`inline` definition added to a header fails the suite rather
+than the first program with two source files.
+
+Running it showed three more things that stood in the way of using the planner
+from a larger program, and they were fixed too:
+
+* **It printed to standard output unconditionally**: the initial state, the
+  final state, the plan and the depth-bound note. `planner_bench` swapped
+  `std::cout`'s buffer out to silence it. The narration now goes to
+  `DomainDef::narration`, standard output by default, which is what
+  `MCTS_planner` shows; `nullptr` turns it off, as `planner_bench` and
+  `test_linkage` now do. The planner's other options, the precondition mode and
+  the scorer, already live on `DomainDef`.
+* **`loader.h` put `using namespace ast;` in the global namespace** of every
+  file including it, along with `fs`, `x3`, `string`, `vector` and
+  `unordered_set`. That is how §8.17's validator first failed to compile: the
+  parser's `ast::Type` collided with the type tree's `::Type`. The loader's
+  workings now live in `namespace hddl_loader`, and what a caller uses (`load`,
+  `load_hddl`, `loadDomain`, `loadProblem`, `createDomainDef`,
+  `createProblemDef`, the file loaders, `Ptypes` and `Tasktypes`) is exported
+  under its old name, so no caller changed.
+* **`KnowledgeBase::ask` cached parsed queries in a `static` map**, which two
+  planners running in parallel threads raced on. It is `thread_local` now.
+  `test_linkage` also runs two planners at once. It also releases two threads
+  together to put the same new queries to their own knowledge bases, because
+  the planners alone rarely overlap on the cache's insertions: one thread
+  usually inserts a query long before the other looks it up. Under
+  ThreadSanitizer, with the cache put back to `static`, that test reported 6
+  races on the cache's lookup and insert. One run aborted and the other hung in
+  a corrupted hash table, so this was a real bug, not a theoretical one. With
+  `thread_local`, two runs were clean. Nothing else the two planners share
+  was reported.
+
+**Checked.** `scripts/benchmark --compare` against the previous commit: no
+semantic differences. All five test suites pass. AddressSanitizer and
+UndefinedBehaviorSanitizer are clean over `test_linkage`, `test_loader` and
+`test_MCTS_planner`, and ThreadSanitizer over `test_linkage`. With `-Wall -Wextra -Wshadow` nothing new is reported;
+what remains is on §9.1's list (Cleanup) and in Boost's own headers.
+
+**Depends on:** nothing. **Risk:** none; `inline` and the namespace change
+nothing a caller sees, and narration defaults to what it was. **Payoff:** the
+planner can be embedded in a program with more than one source file, run
+silently, and run on more than one thread.
+
 ---
 
 ## 9. Remaining work
@@ -2891,27 +2951,13 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
-The first three items of that list are done: validating a domain at load time
-(§8.17), the `sar3` score function (§8.18) and the benchmark harness (§8.19).
+The first four items of that list are done: validating a domain at load time
+(§8.17), the `sar3` score function (§8.18), the benchmark harness (§8.19) and
+making the planner usable as a library (§8.20).
 
 ---
 
-### 9.1 Make the planner linkable from more than one source file
-
-The library is header-only, and its free functions are not `inline`. Every
-executable here is one `.cpp`, so nothing has tripped over it. But two
-translation units that both include `cppMCTShop.h` and `loader.h` fail to link
-with **37 duplicate symbols**, among them `cppMCTShop`, `expansion`, `backprop`,
-`load`, `loadDomain` and `createDomainDef`. That was measured, not inferred. The
-planner therefore cannot be embedded in a larger program with more than one
-source file, which an RTL-generation pipeline is likely to be. The fix is
-`inline` on those functions in `util.h`, `loader.h`, `grapher.h` and
-`cppMCTShop.h`.
-
-**Depends on:** nothing. **Risk:** none; behaviour-preserving by construction.
-**Payoff:** the planner can be used as a library.
-
-### 9.2 Cleanup
+### 9.1 Cleanup
 
 Each item is small; together they remove traps.
 
@@ -2936,7 +2982,7 @@ Each item is small; together they remove traps.
 
 **Depends on:** nothing. **Risk:** none.
 
-### 9.3 Revamp the task-hierarchy graph
+### 9.2 Revamp the task-hierarchy graph
 
 The graph `--graph` draws is hard to read. It also leaves out what a reader
 most wants from it: which method decomposed each task, and when each action runs.
@@ -2993,12 +3039,11 @@ The implementation stays in `grapher.h`, using the cgraph API it already uses.
 The labels need `agstrdup_html`. The README's description of `--graph` changes
 with it: the graph may now be SVG, and a legend explains it.
 
-**Depends on:** §9.2's two `grapher.h` items, which a rewrite absorbs, and
-§9.1's `inline` if that lands first. **Risk:** low; nothing reads the graph
+**Depends on:** §9.1's two `grapher.h` items, which a rewrite absorbs. **Risk:** low; nothing reads the graph
 but a person. **Payoff:** a graph that shows how a plan was reached, which
 is what one is for when checking a model-written domain.
 
-### 9.4 Finish the parser: case and warnings
+### 9.3 Finish the parser: case and warnings
 
 Left over from §8.17.1, which closed the rest of the parser's gaps.
 
@@ -3019,7 +3064,7 @@ Left over from §8.17.1, which closed the rest of the parser's gaps.
 is opt-in or decided first. **Payoff:** fewer rejections of HDDL a model writes in
 the wrong case, and feedback on mistakes that are not errors.
 
-### 9.5 What is left of performance
+### 9.4 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding

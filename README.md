@@ -7,7 +7,8 @@ Code for the MCTS Hierarchical Task Network (HTN) planner developed for ToMCAT.
 3. [HDDL Domain and Problem Definition
    Loaders](#hddl-domain-and-problem-definition-loaders)
 4. [MCTS HTN Planner](#mcts-htn-planner) 
-5. [Benchmarking](#benchmarking) 
+5. [Using the planner from your own code](#using-the-planner-from-your-own-code)
+6. [Benchmarking](#benchmarking) 
 
 # Build Requirements
 - cmake (Minimum requirement is version 3.16, https://cmake.org/)
@@ -186,6 +187,21 @@ same run needed `-T 20000` and about 17 minutes before that change. See
 
 If the budget is too small to evaluate even one option, the planner says so and
 exits non-zero rather than reporting an empty plan.
+
+## Using the planner from your own code
+
+The planner is a header-only library: include `cpphop/loader.h` and
+`cpphop/cppMCTShop.h` from any number of source files and link against
+`tomcat`, as `test/test_linkage.cpp` does across two files.
+
+    auto [domain,problem] = load_hddl(domain_text, problem_text);  // or load(file, file)
+    domain.narration = nullptr;   // no printing; the default is standard output
+    auto results = cppMCTShop(domain, problem, scorers["simple"], 100);
+    auto const& plan = results.t[results.end].plan;
+
+`load_hddl` and `load` throw `HDDLError`, listing every problem found, for
+HDDL that does not validate, and `ParseError` for HDDL that does not parse.
+Separate planners may run on separate threads.
 
 ## Benchmarking
 

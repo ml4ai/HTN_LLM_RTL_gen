@@ -3,7 +3,7 @@
 #include <string>
 #include "typedefs.h"
 
-void set_property(Agnode_t *node,
+inline void set_property(Agnode_t *node,
                   std::string property_name,
                   std::string property_value) {
   agsafeset(node,
@@ -12,7 +12,7 @@ void set_property(Agnode_t *node,
             const_cast<char *>(""));
 }
 
-void set_property(Agedge_t *edge,
+inline void set_property(Agedge_t *edge,
                   std::string property_name,
                   std::string property_value) {
   agsafeset(edge,
@@ -21,7 +21,7 @@ void set_property(Agedge_t *edge,
             const_cast<char *>(""));
 }
 
-void set_property(Agraph_t *g,
+inline void set_property(Agraph_t *g,
                   int kind,
                   std::string property_name,
                   std::string property_value) {
@@ -31,11 +31,11 @@ void set_property(Agraph_t *g,
          const_cast<char *>(property_value.c_str()));
 }
 
-Agnode_t *add_node(Agraph_t *g, std::string node_name) {
+inline Agnode_t *add_node(Agraph_t *g, std::string node_name) {
   return agnode(g, const_cast<char *>(node_name.c_str()), 1);
 }
  
-void  build_graph(Agraph_t *g, 
+inline void  build_graph(Agraph_t *g, 
                   DomainDef& domain, 
                   TaskTree& t,
                   int w,
@@ -69,7 +69,7 @@ void  build_graph(Agraph_t *g,
   return;
 }
 
-void generate_graph(std::vector<std::string>& plan,std::vector<int> roots,DomainDef& domain, TaskTree& t, std::string filename) {
+inline void generate_graph(std::vector<std::string>& plan,std::vector<int> roots,DomainDef& domain, TaskTree& t, std::string filename) {
   Agraph_t *g;
   GVC_t *gvc;
   gvc = gvContext();

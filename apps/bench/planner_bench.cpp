@@ -271,10 +271,8 @@ int main(int argc, char* argv[]) {
       }
       std::cout << "simulations=" << r << "\n";
       std::cout << "algorithm=" << algorithm << "\n";
-      //The planner narrates to stdout; the harness speaks key=value, so park
-      //its output while it runs.
-      std::ostringstream sink;
-      auto* saved = std::cout.rdbuf(sink.rdbuf());
+      //The harness speaks key=value, so the planner's narration is off.
+      domain.narration = nullptr;
       auto t0 = std::chrono::steady_clock::now();
       bool ok = true;
       std::string err;
@@ -297,8 +295,6 @@ int main(int argc, char* argv[]) {
       }
       double wall = std::chrono::duration<double,std::milli>(
                       std::chrono::steady_clock::now()-t0).count();
-      std::cout.rdbuf(saved);
-
       std::cout << "plan_ok=" << (ok ? "1" : "0") << "\n";
       std::cout << std::fixed << std::setprecision(3) << "plan_wall_ms=" << wall << "\n";
       if (ok) {
