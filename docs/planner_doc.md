@@ -831,6 +831,10 @@ ordered domain means only that it held at *some* point before the method's
 subtasks ran. Where a domain needs more than that, the honest encoding is an
 action precondition on the subtask that actually depends on it.
 
+This planner now also implements the tighter reading natively, as an opt-in
+mode, which is what the HDDL authors said a compilation cannot give. That is
+§8.16.
+
 ---
 
 ---
@@ -1254,6 +1258,17 @@ That is POCL threat-checking transposed into progression search, and it yields
 the `overall` reading of a method precondition at roughly the cost of a set
 intersection per action application.
 
+**This design is wrong, and §8.16 measured it failing on every shipped domain.**
+It protects the condition against *every* action until the method finishes, the
+method's own actions included. But a method's own actions routinely consume its
+precondition. `deliver` requires `(at ?p ?l1)`, and its own `pick_up` deletes
+it, so every delivery is forbidden. Implemented as written, it fails 20 of 20
+rollouts on `transport`, `chain_b`, `d18` and `sar3` alike. A POCL causal link
+guards a condition against *other* steps, not against the step that consumes
+it. §8.16 implements the corrected version, with the early check as producer and
+the method's first action as consumer, and explains why no planner-wide mode can
+mean "until the method finishes".
+
 Two caveats, both important:
 
 1. **It is strictly stronger than HDDL.** It rejects plans that HDDL's compiled
@@ -1267,7 +1282,7 @@ Two caveats, both important:
    protection-by-pruning does not.
 
 Neither caveat is a reason to avoid it, but both are reasons not to make it the
-default without measuring. It is §9.1.
+default without measuring. It was built, in corrected form, as §8.16.
 
 ---
 
@@ -1948,12 +1963,19 @@ finished. `--algorithm 2|3` selects it; 2 remains the default.
 
 **Quality is identical, and reading plan length would have said otherwise.**
 The first comparison showed Algorithm 3 returning 18-action plans where
-Algorithm 2 returned 14, which looks like a clear loss. It is not: the extra
-actions are `noop`s, which `delivery_chain` does not count, and the **drive
-counts and scores are identical in all 30 runs measured** — 3 drives / 0.625 on
+Algorithm 2 returned 14, which looks like a clear loss. It is not a loss of *quality*: the
+**drive counts and scores are identical in all 30 runs measured** — 3 drives / 0.625 on
 `chain_a`, 4 / 0.600 on `chain_b`, 5 / 0.583 on `chain_d`. Algorithm 2 also
 returns 18 actions once given 10 iterations rather than 6, so the shorter plan
 was Algorithm 2 getting lucky on a small budget, not Algorithm 3 doing worse.
+
+*Correction, from §8.16.* This paragraph originally said the extra actions
+were "`noop`s, which `delivery_chain` does not count". The scores are right; the
+explanation is not. The extra actions are a redundant `set_mutex`, `noop`,
+`release` sequence: a `get_to` decomposed through `m_goto`, whose precondition
+is that the truck is *not* yet at the target, when by the time it ran the truck
+already was. That is a method precondition violated at the method's start, which
+HDDL's compiled semantics permits. Neither algorithm is to blame for it.
 
 **It is a no-op where it cannot help.** `simple_travel`, `sar3`, `d18_gather`,
 `d18_p18`, `forall_test` and `atom_test` produce byte-identical plans under
@@ -2234,9 +2256,12 @@ fields changed, all of them which-random-path effects:
 * `transport`: one of five rollouts landed on a slightly worse plan (0.0222
   against 0.0278). Over 60 rollouts the mean is 0.02657 against 0.02620 before
   — marginally *higher* — with the same minimum and maximum.
-* `chain_mutex`: the deterministic plan picked up two `noop`s, 14 actions to 16.
-  Same four drives, same score. Across five seeds both versions produce 14 and
-  16 in similar proportion, the variation already recorded in §8.10.
+* `chain_mutex`: the deterministic plan grew from 14 actions to 16. Same four
+  drives, same score. Across five seeds both versions produce 14 and 16 in
+  similar proportion. This was recorded here as `noop` variation; §8.16 found
+  the 16-action plans are a method precondition violated at the method's start,
+  which HDDL's compiled semantics allows. The container change only moved which
+  seeds hit it.
 
 `d18_gather` and `d18_p18` changed their random stream but kept identical plans.
 `simple_travel`, `sar3`, `forall_test` and `atom_test` did not change at all:
@@ -2339,43 +2364,134 @@ nothing.
 1.13×–1.17× on the predicate-heavy and lightweight domains, 1.04×–1.05× on
 the task-heavy ones.
 
+### 8.16 What a method precondition means here — **done; two opt-in readings**
+
+HDDL compiles a method's precondition into a synthesised action ordered before
+the method's subtasks (§2.3), so the condition is checked when that action is
+scheduled. In a partially ordered domain other tasks can run between the check
+and the subtasks it guards, and the condition may no longer hold when the method
+actually starts. The HDDL authors name the tighter reading — check it
+immediately before the first action arising from the method — and leave it to
+"future extensions", because it cannot be compiled. §7.4 proposed a protected
+condition set in its place.
+
+**First, §7.4's design was wrong, and it fails on every domain.** It protects the
+condition against every action until the method finishes, the method's own
+included. But a method's own subtasks routinely consume its precondition.
+`deliver` requires `(at ?p ?l1)`, and its own `pick_up` deletes it. Built as
+written, it fails **20 of 20 rollouts on `transport`, `chain_b`, `d18` and
+`sar3`** — including `d18` and `sar3`, which never violate anything under the
+readings below, because their methods consume their preconditions as well.
+
+**Nor can any planner-wide mode mean "until the method finishes".** Protecting a
+condition only against actions *foreign* to the method — the natural repair —
+still fails. Once the method's own action consumes the condition, it stays false
+while the method is live, and every later foreign action is then rejected.
+HDDL 2.1 lets a modeller mark each condition at-start, at-end or overall, and a
+single mode for the whole planner cannot make that distinction. What remains
+coherent is a causal link ending at the method's *first* action:
+
+| `--precondition_mode` | the condition must hold… |
+|---|---|
+| `compiled` (default) | when the synthesised check is scheduled — HDDL's semantics |
+| `at_start` | also immediately before the first real action arising from the method — the reading HDDL defers |
+| `protected` | throughout, from the check to that first action: an action not arising from the method may not falsify it in between |
+
+`protected` is strictly stronger than `at_start`. The two differ only on a
+condition that is broken and then restored inside the window, which is §7.4's
+second caveat.
+
+**How it works.** When a method with a precondition is decomposed, the check is
+recorded in the task network, and each subtask is tagged with every check it
+arises from, inherited down through nested decompositions. A real action
+re-verifies the unconsumed checks it carries before it runs. Under `protected`,
+every other open link is re-verified after it runs. The checks are evaluated
+through the synthesised action the loader already makes, so there is no second
+copy of any precondition.
+
+**The default pays nothing measurable.** The first version put the tags on
+`Grounded_Task`, and since every task in every network is copied constantly,
+that cost `compiled` mode 1.4–2.2% while it carried nothing but empty fields.
+The tags now live in a side table on `TaskGraph`, empty in `compiled` mode, and
+the measured cost is 0.0–0.8%, within noise. `compiled` is byte-identical to
+before on every domain.
+
+#### 8.16.1 What the loose reading actually does
+
+Counting, in `at_start`, how often a method's first action finds its
+precondition false shows **the loose reading is relied on only in the transport
+family**. It rejects 16% of first-action checks on `transport` and 8–9% on the
+chain instances. On `simple_travel`, `sar3`, both `d18` problems, `forall_test`
+and `atom_test` it rejects nothing, so the modes are no-ops there.
+
+A rejection *during search* is not yet a wrong answer. The decisive measurement
+audits the plans `compiled` mode actually *returns* against the `at_start`
+reading:
+
+| | plans returned | violating `at_start` |
+|---|---|---|
+| **`chain_b` / `mutex_left`** | 200 | **90 (45%)** |
+| **`chain_d` / `mutex_left`** | 200 | **90 (45%)** |
+| `transport`, `chain_a` / `original`, `d18` ×2, `sar3` | 400–2 000 each | 0 |
+
+**Almost half the plans HDDL's semantics returns on the mutex encoding — the one
+§8.7 recommends — break a method precondition at the method's start.** The
+mechanism is visible in any one of them. Two deliveries' `get_to(truck, loc1)`
+both decompose through `m_goto`, whose precondition is `(not (at ?v ?l))`, and
+both pass the early check. The first drives there. The second then starts with
+the truck already at `loc1` and runs a redundant `set_mutex`, `noop`,
+`release`. The drive count is unchanged, so `delivery_chain` cannot see it.
+**This is the 14-versus-16-action variation recorded in §8.10 and §8.14 as
+`noop` variation. It was misread there three times; both sections now carry a
+correction.**
+
+Under both stricter modes it disappears. Across eight seeds, `chain_b` is always
+14 actions with two lock acquisitions and `chain_d` always 15, where `compiled`
+ranges over 14/16 and 15/17/19. **Neither mode ever makes a problem unsolvable
+or lowers a score** on any shipped domain: the search always finds another
+interleaving. On `transport`, deterministic plans are identical across all three
+modes on all five seeds.
+
+**The cost is rollout time where the modes bite**, from the extra checks and the
+backtracking the rejections force: roughly 2× on the chain instances and 1.4× on
+`transport`, and nothing elsewhere. `protected` is somewhat cheaper than
+`at_start` where both bite (`chain_b` 7.8 against 9.5 ms). It prunes at the
+foreign action that breaks a link, before the search dives further. Part of
+`compiled`'s speed is that it accepts the wrong plans.
+
+#### 8.16.2 Recommendation, not a decision
+
+This changes what the planner answers, so the default stays `compiled`, and
+HDDL-conformant. The evidence points one way, though. On every shipped domain
+the stricter readings cost no solutions and no score, and on the encoding this
+document recommends writing they remove wrong plans half the time. For domains
+generated by a model, where nobody will hand-check every decomposition, the
+recommendation is **`at_start` as the default** — or `protected`, which gives
+the same plans here and prunes earlier. Switching the default is one line, and
+it is left for the person whose research this is.
+
+`test_MCTS_planner` now asserts that both modes return no redundant lock sequence
+on `chain_b` across three seeds. It first checks its own premise: that
+`compiled` still produces one on those seeds, so it cannot pass vacuously. With
+the modes disabled it fails six assertions. It adds about 18 s to the suite.
+
+**Depends on:** §8.1, §8.7. **Risk:** none to the default — byte-identical,
+0.0–0.8%. **Payoff:** plans that mean what the domain says, at up to 2× rollout
+time on partially ordered domains.
+
 ---
 
 ## 9. Remaining work
 
-Two items are left, and only one of them is substantive.
+**Every substantive item is done.** §8.7–§8.10 dealt with the size of the search
+space, §8.11–§8.15 with the cost of each node, and §8.16 with what a method
+precondition means. One decision from that work is open, and it belongs to the
+person whose research this is, not to this list: whether to make `at_start` the
+default (§8.16.2).
 
-**Every performance item is done.** §8.7–§8.10 dealt with the number of nodes,
-§8.11–§8.14 took the representation apart, and §8.15 stopped successors copying
-state they did not change. That was the reason this list was ordered
-performance-first: the one semantic change left has to be evaluated by running
-the planner a great deal, and the planner is now fast enough for that.
+What is left is hygiene.
 
-* **§9.1 — what a method precondition should mean.** The one item that changes
-  what the planner *answers*, not how fast it answers.
-* **§9.2 — loose ends.** Hygiene; fold in anywhere.
-
-### 9.1 Decide what a method precondition should mean here
-
-§7.4 sets out a protected-condition set: register the literals a synthesised
-precondition action checked, keep them protected until the method's subtasks
-have all been applied, and make any action that would falsify one inapplicable.
-POCL threat-checking transposed into progression search, at about the cost of a
-set intersection per action application.
-
-This is a **semantics decision, not an optimisation**. It is strictly stronger
-than HDDL — it rejects plans HDDL accepts — so it must be opt-in, and it prunes
-by commitment rather than backtracking, so it can lose solutions a full POCL
-planner would find. Measure before defaulting it on.
-
-It sits last among the substantive items for the reason §8's sequence gave:
-every semantic change has to be evaluated by running the planner a great deal,
-and every item ahead of it is now done. It was never blocked by them, so if the
-research needs it sooner, it can move.
-
-**Depends on:** §8.1 and §8.4. **Risk:** medium, and it changes results.
-
-### 9.2 Loose ends
+### 9.1 Loose ends
 
 Both are recorded as open items in §4.2 and neither is worth its own work
 session:

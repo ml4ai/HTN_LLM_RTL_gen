@@ -60,6 +60,14 @@
 
 namespace po = boost::program_options;
 
+//"compiled" | "at_start" | "protected"; see PreconditionMode in typedefs.h.
+static bool parse_precondition_mode(std::string const& s, PreconditionMode& out) {
+  if (s == "compiled")  { out = PreconditionMode::Compiled;  return true; }
+  if (s == "at_start")  { out = PreconditionMode::AtStart;   return true; }
+  if (s == "protected") { out = PreconditionMode::Protected; return true; }
+  return false;
+}
+
 //FNV-1a. std::hash is not required to be stable across runs or platforms, and
 //a baseline saved on one machine should be comparable on another.
 static std::string fnv1a(std::string const& s) {
@@ -98,6 +106,7 @@ int main(int argc, char* argv[]) {
   int max_decisions = kDefaultMaxDecisions;
   int restrict_rollouts = 0;
   int algorithm = 2;
+  std::string precondition_mode = "compiled";
   double c = sqrt(2.0);
   bool do_plan = false, show_state = false;
 
@@ -117,6 +126,7 @@ int main(int argc, char* argv[]) {
       ("exp_param,c", po::value<double>(&c), "exploration parameter, default = sqrt(2)")
       ("max_depth", po::value<int>(&max_depth), "depth bound for a rollout; default = 1000")
       ("max_decisions", po::value<int>(&max_decisions), "backstop on committed decisions; default = 1000")
+      ("precondition_mode", po::value<std::string>(&precondition_mode), "how method preconditions are read: compiled (HDDL, default), at_start, or protected")
       ("algorithm", po::value<int>(&algorithm), "progression algorithm for expansion: 2 (default) branches over all unconstrained primitives plus one compound; 3 progresses no action while any compound task is unconstrained")
       ("restrict_rollouts", po::value<int>(&restrict_rollouts), "rollout candidate set: 0 = every unconstrained task (default), 1 = Algorithm 2 with expansion's lowest-id pick, 2 = Algorithm 2 with a random pick")
       ("show_state", po::bool_switch(&show_state), "also print the sorted final state")
@@ -149,11 +159,17 @@ int main(int argc, char* argv[]) {
     }
     auto [domain,problem] = load(dom_file,prob_file);
     domain.set_scorer(scorers[score_fun]);
+    if (!parse_precondition_mode(precondition_mode,domain.precondition_mode)) {
+      std::cerr << "error: unknown --precondition_mode \"" << precondition_mode
+                << "\" (expected compiled, at_start or protected)\n";
+      return 1;
+    }
 
     std::cout << "domain=" << dom_file << "\n";
     std::cout << "problem=" << prob_file << "\n";
     std::cout << "scorer=" << score_fun << "\n";
     std::cout << "seed=" << seed << "\n";
+    std::cout << "precondition_mode=" << precondition_mode << "\n";
 
     if (rollouts > 0) {
       //Same initial node the planner builds, so the rollouts start where the

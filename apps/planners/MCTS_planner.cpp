@@ -9,6 +9,14 @@
 #include <chrono>
 namespace po = boost::program_options;
 
+//"compiled" | "at_start" | "protected"; see PreconditionMode in typedefs.h.
+static bool parse_precondition_mode(std::string const& s, PreconditionMode& out) {
+  if (s == "compiled")  { out = PreconditionMode::Compiled;  return true; }
+  if (s == "at_start")  { out = PreconditionMode::AtStart;   return true; }
+  if (s == "protected") { out = PreconditionMode::Protected; return true; }
+  return false;
+}
+
 using namespace std;
 
 int main(int argc, char* argv[]) {
@@ -18,6 +26,7 @@ int main(int argc, char* argv[]) {
   int seed = 2022;
   int max_depth = kDefaultMaxRolloutDepth;
   int max_decisions = kDefaultMaxDecisions;
+  std::string precondition_mode = "compiled";
   std::string dom_file = "../domains/transport_domain.hddl";
   std::string prob_file = "../domains/transport_problem.hddl";
   std::string score_fun = "delivery_one";
@@ -30,6 +39,7 @@ int main(int argc, char* argv[]) {
       ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search decision (int), default = 1000. MCTS always spends the whole budget, so lower it for small domains")
       ("simulations,r", po::value<int>(), "Number of simulations per MCTS cycle (int), default = 5")
       ("exp_param,c",po::value<double>(),"The exploration parameter for the planner (double), default = sqrt(2)")
+      ("precondition_mode",po::value<std::string>(),"How method preconditions are read (string): compiled (HDDL semantics, default), at_start (must also hold at the method's first real action), or protected (must hold throughout from the check to that action)")
       ("max_decisions",po::value<int>(),"Backstop on the number of committed decisions before the planner gives up (int), default = 1000. It exists so that a search with no useful signal reports instead of running forever")
       ("max_depth",po::value<int>(),"Depth bound for a single rollout (int), default = 1000. Rollouts are a depth-first search, so a domain whose decomposition can cycle needs this to terminate; raise it if the planner reports rollouts stopping at the bound")
       ("dom_file,D", po::value<std::string>(),"domain file (string), default = transport_domain.hddl")
@@ -67,6 +77,10 @@ int main(int argc, char* argv[]) {
 
     if (vm.count("max_decisions")) {
       max_decisions = vm["max_decisions"].as<int>();
+    }
+
+    if (vm.count("precondition_mode")) {
+      precondition_mode = vm["precondition_mode"].as<std::string>();
     }
 
     if (vm.count("dom_file")) {
@@ -118,6 +132,11 @@ int main(int argc, char* argv[]) {
     }
 
     auto [domain,problem] = load(dom_file,prob_file);
+    if (!parse_precondition_mode(precondition_mode,domain.precondition_mode)) {
+      std::cerr << "Unknown --precondition_mode \"" << precondition_mode
+                << "\"; expected compiled, at_start or protected." << std::endl;
+      return 1;
+    }
     if (problem.initM.get_head() != ":htn") {
       std::cout << "Problem class " << problem.initM.get_head() << " not recognized, defaulting to :htn problem class!" << std::endl;
     }

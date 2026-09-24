@@ -48,6 +48,44 @@ using Reach_Map = std::unordered_map<std::string,std::vector<std::string>>;
 using Reach_Maps = std::unordered_map<std::string,Reach_Map>;
 using ID = std::string;
 
+//How a method's precondition is read. See planner_doc.md 8.16 for what each
+//means, why the reading 7.4 originally proposed is not among them, and what
+//each was measured to do.
+//
+//  Compiled  HDDL's semantics, and the default. The precondition is compiled
+//            into a synthesised action ordered before the method's subtasks
+//            and checked when that action is scheduled -- which in a partially
+//            ordered domain can be long before the subtasks run.
+//  AtStart   The condition must also hold immediately before the first real
+//            action arising from the method. This is the tighter reading the
+//            HDDL authors leave to "future extensions" because it cannot be
+//            compiled.
+//  Protected A causal link: the early check is the producer and the method's
+//            first real action is the consumer. The condition must hold
+//            throughout that window, so an action that does NOT arise from the
+//            method may not falsify it in between. Strictly stronger than
+//            AtStart, which only asks that it hold at the end of the window.
+//
+//There is deliberately no mode that protects the condition until the method
+//*finishes*. A method's own actions routinely consume its precondition --
+//transport's deliver requires (at ?p ?l1), and its own pick_up deletes it -- so
+//"until the method finishes" would reject every delivery. HDDL 2.1 lets a
+//modeller mark each condition at-start, at-end or overall; one planner-wide
+//mode cannot make that distinction.
+enum class PreconditionMode { Compiled, AtStart, Protected };
+
+//One method's precondition, recorded when the method is decomposed so that it
+//can be checked again later. It is evaluated through the synthesised action the
+//loader already made for it, with the method's binding as that action's
+//arguments. Only created when the mode is not Compiled, so the default path
+//carries none of this.
+struct PendingCheck {
+  std::string action;        //the __mprec_ action holding the precondition
+  Args args;                 //the method's binding, as that action's arguments
+  bool established = false;  //the early check has passed
+  bool consumed = false;     //the method's first real action has run
+};
+
 struct Grounded_Task {
   std::string head;
   Args args;
@@ -83,6 +121,48 @@ struct TaskGraph {
   std::vector<std::pair<int,Grounded_Task>> GTs;
   //Keeps track of next newly usable ID
   int nextID = 0;
+  //Per network, not per domain, because whether a check has been established
+  //or consumed is a fact about this branch of the search. Every successor gets
+  //its own copy along with the rest of the network.
+  std::vector<PendingCheck> checks;
+
+  //Which checks each task carries, kept here rather than in Grounded_Task.
+  //Every task in every network is copied constantly, and fields on
+  //Grounded_Task made every copy larger even in Compiled mode, where they are
+  //always empty: measured, that cost the default path 1-2%. This table is empty
+  //in Compiled mode, so the default path pays for one empty vector per network.
+  struct TaskTags {
+    std::vector<int> checks;   //the method preconditions this task arises from,
+                               //inherited through every enclosing method
+    int establishes = -1;      //for a synthesised check task: which check it is
+  };
+  //Sorted by task id by construction, like GTs: tags are set immediately after
+  //add_node hands out an id, and ids only increase.
+  std::vector<std::pair<int,TaskTags>> tags;
+
+  TaskTags const* tags_of(int id) const {
+    auto it = std::lower_bound(tags.begin(),tags.end(),id,
+                               [](std::pair<int,TaskTags> const& p, int k) { return p.first < k; });
+    return (it != tags.end() && it->first == id) ? &it->second : nullptr;
+  }
+
+  std::vector<int> const& checks_of(int id) const {
+    static const std::vector<int> none;
+    auto const* t = this->tags_of(id);
+    return t ? t->checks : none;
+  }
+
+  int establishes_of(int id) const {
+    auto const* t = this->tags_of(id);
+    return t ? t->establishes : -1;
+  }
+
+  void set_tags(int id, TaskTags t) {
+    if (t.checks.empty() && t.establishes < 0) {
+      return;
+    }
+    this->tags.emplace_back(id,std::move(t));
+  }
 
   Grounded_Task* find(int i) {
     auto it = std::lower_bound(GTs.begin(),GTs.end(),i,
@@ -149,6 +229,13 @@ struct TaskGraph {
     auto it = std::lower_bound(GTs.begin(),GTs.end(),gt,
                                [](std::pair<int,Grounded_Task> const& p, int k) { return p.first < k; });
     this->GTs.erase(it);
+    if (!this->tags.empty()) {
+      auto tt = std::lower_bound(tags.begin(),tags.end(),gt,
+                                 [](std::pair<int,TaskTags> const& p, int k) { return p.first < k; });
+      if (tt != tags.end() && tt->first == gt) {
+        this->tags.erase(tt);
+      }
+    }
   }
   
   bool empty() {
@@ -441,6 +528,27 @@ class ActionDef {
       return this->precondition_ast;
     }
 
+    //Does the precondition hold for these arguments? The check a synthesised
+    //precondition action makes, without building the successor state that
+    //apply() would -- used to re-evaluate a method's precondition later.
+    bool holds(KnowledgeBase& kb, Args const& args) {
+      Args fixed;
+      fixed.reserve(args.size());
+      for (size_t i = 0; i < args.size(); i++) {
+        fixed.push_back({this->parameters[i].first,args[i].second});
+      }
+      auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed);
+      if (direct) {
+        return *direct;
+      }
+      std::string pc = "(and ";
+      for (size_t i = 0; i < args.size(); i++) {
+        pc += "(= "+this->parameters[i].first+" "+args[i].second+") ";
+      }
+      pc += this->preconditions != "__NONE__" ? this->preconditions+")" : ")";
+      return kb.ask_any(pc,this->parameters);
+    }
+
     bool is_artificial() {
       return this->artificial;
     }
@@ -602,9 +710,31 @@ class MethodDef {
 
     //tasks arrives by value and is always moved in by apply(), so taking it
     //this way costs nothing; the return moves it back out for the same reason.
-    std::pair<std::vector<int>,TaskGraph> apply_binding(Args& args, TaskGraph tasks, std::vector<int>& out) {
+    std::pair<std::vector<int>,TaskGraph> apply_binding(Args& args, TaskGraph tasks, std::vector<int>& out,
+                                                        std::vector<int> const& inherited = {},
+                                                        PreconditionMode mode = PreconditionMode::Compiled) {
       std::unordered_map<std::string,int> gts;
       std::vector<int> addedTIDs;
+
+      //Outside Compiled mode, record this method's precondition as a check its
+      //subtasks carry. The loader compiled it into a synthesised subtask
+      //labelled "__mprec__", so that subtask's action and its grounded
+      //arguments are exactly what re-evaluating it needs.
+      int own_check = -1;
+      if (mode != PreconditionMode::Compiled) {
+        auto pre = this->subtasks.find("__mprec__");
+        if (pre != this->subtasks.end()) {
+          PendingCheck chk;
+          chk.action = pre->second.first;
+          for (auto const& pt : pre->second.second) {
+            std::string val = return_value(pt.first,args);
+            chk.args.emplace_back(pt.first,val == "__CONST__" ? pt.first : std::move(val));
+          }
+          own_check = (int)tasks.checks.size();
+          tasks.checks.push_back(std::move(chk));
+        }
+      }
+
       for (auto const& [id,s]: this->subtasks) {
         Grounded_Task gt;
         gt.head = s.first;
@@ -614,6 +744,19 @@ class MethodDef {
           gt.args.emplace_back(pt.first,val == "__CONST__" ? pt.first : std::move(val));
         }
         gts[id] = tasks.add_node(std::move(gt));
+        if (mode != PreconditionMode::Compiled) {
+          //Every subtask arises from this method and from every method the
+          //decomposed task itself arose from.
+          TaskGraph::TaskTags tg;
+          tg.checks = inherited;
+          if (own_check >= 0) {
+            tg.checks.push_back(own_check);
+          }
+          if (id == "__mprec__") {
+            tg.establishes = own_check;
+          }
+          tasks.set_tags(gts[id],std::move(tg));
+        }
         addedTIDs.push_back(gts[id]);
         //find, not operator[]: the latter would insert an empty ordering into
         //this->orderings for every subtask label it is asked about.
@@ -648,7 +791,8 @@ class MethodDef {
     //bindings, where N is the floor, since each binding yields a successor
     //network of its own. It also means `args`, which callers pass as a
     //reference *into* this same network, can no longer be invalidated.
-    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args& args, TaskGraph const& tasks, int i) {
+    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args& args, TaskGraph const& tasks, int i,
+                                                            PreconditionMode mode = PreconditionMode::Compiled) {
       //args is indexed in lockstep with this->task.second, so a task invoked
       //with the wrong arity would read past the end of the task's parameters.
       if (!args.empty() && args.size() != this->task.second.size()) {
@@ -684,11 +828,13 @@ class MethodDef {
         return groundings;
       }
       std::vector<int> out = tasks.at(i).outgoing;
+      //The checks the decomposed task carries pass to its subtasks.
+      std::vector<int> inherited = tasks.checks_of(i);
       groundings.reserve(bindings.size());
       for (auto &b : bindings) {
         TaskGraph g = tasks;          //the one copy each successor needs
         g.remove_node(i);
-        groundings.push_back(this->apply_binding(b,std::move(g),out));
+        groundings.push_back(this->apply_binding(b,std::move(g),out,inherited,mode));
       }
       return groundings;
     }
@@ -706,6 +852,8 @@ struct DomainDef {
   MethodDefs methods;
   Objects constants;
   Scorer scorer;
+  //How method preconditions are read; HDDL's compiled semantics by default.
+  PreconditionMode precondition_mode = PreconditionMode::Compiled;
   DomainDef(std::string head,
             TypeTree typetree,
             Predicates predicates,

@@ -78,6 +78,67 @@ void backprop(pTree& t, int n, double r, int sims) {
   return;
 }
 
+//Method-precondition semantics beyond HDDL's compiled one; see PreconditionMode
+//in typedefs.h and planner_doc.md 8.16. None of this runs in Compiled mode,
+//where no task carries a check.
+namespace mprec {
+
+//Before a real action runs: it is the first real action of every method in
+//`checks` not yet consumed, so each of those preconditions must hold now.
+inline bool first_action_ok(TaskGraph const& tasks, std::vector<int> const& checks,
+                            KnowledgeBase& state, DomainDef& domain) {
+  for (int k : checks) {
+    auto const& chk = tasks.checks[k];
+    if (!chk.consumed && !domain.actions.at(chk.action).holds(state,chk.args)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+//Protected only, after a real action has produced `state`: every causal link
+//still open -- established, not yet consumed, and belonging to a method with
+//tasks left -- that the action does not itself belong to must still hold.
+inline bool links_intact(TaskGraph const& succ, std::vector<int> const& own,
+                         KnowledgeBase& state, DomainDef& domain) {
+  if (succ.checks.empty()) {
+    return true;
+  }
+  std::vector<char> live(succ.checks.size(),0);
+  for (auto const& [id,tg] : succ.tags) {
+    for (int k : tg.checks) {
+      live[k] = 1;
+    }
+  }
+  for (size_t k = 0; k < succ.checks.size(); k++) {
+    auto const& chk = succ.checks[k];
+    if (!live[k] || !chk.established || chk.consumed) {
+      continue;
+    }
+    if (std::find(own.begin(),own.end(),(int)k) != own.end()) {
+      continue;
+    }
+    if (!domain.actions.at(chk.action).holds(state,chk.args)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+//After a task has been applied and removed: record what it changed.
+inline void record(TaskGraph& succ, bool real, std::vector<int> const& own, int establishes) {
+  if (real) {
+    for (int k : own) {
+      succ.checks[k].consumed = true;
+    }
+  }
+  else if (establishes >= 0) {
+    succ.checks[establishes].established = true;
+  }
+}
+
+} // namespace mprec
+
 //Why a rollout stopped.
 //
 //The distinction between Refuted and Cutoff is load-bearing rather than
@@ -216,12 +277,27 @@ simulation(std::vector<std::string>& plan,
   for (auto const& cTask : u) {
     if (domain.actions.contains(tasks[cTask].head)) {
       auto& adef = domain.actions.at(tasks[cTask].head);
+      auto const mode = domain.precondition_mode;
+      bool const real = !adef.is_artificial();
+      if (mode != PreconditionMode::Compiled && real &&
+          !mprec::first_action_ok(tasks,tasks.checks_of(cTask),state,domain)) {
+        continue;
+      }
       auto act = adef.apply(state,tasks[cTask].args);
       if (!act.second.empty()) {
+        std::vector<int> const own = tasks.checks_of(cTask);
+        int const establishes = tasks.establishes_of(cTask);
         auto gtasks = tasks;
         gtasks.remove_node(cTask);
+        if (mode != PreconditionMode::Compiled) {
+          mprec::record(gtasks,real,own,establishes);
+        }
         for (auto &ns : act.second) {
           ns.update_state();
+          if (mode == PreconditionMode::Protected && real &&
+              !mprec::links_intact(gtasks,own,ns,domain)) {
+            continue;
+          }
           auto gplan = plan;
           //A synthesised method-precondition check is a search step but not a
           //plan step; keeping it out leaves plan length and the score
@@ -248,7 +324,7 @@ simulation(std::vector<std::string>& plan,
       std::shuffle(order.begin(),order.end(),g);
       for (auto const& mi : order) {
         auto& m = task_methods[mi];
-        auto all_gts = m.apply(state,tasks[cTask].args,tasks,cTask);
+        auto all_gts = m.apply(state,tasks[cTask].args,tasks,cTask,domain.precondition_mode);
         if (!all_gts.empty()) {
           std::shuffle(all_gts.begin(),all_gts.end(),g);
           for (auto &gts : all_gts) {
@@ -324,14 +400,32 @@ int expansion(pTree& t,
     for (auto const& tid : u) {
       if (domain.actions.contains(t[n].tasks[tid].head)) {
         auto& adef = domain.actions.at(t[n].tasks[tid].head);
+        auto const mode = domain.precondition_mode;
+        bool const real = !adef.is_artificial();
+        //The same three hooks as simulation: a real action must find every
+        //unconsumed method precondition it starts still true, and under
+        //Protected must not break a causal link it is foreign to.
+        if (mode != PreconditionMode::Compiled && real &&
+            !mprec::first_action_ok(t[n].tasks,t[n].tasks.checks_of(tid),t[n].state,domain)) {
+          continue;
+        }
         auto act = adef.apply(t[n].state,t[n].tasks[tid].args);
         if (!act.second.empty()) {
+          std::vector<int> const own = t[n].tasks.checks_of(tid);
+          int const establishes = t[n].tasks.establishes_of(tid);
           for (auto const& state : act.second) {
             pNode v;
             v.state = state;
             v.state.update_state();
             v.tasks = t[n].tasks;
             v.tasks.remove_node(tid);
+            if (mode != PreconditionMode::Compiled) {
+              mprec::record(v.tasks,real,own,establishes);
+              if (mode == PreconditionMode::Protected && real &&
+                  !mprec::links_intact(v.tasks,own,v.state,domain)) {
+                continue;
+              }
+            }
             v.depth = t[n].depth + 1;
             v.plan = t[n].plan;
             v.treeRoots = t[n].treeRoots;
@@ -347,7 +441,7 @@ int expansion(pTree& t,
       }
       else {
         for (auto &m : domain.methods[t[n].tasks[tid].head]) {
-          auto gts = m.apply(t[n].state,t[n].tasks[tid].args,t[n].tasks,tid);
+          auto gts = m.apply(t[n].state,t[n].tasks[tid].args,t[n].tasks,tid,domain.precondition_mode);
           for (auto &g : gts) { 
             pNode v;
             v.state = t[n].state;

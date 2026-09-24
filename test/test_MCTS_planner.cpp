@@ -85,3 +85,58 @@ BOOST_AUTO_TEST_CASE(test_zero_arity_predicates) {
 }// end of testing zero-arity predicates
 
 
+
+//Method-precondition semantics (planner_doc.md 8.16). Under HDDL's compiled
+//reading a method's precondition is checked by a synthesised action ordered
+//before its subtasks, and in a partially ordered domain other tasks can run in
+//between. On the mutex encoding of transport that lets two get_to tasks both
+//choose m_goto -- whose precondition is that the truck is NOT yet there -- and
+//the second then runs a redundant set_mutex/noop/release after the first has
+//already driven there. AtStart and Protected must never produce that.
+static int count_set_mutex(Results& results) {
+    int n = 0;
+    for (auto const& a : results.t[results.end].plan) {
+        if (a.find("set_mutex") != std::string::npos) {
+            n++;
+        }
+    }
+    return n;
+}
+
+BOOST_AUTO_TEST_CASE(test_method_precondition_modes) {
+    //Seeds on which compiled mode was measured to return the redundant sequence.
+    std::vector<int> seeds = {2022, 7, 99};
+
+    //The premise first: the fixture must still exhibit the violation, or the
+    //assertions below would pass without testing anything.
+    int compiled_redundant = 0;
+    for (int seed : seeds) {
+        auto [domain,problem] = load("../../domains/transport_mutex_left.hddl",
+                                     "../../domains/transport_chain_b.hddl");
+        auto results = cppMCTShop(domain,problem,scorers["delivery_chain"],1000,1,sqrt(2.0),seed,6);
+        if (count_set_mutex(results) > 2) {
+            compiled_redundant++;
+        }
+    }
+    BOOST_TEST_REQUIRE(compiled_redundant > 0,
+        "compiled mode no longer produces a redundant get_to on these seeds; "
+        "pick new ones or this test proves nothing");
+
+    for (auto mode : {PreconditionMode::AtStart, PreconditionMode::Protected}) {
+        for (int seed : seeds) {
+            auto [domain,problem] = load("../../domains/transport_mutex_left.hddl",
+                                         "../../domains/transport_chain_b.hddl");
+            domain.precondition_mode = mode;
+            auto results = cppMCTShop(domain,problem,scorers["delivery_chain"],1000,1,sqrt(2.0),seed,6);
+            BOOST_TEST_CONTEXT("mode " << (int)mode << " seed " << seed) {
+                //Exactly two lock acquisitions: one per get_to that actually drives.
+                BOOST_TEST(count_set_mutex(results) == 2);
+                //And still a complete, shortest delivery: all packages at the end
+                //of the chain, in the four drives the one-way chain requires.
+                auto& end_state = results.t[results.end].state;
+                BOOST_TEST(end_state.get_facts("at").contains("(at package_0 city_loc_4)"));
+                BOOST_TEST(end_state.get_facts("at").contains("(at package_1 city_loc_4)"));
+            }
+        }
+    }
+}// end of testing method-precondition semantics
