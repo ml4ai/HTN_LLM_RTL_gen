@@ -454,13 +454,15 @@ int expansion(pTree& t,
       else {
         for (auto &m : domain.methods[t[n].tasks[tid].head]) {
           auto gts = m.apply(t[n].state,t[n].tasks[tid].args,t[n].tasks,tid,domain.precondition_mode);
-          for (auto &g : gts) { 
+          //Named `grounding`, not `g`: that is the RNG, and a loop variable of
+          //the same name shadowed it for the length of this loop.
+          for (auto &grounding : gts) {
             pNode v;
             v.state = t[n].state;
-            v.tasks = g.second;
+            v.tasks = grounding.second;
             v.depth = t[n].depth + 1;
             v.plan = t[n].plan;
-            v.addedTIDs = g.first;
+            v.addedTIDs = grounding.first;
             v.prevTID = tid;
             v.treeRoots = t[n].treeRoots;
             v.pred = n;

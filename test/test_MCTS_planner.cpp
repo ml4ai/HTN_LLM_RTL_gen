@@ -7,6 +7,7 @@
 #include <istream>
 #include "cpphop/loader.h"
 #include "cpphop/cppMCTShop.h"
+#include "test_paths.h"
 
 //simple_travel rather than transport. Under HDDL method-precondition timing a
 //method's free variables are no longer bound by its precondition -- every
@@ -16,8 +17,8 @@
 //minutes. simple_travel exercises the same pipeline (methods with
 //preconditions, the synthesised checks, actions, scoring) at ~17ms a rollout.
 BOOST_AUTO_TEST_CASE(test_MCTS_planner) {
-    auto [domain,problem] = load("../../domains/simple_travel.hddl",
-                                 "../../domains/simple_travel_problem.hddl");
+    auto [domain,problem] = load(HTN_DOMAINS_DIR "/simple_travel.hddl",
+                                 HTN_DOMAINS_DIR "/simple_travel_problem.hddl");
 
     auto results = cppMCTShop(domain,problem,scorers["travel_one"],500,1,sqrt(2.0),2022);
     auto& end_state = results.t[results.end].state;
@@ -37,8 +38,8 @@ BOOST_AUTO_TEST_CASE(test_MCTS_planner) {
 //forms must fire for every matching object: the unconditional one for all of
 //them, the conditional one for exactly those meeting the condition.
 BOOST_AUTO_TEST_CASE(test_forall_effects) {
-    auto [domain,problem] = load("../../domains/forall_test.hddl",
-                                 "../../domains/forall_test_problem.hddl");
+    auto [domain,problem] = load(HTN_DOMAINS_DIR "/forall_test.hddl",
+                                 HTN_DOMAINS_DIR "/forall_test_problem.hddl");
 
     auto results = cppMCTShop(domain,problem,scorers["simple"],300,1,sqrt(2.0),2022);
     auto& end_state = results.t[results.end].state;
@@ -65,8 +66,8 @@ BOOST_AUTO_TEST_CASE(test_forall_effects) {
 //Atoms become plain Bool constants in SMT rather than nullary applications, and
 //"(and)" means "no precondition" rather than a predicate named "and".
 BOOST_AUTO_TEST_CASE(test_zero_arity_predicates) {
-    auto [domain,problem] = load("../../domains/atom_test.hddl",
-                                 "../../domains/atom_test_problem.hddl");
+    auto [domain,problem] = load(HTN_DOMAINS_DIR "/atom_test.hddl",
+                                 HTN_DOMAINS_DIR "/atom_test_problem.hddl");
 
     auto results = cppMCTShop(domain,problem,scorers["simple"],300,1,sqrt(2.0),2022);
     auto& end_state = results.t[results.end].state;
@@ -112,8 +113,8 @@ BOOST_AUTO_TEST_CASE(test_method_precondition_modes) {
     //explicitly -- it is no longer the default.
     int compiled_redundant = 0;
     for (int seed : seeds) {
-        auto [domain,problem] = load("../../domains/transport_mutex_left.hddl",
-                                     "../../domains/transport_chain_b.hddl");
+        auto [domain,problem] = load(HTN_DOMAINS_DIR "/transport_mutex_left.hddl",
+                                     HTN_DOMAINS_DIR "/transport_chain_b.hddl");
         domain.precondition_mode = PreconditionMode::Compiled;
         auto results = cppMCTShop(domain,problem,scorers["delivery_chain"],1000,1,sqrt(2.0),seed,6);
         if (count_set_mutex(results) > 2) {
@@ -126,8 +127,8 @@ BOOST_AUTO_TEST_CASE(test_method_precondition_modes) {
 
     for (auto mode : {PreconditionMode::AtStart, PreconditionMode::Protected}) {
         for (int seed : seeds) {
-            auto [domain,problem] = load("../../domains/transport_mutex_left.hddl",
-                                         "../../domains/transport_chain_b.hddl");
+            auto [domain,problem] = load(HTN_DOMAINS_DIR "/transport_mutex_left.hddl",
+                                         HTN_DOMAINS_DIR "/transport_chain_b.hddl");
             domain.precondition_mode = mode;
             auto results = cppMCTShop(domain,problem,scorers["delivery_chain"],1000,1,sqrt(2.0),seed,6);
             BOOST_TEST_CONTEXT("mode " << (int)mode << " seed " << seed) {

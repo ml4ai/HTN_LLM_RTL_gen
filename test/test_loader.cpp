@@ -2,11 +2,12 @@
 
 #include <boost/test/included/unit_test.hpp>
 #include "cpphop/loader.h"
+#include "test_paths.h"
 
 BOOST_AUTO_TEST_CASE(test_domain_loading) {
     // Test loading of domain definition and its components
-    auto [transport_domain,transport_problem] = load("../../domains/transport_domain.hddl",
-                                            "../../domains/transport_problem.hddl");
+    auto [transport_domain,transport_problem] = load(HTN_DOMAINS_DIR "/transport_domain.hddl",
+                                            HTN_DOMAINS_DIR "/transport_problem.hddl");
 
     BOOST_TEST(transport_domain.head == "domain");
 
@@ -103,8 +104,8 @@ BOOST_AUTO_TEST_CASE(test_domain_loading) {
 
 BOOST_AUTO_TEST_CASE(test_problem_loading) {
     // Test loading of problem definition and its components
-    auto [transport_domain,transport_problem] = load("../../domains/transport_domain.hddl",
-                                            "../../domains/transport_problem.hddl");
+    auto [transport_domain,transport_problem] = load(HTN_DOMAINS_DIR "/transport_domain.hddl",
+                                            HTN_DOMAINS_DIR "/transport_problem.hddl");
 
     BOOST_TEST(transport_problem.head == "__delivery__");
     BOOST_TEST(transport_problem.domain_name == "domain");
@@ -123,8 +124,8 @@ BOOST_AUTO_TEST_CASE(test_problem_loading) {
 
 BOOST_AUTO_TEST_CASE(test_apply) {
     // Test loading of problem definition and its components
-    auto [transport_domain,transport_problem] = load("../../domains/transport_domain.hddl",
-                                            "../../domains/transport_problem.hddl");
+    auto [transport_domain,transport_problem] = load(HTN_DOMAINS_DIR "/transport_domain.hddl",
+                                            HTN_DOMAINS_DIR "/transport_problem.hddl");
     KnowledgeBase kb(transport_domain.predicates,transport_problem.objects,transport_domain.typetree);
     std::cout << std::endl;
     std::cout << "#ONLY OBJECT FACTS#" << std::endl; 
@@ -201,7 +202,7 @@ BOOST_AUTO_TEST_CASE(test_apply) {
 //an empty network used to read past the end of a vector, and because no
 //shipped domain had one until transport_insert.hddl.
 BOOST_AUTO_TEST_CASE(test_empty_subtask_network) {
-    auto domain = loadDomain("../../domains/transport_insert.hddl").first;
+    auto domain = loadDomain(HTN_DOMAINS_DIR "/transport_insert.hddl").first;
 
     auto& free_drive = domain.methods["free_drive"];
     BOOST_TEST(free_drive.size() == 2);
@@ -230,7 +231,7 @@ BOOST_AUTO_TEST_CASE(test_empty_subtask_network) {
     //domain uses. `:ordered-subtasks ()` reached the loader's ordered branch,
     //which opens by indexing sts[0] -- reading past the end of an empty
     //vector. Before the guard this exited 139 (SIGSEGV).
-    auto fixture = loadDomain("../../domains/empty_method_test.hddl").first;
+    auto fixture = loadDomain(HTN_DOMAINS_DIR "/empty_method_test.hddl").first;
     for (auto const& task : {"settle", "settle_ordered"}) {
         int empty = 0;
         for (auto& m : fixture.methods[task]) {
@@ -254,17 +255,17 @@ BOOST_AUTO_TEST_CASE(test_empty_subtask_network) {
 //structure is not describing what the planner actually evaluates.
 BOOST_AUTO_TEST_CASE(test_expr_ast_matches_smt) {
     std::vector<std::string> domains = {
-      "../../domains/transport_domain.hddl",
-      "../../domains/simple_travel.hddl",
-      "../../domains/sar3.hddl",
-      "../../domains/d18.hddl",
-      "../../domains/forall_test.hddl",
-      "../../domains/atom_test.hddl",
-      "../../domains/transport_original.hddl",
-      "../../domains/transport_common.hddl",
-      "../../domains/transport_mutex.hddl",
-      "../../domains/transport_mutex_left.hddl",
-      "../../domains/transport_insert.hddl",
+      HTN_DOMAINS_DIR "/transport_domain.hddl",
+      HTN_DOMAINS_DIR "/simple_travel.hddl",
+      HTN_DOMAINS_DIR "/sar3.hddl",
+      HTN_DOMAINS_DIR "/d18.hddl",
+      HTN_DOMAINS_DIR "/forall_test.hddl",
+      HTN_DOMAINS_DIR "/atom_test.hddl",
+      HTN_DOMAINS_DIR "/transport_original.hddl",
+      HTN_DOMAINS_DIR "/transport_common.hddl",
+      HTN_DOMAINS_DIR "/transport_mutex.hddl",
+      HTN_DOMAINS_DIR "/transport_mutex_left.hddl",
+      HTN_DOMAINS_DIR "/transport_insert.hddl",
     };
 
     int checked = 0;

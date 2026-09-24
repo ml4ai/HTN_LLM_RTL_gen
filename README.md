@@ -27,10 +27,14 @@ To build, do the following:
     cmake ..
     make -j
 
-After building, you can run tests with the following command (assuming you are
-in the `build` directory).
+After building, you can run tests with the following command from the build
+directory:
 
     ctest
+
+The build directory does not have to be `build` inside the source tree: the
+tests, and the planner's default domain and problem, find `domains/` through an
+absolute path fixed when you run `cmake`.
 
 If you want more verbose output (e.g. if you want to show the outputs from your
 `cout << ... << endl` statements), run:
@@ -78,21 +82,49 @@ in the planning and MCTS literature.
   definition loaders
 - Can handle ordering constraints on tasks, unconstrained tasks, and performs
   task interleaving
-- Method preconditions follow HDDL timing: each one is compiled into an
-  effect-free primitive action ordered ahead of the method's subtasks, so it is
-  evaluated when that action is scheduled rather than when the method is
-  decomposed. The two agree for totally ordered domains and differ once tasks
-  interleave. These synthesised actions are search steps, not plan steps, and
-  are left out of the plan the planner reports
+- Method preconditions are **stricter than HDDL by default**. HDDL compiles
+  each one into an effect-free primitive action ordered ahead of the method's
+  subtasks, so it is checked when that action is scheduled. In a partially
+  ordered domain other tasks can run in between, and the condition may no
+  longer hold when the method actually starts. The planner does that
+  compilation too, but by default it *also* re-checks the precondition
+  immediately before the first real action arising from the method. That is the
+  tighter reading the HDDL authors leave to future extensions. Choose with
+  `--precondition_mode`:
+  - `at_start` (default): the condition must also hold at the method's first
+    real action
+  - `protected`: it must hold throughout, from the check to that action; no
+    other task's action may break it in between. It gives the same plans on
+    every shipped domain and is cheaper where the readings differ, but is
+    stricter on a condition that is broken and then restored before the method
+    starts
+  - `compiled`: HDDL's semantics exactly, for conformance. On a partially
+    ordered domain it can return plans that break a method's precondition
+    before the method starts
+
+  The synthesised check actions are search steps, not plan steps, and are left
+  out of the reported plan. See [docs/planner\_doc.md](docs/planner_doc.md)
+  §8.16 for what each reading does and costs.
 - We also developed a graphing function that can take the results of the
   planner and output a visual representation of the task hierarchy used to
   generate the grounded plan
 - The problem definition requires a top-level task or set of partially-ordered top-level tasks
   from which to start the task decomposition process
 - The task decomposition process is NOT goal directed and therefore it will
-  ignore goal statements defined in problem definitions
-- Shallow deadends and infinite recursive/looping tasks can cause
-  the planner to "stall out"
+  ignore goal statements defined in problem definitions. This follows standard
+  HTN semantics, where a solution is defined by decomposition alone; HDDL
+  itself says a goal, when given, must also be satisfied
+- The search space is not systematic: the same task network can be reached by
+  decomposing tasks in different orders, so the search tree contains duplicate
+  subtrees. `--algorithm 3` (in `planner_bench`) selects the systematic variant,
+  which helps on some domains and hurts on others; see
+  [docs/planner\_doc.md](docs/planner_doc.md) §5 and §8.10
+- A domain whose decomposition can recurse without bound — a `get_to` over a
+  two-way road graph, say — no longer hangs or crashes the planner: rollouts
+  are depth-bounded (`--max_depth`) and the whole run is capped
+  (`--max_decisions`), and the planner reports when either bound is hit. It
+  still cannot *solve* such a domain, because every rollout stops at the bound
+  and the search has nothing to steer by
 
 ## Running the Planner
 After building, you can run: 

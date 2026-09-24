@@ -4,6 +4,12 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../apps/
 # Header-only: the tests use boost/test/included/unit_test.hpp, which compiles
 # the framework into the translation unit rather than linking it.
 add_compile_definitions(BOOST_NO_CXX98_FUNCTION_BASE)
+
+# The tests find the shipped domains through this absolute path rather than a
+# path relative to wherever they happen to run, so a build directory can live
+# anywhere. See test_paths.h.
+get_filename_component(HTN_DOMAINS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../domains" ABSOLUTE)
+add_compile_definitions(HTN_DOMAINS_DIR="${HTN_DOMAINS_DIR}")
 find_package(Boost REQUIRED)
 find_package(Z3 REQUIRED)
 

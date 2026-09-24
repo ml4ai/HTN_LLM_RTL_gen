@@ -8,6 +8,12 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../cmake
 #set(CMAKE_CXX_FLAGS "-glldb")
 
 add_compile_definitions(BOOST_NO_CXX98_FUNCTION_BASE)
+
+# The planner's default domain and problem are found through this absolute path,
+# so running it with no arguments works from any directory, not only from
+# <source>/build. The same fix as the tests; see test/test_paths.h.
+get_filename_component(HTN_DOMAINS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../domains" ABSOLUTE)
+add_compile_definitions(HTN_DOMAINS_DIR="${HTN_DOMAINS_DIR}")
 find_package(Boost COMPONENTS program_options REQUIRED)
 find_package(Graphviz REQUIRED)
 find_package(Z3 REQUIRED)

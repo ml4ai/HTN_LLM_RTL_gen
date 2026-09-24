@@ -27,8 +27,13 @@ int main(int argc, char* argv[]) {
   int max_depth = kDefaultMaxRolloutDepth;
   int max_decisions = kDefaultMaxDecisions;
   std::string precondition_mode = "at_start";
-  std::string dom_file = "../domains/transport_domain.hddl";
-  std::string prob_file = "../domains/transport_problem.hddl";
+  //Absolute, from the build configuration, so the default runs from anywhere.
+  //The fallback is the old relative path, correct only from <source>/build.
+#ifndef HTN_DOMAINS_DIR
+#define HTN_DOMAINS_DIR "../domains"
+#endif
+  std::string dom_file = HTN_DOMAINS_DIR "/transport_domain.hddl";
+  std::string prob_file = HTN_DOMAINS_DIR "/transport_problem.hddl";
   std::string score_fun = "delivery_one";
   bool graph = false;
   std::string graph_file = "";

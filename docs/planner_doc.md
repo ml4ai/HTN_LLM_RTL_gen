@@ -605,6 +605,29 @@ current.
 delete effect, an add effect and the initial state, plus an action carrying an
 empty `(and)` precondition. `test_MCTS_planner` asserts the resulting state.
 
+17. **The tests only ran from `<source>/build`**, and so did the planner's
+    defaults. `test_loader`, `test_parser` and `test_MCTS_planner` reached their
+    domains through `../../domains/...`, relative to wherever they ran, and
+    `MCTS_planner` defaulted to `../domains/...`. Configured anywhere else they
+    compiled, linked, and failed at run time. From the wrong directory
+    `test_loader` exited 201, which looks exactly like a genuine assertion
+    failure; that cost real time twice while this document was being written.
+    CMake now resolves `domains/` to an absolute path at configure time and
+    passes it in as `HTN_DOMAINS_DIR`, and all 31 test paths and both planner
+    defaults use it. A build outside the source tree previously failed 3 of 4
+    tests. It now passes 4 of 4, and the test binaries also pass when run from
+    `/`. `test/test_paths.h` keeps the old relative path as a fallback for
+    anything built outside CMake.
+18. **Two semantics were undocumented for users.** Both were already covered
+    here but not in the README. Goals are ignored (§2.1): the README said so
+    but not why, and now gives the reason — standard HTN semantics — alongside
+    HDDL's contrary requirement. The search is non-systematic (§2.3): the README
+    did not mention it at all, and now does, with a pointer to `--algorithm 3`.
+    The same pass corrected two README claims that had gone stale: it said method
+    preconditions follow HDDL timing, which stopped being the default in
+    §8.16.2, and that recursive domains make the planner "stall out", which
+    §8.8 replaced with a bounded, reported failure.
+
 19. **An empty subtask network segfaulted the loader.** HDDL allows a method to
     decompose into nothing — `<subtask-defs> ::= () | ...` — and a method that
     ends a recursion is exactly what wants it. `loadDomain`'s ordered branch
@@ -617,23 +640,16 @@ empty `(and)` precondition. `test_MCTS_planner` asserts the resulting state.
     spellings, and `test_loader` was confirmed to fail against the unfixed
     loader.
 
+The two shadowing hazards previously recorded here are also gone. `expansion`
+shadowed the RNG `g` with a loop variable over groundings; that variable is now
+`grounding`. `MethodDef::apply` shadowed its `int i` parameter with a loop
+counter; §8.13's rewrite renamed the counters, so that one had already gone
+without this note being updated.
+
 ### 4.2 Open
 
-17. **The tests only run from `<source>/build`.** `test_loader`, `test_parser`
-    and `test_MCTS_planner` reach their domains through the relative path
-    `../../domains/...`, which assumes the build directory is a child of the
-    source tree. Configuring a build anywhere else yields binaries that compile
-    and link but fail at run time with "No file transport_domain.hddl found".
-    Passing the domain directory in at configure time would fix it.
-18. **Semantics to document.**
-    * Goals are ignored by the HTN planner (§2.1).
-    * The search space is non-systematic, so duplicate subtrees occur (§2.3).
-
-Minor, not worth changing on their own but worth knowing: `expansion` shadows
-the RNG `g` with a loop variable of the same name, and `MethodDef::apply`
-shadows its `int i` parameter with a loop counter. Both currently resolve to
-the intended object, and both would break silently if the surrounding code
-moved.
+Nothing. Items 17 and 18 were closed with the rest of the list; see below and
+§9.
 
 An earlier note here recorded two bugs in the time-indexed overlay's SMT
 emission — a duplicate `declare-fun` when a predicate had both regular and
@@ -2539,27 +2555,15 @@ concentrated in the tail.
 
 ## 9. Remaining work
 
-**Every substantive item is done.** §8.7–§8.10 dealt with the size of the search
-space, §8.11–§8.15 with the cost of each node, and §8.16 with what a method
-precondition means. `at_start` is now the default (§8.16.2); whether
-`protected` would serve better, trading one semantic distinction for half the
-tail, is recorded there as the open alternative.
+**Nothing on the list is left.** §8.7–§8.10 dealt with the size of the search
+space, §8.11–§8.15 with the cost of each node, §8.16 with what a method
+precondition means, and the loose ends — §4.1 notes 17 and 18 — are closed.
 
-What is left is hygiene.
-
-### 9.1 Loose ends
-
-Both are recorded as open items in §4.2 and neither is worth its own work
-session:
-
-* **Item 17 — the tests only run from `<source>/build`.** `test_loader`,
-  `test_parser` and `test_MCTS_planner` reach their domains through
-  `../../domains/...`. From anywhere else they compile, link, and then fail at
-  run time. This cost real time during §8.7: run from the wrong directory,
-  `test_loader` exits 201 and looks exactly like a genuine assertion failure.
-  Passing the domain directory in at configure time fixes it.
-* **Item 18 — semantics to document.** Goals are ignored (§2.1); the search
-  space is non-systematic, so duplicate subtrees occur (§2.3).
+One choice from that work is recorded rather than made. `at_start` is the
+default, and `protected` would halve the tail cost on partially ordered domains
+for the same plans on every shipped domain, at the price of rejecting a
+condition broken and restored inside the window (§8.16.2). That is a switch to
+make on evidence from the RTL domains, not from these.
 
 ---
 

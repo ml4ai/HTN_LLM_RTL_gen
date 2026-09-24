@@ -14,6 +14,7 @@
 #include "fol/util.h"
 #include <boost/optional.hpp>
 #include <boost/spirit/home/x3/support/ast/variant.hpp>
+#include "test_paths.h"
 
 using boost::unit_test::framework::master_test_suite;
 namespace x3 = boost::spirit::x3;
@@ -159,7 +160,7 @@ BOOST_AUTO_TEST_CASE(test_domain_parsing) {
     //     only, and may not make logical sense.
 
 
-    std::ifstream f("../../domains/transport_domain.hddl");
+    std::ifstream f(HTN_DOMAINS_DIR "/transport_domain.hddl");
     std::string t_transport( (std::istreambuf_iterator<char>(f)),
                            (std::istreambuf_iterator<char>()));
     auto dom = parse<Domain>(t_transport);
@@ -256,7 +257,7 @@ BOOST_AUTO_TEST_CASE(test_domain_parsing) {
 BOOST_AUTO_TEST_CASE(test_problem_parsing) {
     //  Test parsing of problem definition and its components
 
-    std::ifstream f("../../domains/transport_problem.hddl");
+    std::ifstream f(HTN_DOMAINS_DIR "/transport_problem.hddl");
     std::string t_transport( (std::istreambuf_iterator<char>(f)),
                            (std::istreambuf_iterator<char>()));
 
