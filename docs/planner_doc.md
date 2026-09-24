@@ -2706,7 +2706,69 @@ Each item is small; together they remove traps.
 
 **Depends on:** nothing. **Risk:** none.
 
-### 9.6 What is left of performance
+### 9.6 Revamp the task-hierarchy graph
+
+The graph `--graph` draws is hard to read. It also leaves out what a reader
+most wants from it: which method decomposed each task, and when each action runs.
+A throwaway prototype redrew real `transport` and `sar3` output in the proposed
+style. It took the current grapher's DOT, the plan the planner prints, and
+rendered with Graphviz 14.1.2. All of the changes below were approved:
+
+1. **Hide the synthesised precondition checks and show the chosen method.** The
+   `__mprec_` actions of §8.16 are drawn as ordinary actions: 10 of the 29
+   nodes in `transport`, with the longest labels in the graph. Remove them, and
+   print the method under its task ("by m\_deliver\_ordering\_0"). That brings
+   `transport` down to 19 nodes. Ordering edges through a hidden check must
+   be joined up (predecessors to successors), not dropped. **`TaskNode` does
+   not record the method.** The prototype read it off the check's name, which
+   exists only for methods with a precondition. Add a `method` field to
+   `TaskNode`, set in `seek_planMCTS`'s commit loop where the tree is built.
+2. **Let only decomposition edges decide the layout.** Graphviz ranks on every
+   edge, so a node's height has nothing to do with its depth. In `sar3`,
+   `wake_triage_critical`, a direct child of the top task, is drawn three
+   levels down. Setting `constraint=false` on the ordering and plan edges fixes
+   this. `transport` goes from 2447×2171 to 2644×481.
+3. **Put every action on one bottom rank, numbered by plan step.** The plan then
+   reads along the bottom of the graph.
+4. **Keep the red plan-order arrows**, drawn between consecutive actions on
+   that bottom rank, so they become short hops instead of a chain zig-zagging
+   across the image. They still cross where the plan switches between top-level
+   tasks, which is information, not clutter.
+5. **Transitively reduce the ordering edges.** The grapher draws every ordering
+   pair, with the precondition checks tied to every sibling: 28 blue edges in
+   `transport` and 20 in `sar3`. The reduced graphs have 12 and 9. Draw them
+   dashed.
+6. **Colour by top-level task.** In `transport` this shows at a glance that the
+   plan interleaves the two deliveries: package\_1's first two actions, then all
+   of package\_0, then the rest of package\_1. `sar3` has one top-level task, so
+   everything is one colour. Colouring by agent (the player argument) would be
+   more useful there, so make the colouring selectable.
+7. **Readable labels, a legend and a caption.** Task name in bold with its
+   arguments on the line below; rounded boxes for compound tasks, square boxes
+   for actions. The caption names the problem, score function, precondition mode
+   and seed, gives the plan length and final score, and says what each shape,
+   colour and edge style means.
+8. **SVG output, chosen by the graph file's extension**, with a tooltip on each
+   node giving the full task. The tooltips are where the graph can become more
+   informative later: the state change each action made, or the visit count
+   and value behind each committed decision.
+
+**A Graphviz trap found while prototyping.** Setting `ordering=out` alongside
+the `constraint=false` ordering edges mirrors every row of siblings, so the
+earliest action ends up rightmost. Leave `ordering=out` off, and write the
+children in plan order instead (each child sorted by the first plan step under
+it). Graphviz uses the input order as its starting layout, and that is enough.
+
+The implementation stays in `grapher.h`, using the cgraph API it already uses.
+The labels need `agstrdup_html`. The README's description of `--graph` changes
+with it: the graph may now be SVG, and a legend explains it.
+
+**Depends on:** §9.5's two `grapher.h` items, which a rewrite absorbs, and
+§9.4's `inline` if that lands first. **Risk:** low; nothing reads the graph
+but a person. **Payoff:** a graph that shows how a plan was reached, which
+is what one is for when checking a model-written domain.
+
+### 9.7 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding
