@@ -64,19 +64,58 @@ struct Grounded_Task {
 };
 
 struct TaskGraph {
-  std::unordered_map<int,Grounded_Task> GTs;
+  //Tasks in ascending id order, in one contiguous vector.
+  //
+  //This was an unordered_map<int,Grounded_Task>. Every search node and every
+  //successor in a rollout holds a TaskGraph, so what matters is the cost of a
+  //copy, and copying the map allocated a bucket array plus a hash node per
+  //task. Copying this is one allocation for the vector.
+  //
+  //The order is also now a function of the task ids and nothing else.
+  //simulation and expansion collect the unconstrained tasks by iterating here
+  //and then shuffle them, so iteration order feeds the random stream: under the
+  //map it was libc++'s bucket layout, an implementation detail that would have
+  //made the same seed plan differently when built against libstdc++.
+  //
+  //Sorted by construction, never by sorting: ids come from nextID, which only
+  //ever increases, so every insertion is an append, and erasing preserves the
+  //order of what is left.
+  std::vector<std::pair<int,Grounded_Task>> GTs;
   //Keeps track of next newly usable ID
   int nextID = 0;
 
+  Grounded_Task* find(int i) {
+    auto it = std::lower_bound(GTs.begin(),GTs.end(),i,
+                               [](std::pair<int,Grounded_Task> const& p, int k) { return p.first < k; });
+    return (it != GTs.end() && it->first == i) ? &it->second : nullptr;
+  }
+
+  Grounded_Task const* find(int i) const {
+    return const_cast<TaskGraph*>(this)->find(i);
+  }
+
+  //Throws on an id that is not in the graph. The map's operator[] silently
+  //inserted an empty task instead, which only failed later, and less clearly,
+  //as "Invalid task" on its empty head.
   Grounded_Task& operator[](int i) {
-    return this->GTs[i];
+    auto* p = this->find(i);
+    if (!p) {
+      throw std::logic_error("TaskGraph has no task with id "+std::to_string(i)+"!");
+    }
+    return *p;
+  }
+
+  Grounded_Task const& at(int i) const {
+    auto const* p = this->find(i);
+    if (!p) {
+      throw std::logic_error("TaskGraph has no task with id "+std::to_string(i)+"!");
+    }
+    return *p;
   }
 
   int add_node(Grounded_Task& GT) {
-    int id;
-    id = this->nextID;
-    this->nextID++;
-    this->GTs[id] = GT;
+    int id = this->nextID++;
+    this->GTs.emplace_back(id,GT);
     return id;
   }
 
@@ -85,24 +124,31 @@ struct TaskGraph {
   //vector included, and the original is then discarded.
   int add_node(Grounded_Task&& GT) {
     int id = this->nextID++;
-    this->GTs.emplace(id,std::move(GT));
+    this->GTs.emplace_back(id,std::move(GT));
     return id;
   }
 
   // gt1 -> gt2
   void add_edge(int gt1, int gt2) {
-    this->GTs[gt1].outgoing.push_back(gt2);
-    this->GTs[gt2].incoming.push_back(gt1);
+    (*this)[gt1].outgoing.push_back(gt2);
+    (*this)[gt2].incoming.push_back(gt1);
   } 
 
   void remove_node(int gt) {
-    for (auto &og : this->GTs[gt].outgoing) {
-      this->GTs[og].incoming.erase(std::remove(GTs[og].incoming.begin(),GTs[og].incoming.end(),gt),GTs[og].incoming.end());
+    auto const& node = (*this)[gt];
+    for (int og : node.outgoing) {
+      auto& inc = (*this)[og].incoming;
+      inc.erase(std::remove(inc.begin(),inc.end(),gt),inc.end());
     }
-    for (auto &ic : this->GTs[gt].incoming) {
-      this->GTs[ic].outgoing.erase(std::remove(GTs[ic].outgoing.begin(),GTs[ic].outgoing.end(),gt),GTs[ic].outgoing.end());
+    for (int ic : node.incoming) {
+      auto& out = (*this)[ic].outgoing;
+      out.erase(std::remove(out.begin(),out.end(),gt),out.end());
     }
-    this->GTs.erase(gt);
+    //Only now erase, so `node` stays valid above: nothing in between inserts,
+    //and the loops touch other elements' edge vectors, never the vector itself.
+    auto it = std::lower_bound(GTs.begin(),GTs.end(),gt,
+                               [](std::pair<int,Grounded_Task> const& p, int k) { return p.first < k; });
+    this->GTs.erase(it);
   }
   
   bool empty() {
@@ -637,7 +683,7 @@ class MethodDef {
       if (bindings.empty()) {
         return groundings;
       }
-      std::vector<int> out = tasks.GTs.at(i).outgoing;
+      std::vector<int> out = tasks.at(i).outgoing;
       groundings.reserve(bindings.size());
       for (auto &b : bindings) {
         TaskGraph g = tasks;          //the one copy each successor needs

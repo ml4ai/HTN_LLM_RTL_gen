@@ -1279,6 +1279,14 @@ reasons: this one is a record of what was measured and what it bought, and the
 numbering is kept stable so that references to it from §2, §6 and §7 stay
 valid.
 
+**A rule for editing this section.** Text in §8 refers to other completed
+items by their §8 number and never by a §9 number. §9 numbers are unstable by
+design — they shift every time an item is finished — and renumbering them
+mechanically once rewrote historical references in this section to point at the
+wrong items: §7.4 briefly said the protected-condition set was the trail-based
+state. Where §8 means an item that is still open, it names the item as well as
+the number.
+
 §8.1–§8.6 came from §6 and attacked the cost of a node. §8.7 came from §4 and
 §5 and attacked the number of nodes. The rule behind that sequence was: make
 the thing measurable, then make it fast, then change what it means.
@@ -1448,8 +1456,8 @@ strings too. Interning predicates and objects to integers at load — the
 original plan for this item, and the reason it was named "representation" —
 is the change that removes that, and it was not done here because it reaches
 much further than `kb.h`: `Grounded_Task`, `TaskGraph`, the evaluator and the
-public `get_facts` API all traffic in strings. **The fact-base half is now
-done (§8.11); the task half is §9.1.**
+public `get_facts` API all traffic in strings. **Both halves have since been
+done: the fact base in §8.11, the rest in §8.12–§8.14.**
 
 `simple_travel` did not move at all here, and the explanation offered at the
 time — that its rollouts were bound by recursion through a `get_to`-style task
@@ -1506,13 +1514,9 @@ these domains nothing reaches it.
 malloc, 30.3% our own code, 10% memcpy/memset**. The allocation is
 `KnowledgeBase` and `TaskGraph` copies whose contents are `std::string`: one
 per search node, one per binding in `apply_binding`. Two things would move it,
-larger first, and both are now items of their own: **§9.1** (interning, which
-§8.5 also left open) and **§9.1** (a trail-based state).
-
-They are no longer next, though. §8.7 showed that on the instances that are
-actually hard the binding constraint is the *number* of nodes rather than the
-cost of one. That line of work is now finished — §8.7 through §8.10 — so these
-are next. See the §9 preamble.
+larger first: interning, which §8.5 also left open, and a trail-based state.
+Interning has since been done, in §8.11–§8.14, after the search-space work of
+§8.7–§8.10 was put ahead of it. The trail-based state is §9.1.
 
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
 of §8.5.
@@ -1931,7 +1935,7 @@ behaviour-preserving: the benchmark reports no semantic change.
 
 **Depends on:** §8.1 and the §8.7 instances. **Risk:** none — default unchanged.
 **Payoff:** none. The value here is the falsification, which removes a wrong
-reason for prioritising §9.1.
+reason for prioritising Algorithm 3, which was done afterwards as §8.10.
 
 ### 8.10 Algorithm 3: systematic progression — **done, kept opt-in**
 
@@ -2057,7 +2061,7 @@ now dropped, and neither version says anything.
 34.0% our own code**. The share barely moved because the absolute time fell
 too. The string-keyed fact table is gone from the attribution; what remains is
 the *task and binding* side, and it splits cleanly into two follow-ups —
-§9.1 has the detail:
+§8.12 took up the first and §8.13–§8.14 the second:
 
 | | share of remaining allocation |
 |---|---|
@@ -2114,7 +2118,8 @@ medians are quantised at 0.01 ms, so `transport` is the number to trust.
 
 **What is left.** malloc is now **45.4%** of self-time, down from 52.9% before
 §8.11. String-keyed hash tables have disappeared from the allocation
-attribution entirely; what remains is the task representation, which is §9.1:
+attribution entirely; what remains is the task representation, which §8.13
+and §8.14 took up:
 
 | | share of remaining allocation |
 |---|---|
@@ -2129,7 +2134,7 @@ the benchmark's semantic fields and ctest 4/4. **Payoff:** 1.25×–1.5× on top
 
 ### 8.13 Stop copying the task side — **done, byte-identical**
 
-§9.1 as written was "intern the task representation", on the evidence that
+The item as written was "intern the task representation", on the evidence that
 `Grounded_Task`, `TaskGraph::GTs` and `Args` held most of the allocation left
 after §8.12. Attributing that allocation to the *operation* that triggered it,
 rather than to the object being built, showed that most of it was not
@@ -2163,7 +2168,7 @@ representation at all. It was work done and thrown away:
   the expression. Two passes over the children in place give the same order
   with neither.
 
-**This corrects §9.1 as it was written**, which said §8.12's lesson applied
+**This corrects the item as it was written**, which said §8.12's lesson applied
 directly — that the container is the cost and the strings are not, because they
 fit the small-string buffer. That holds for variable and object names. It does
 not hold on the task side: `__mprec_` heads run 28–36 characters and a plan
@@ -2198,85 +2203,124 @@ have laid the hash table out differently. ctest 4/4.
 **Depends on:** §8.12. **Risk:** low; discharged. **Payoff:** 1.20×–1.65×,
 with no behaviour change.
 
+### 8.14 Flatten the task network — **done; changes results by design**
+
+After §8.13 the task network was the largest remaining bucket: 39.4% of
+allocation, roughly 18% of runtime. `TaskGraph::GTs` was an
+`unordered_map<int,Grounded_Task>`, and every search node and every successor
+in a rollout holds a `TaskGraph`, so copying one — a bucket array plus a hash
+node per task — happened constantly.
+
+**It is now a `vector<pair<int,Grounded_Task>>` in ascending id order, sorted
+by construction rather than by sorting.** Ids come only from `nextID`, which
+only increases, so every insertion is an append and every erase preserves the
+order of what remains. Lookups are a binary search over a few dozen entries.
+Copying is one allocation for the vector.
+
+`operator[]` on an id the graph does not hold now throws. The map's version
+silently inserted an empty task, which could only fail later and less clearly,
+as "Invalid task" on its empty head. No shipped domain or test relied on it.
+
+**Why this changes results.** `simulation` and `expansion` collect the
+unconstrained tasks by iterating the graph and then shuffle them, so iteration
+order feeds the random stream. Under the map that order was libc++'s bucket
+layout; now it is id order. The benchmark's fingerprints therefore moved, and
+this was decided on before starting rather than discovered after.
+
+**Where they moved, and why that is not a quality change.** Three semantic
+fields changed, all of them which-random-path effects:
+
+* `transport`: one of five rollouts landed on a slightly worse plan (0.0222
+  against 0.0278). Over 60 rollouts the mean is 0.02657 against 0.02620 before
+  — marginally *higher* — with the same minimum and maximum.
+* `chain_mutex`: the deterministic plan picked up two `noop`s, 14 actions to 16.
+  Same four drives, same score. Across five seeds both versions produce 14 and
+  16 in similar proportion, the variation already recorded in §8.10.
+
+`d18_gather` and `d18_p18` changed their random stream but kept identical plans.
+`simple_travel`, `sar3`, `forall_test` and `atom_test` did not change at all:
+they never have more than one unconstrained task at a time, so order could not
+matter. Across five seeds every domain solves 5/5 in both versions with
+identical plan lengths and drive counts, and the rollout score distributions
+match. The new behaviour is itself reproducible: a fresh baseline compares
+clean against a second run.
+
+**Speed**, interleaved A/B against the map version, seven repetitions, about a
+second of rollouts each:
+
+| domain | map | flat | |
+|---|---|---|---|
+| `chain_b` / `mutex_left` | 0.921 s | 0.738 s | **1.25×** |
+| `transport` | 0.697 s | 0.640 s | 1.09× |
+| `simple_travel` | 0.258 s | 0.246 s | 1.05× |
+| `d18_p18` | 0.778 s | 0.747 s | 1.04× |
+| `sar3` | 0.609 s | 0.589 s | 1.03× |
+| `d18_gather` | 1.067 s | 1.056 s | within noise |
+
+`simple_travel` and `sar3` are the clean comparisons, since their random stream
+is unchanged and both binaries do identical work. For the others the two do
+slightly different work, which averages out over thousands of rollouts but is
+worth knowing. The gain follows the number of tasks in the network:
+`chain_b`'s is the largest.
+
+**The portability claim is by construction, not measured.** Baselines should
+now transfer between standard libraries, because nothing in the random stream
+depends on hash layout any more. That has not been tested: there is no
+libstdc++ build here.
+
+**One observation made on the way, not a regression.** A 20-rollout run of
+`chain_d` / `original` on the *pre*-change binary was stopped after 19 minutes
+of CPU, where the five-rollout median in §8.7 was 174 ms. Rollout time on that
+encoding is heavy-tailed enough that a single dive can run for tens of minutes,
+which a median over five samples hides entirely. §8.8's depth bound does not
+help: that dive is not deep, it is wide.
+
+**Depends on:** §8.13. **Risk:** medium — changes results by design; discharged by
+the multi-seed quality comparison. **Payoff:** 1.03×–1.25×, plus a random
+stream that no longer depends on the standard library's hash table.
+
 ---
 
 ## 9. Remaining work
 
-Ordered by what to do next rather than by when it was thought of. Two things
-reordered it, and both came out of doing §8.7. (§8.8–§8.13 have since been done
-out of this list. §8.8 changed nothing about the order; §8.9 was a
-negative result that removed one of §9.1's two reasons for being first — see
-there.)
+Ordered by what to do next. Three items are left, and they are of three
+different kinds.
 
-* **The bottleneck moved.** §8.1–§8.6 all attacked the *cost of a node*, and
-  returned 362–993× between them. §8.7 was the first item that attacked the
-  *number of nodes*, and it returned 15× on instances where cost-per-node work
-  had stopped helping at all. Chain instance `c` still times out past 300 s;
-  halving the cost of a node does nothing for that. So search-space work comes
-  first now, and the representation work that used to be next is behind it.
-* **Representation work should follow the search changes, not precede them.**
-  Interning reaches into `Grounded_Task`, `TaskGraph`, the evaluator and the
-  public `get_facts` API, which §8.10 has now stopped changing underneath it.
-  Doing it first means doing parts of it twice.
+**The search-space and cost-per-node work is done.** §8.7–§8.10 dealt with the
+number of nodes, and §8.11–§8.14 took the representation apart: the fact base,
+the evaluator's bindings, the redundant copies on the task side, and the task
+network's container. What survives of that line of work is §9.1, and it is a
+different kind of change from everything before it — a redesign of how a
+successor gets its state, not a cheaper version of the same thing.
 
-**This order assumes the goal is to plan on harder instances.** If the
-near-term goal is instead to generate and run many *small* RTL domains, the
-search space is not what hurts, and §9.1 and §9.2 should come first.
+* **§9.1 — a trail-based state.** Cost per node, and the last large lever of that
+  kind. Deliberately after the representation work, which has now stopped
+  changing the structures it would build on.
+* **§9.2 — what a method precondition should mean.** Semantics. The one item
+  that changes what the planner *answers* rather than how fast, and the reason
+  this whole list was ordered performance-first: evaluating it means running
+  the planner a great deal.
+* **§9.3 — loose ends.** Hygiene; fold in anywhere.
 
-§9.1 is search space. §9.1–§9.1 are cost per node, and are what §8.5 and §8.6
-left behind. §9.1 is semantics. §9.2 is hygiene and can be folded in anywhere.
+**If the near-term goal is generating and running many small RTL domains**
+rather than planning on harder instances, §9.2 should come before §9.1: on
+small domains the planner is already fast, and what matters is whether it means
+what the domain author meant.
 
----
-
-### 9.1 Flatten the task network
-
-What is left of the task side after §8.13 took out the redundant work. It is
-now the largest single bucket: **39.4% of remaining allocation**, which with
-malloc at 44.7% of self-time is roughly **18% of runtime**. Nothing else left
-comes close — the evaluator is 19.5% of allocation, the knowledge base 3.4%.
-
-The cost is structural. Every search node and every successor in a rollout
-holds a `TaskGraph`, which is an `unordered_map<int,Grounded_Task>`: copying
-one allocates a bucket array and a hash node per task, and each
-`Grounded_Task` then carries two edge vectors, an argument vector, and a head
-that for a synthesised check is past the small-string buffer. A flat,
-id-sorted vector would make the copy a single allocation plus the tasks.
-
-**Unlike everything since §8.4, this changes behaviour, and that is worth
-deciding on deliberately.** `simulation` collects the unconstrained tasks by
-iterating `GTs` and then shuffles them, so the order it iterates in feeds the
-random stream. A different container iterates in a different order, and every
-rollout score, plan and fingerprint in the benchmark moves — the same
-situation as §8.4, handled the same way: re-baseline, and argue from plan
-quality rather than from identity.
-
-There is a real upside to that, independent of speed. At present the planner's
-random choices depend on the iteration order of libc++'s `unordered_map`, which
-is an implementation detail; built against libstdc++ on Linux the same seed
-would already give different plans, and the benchmark's baselines would not
-transfer between machines. An id-sorted container makes the random stream a
-function of the task ids alone.
-
-Interning the heads would come after this, and is probably not worth it on its
-own: §8.13 removed the paths that built the long ones for nothing.
-
-**Depends on:** §8.13. **Risk:** medium — it changes results by design.
-**Payoff:** bounded by the 18%; expect around 1.1×, plus portable fingerprints.
-
-### 9.2 Trail-based apply/undo state
+### 9.1 Trail-based apply/undo state
 
 Also left over from §8.6. Apply an action's effects and undo them on the way
 back out, instead of copying the fact base per successor. It removes copying
-rather than shrinking it, which is why it comes after §9.1 shrinks what there is
-to copy.
+rather than shrinking it, which is why it came after the interning of
+§8.11–§8.14 shrank what there is to copy.
 
 A bigger design change than it sounds: the MCTS tree holds states, not just the
 rollout, so the trail cannot simply be unwound at every level.
 
-**Depends on:** §9.1. **Risk:** medium-high. **Payoff:** removes the copy rather
+**Depends on:** §8.11–§8.14. **Risk:** medium-high. **Payoff:** removes the copy rather
 than making it cheaper.
 
-### 9.3 Decide what a method precondition should mean here
+### 9.2 Decide what a method precondition should mean here
 
 §7.4 sets out a protected-condition set: register the literals a synthesised
 precondition action checked, keep them protected until the method's subtasks
@@ -2291,12 +2335,12 @@ planner would find. Measure before defaulting it on.
 
 It sits last among the substantive items for the reason §8's sequence gave:
 every semantic change has to be evaluated by running the planner a great deal,
-and that is cheaper after §9.1–§9.1. It is not blocked by any of them, so if the
+and that is cheaper after §9.1. It is not blocked by it, so if the
 research needs it sooner, it can move.
 
 **Depends on:** §8.1 and §8.4. **Risk:** medium, and it changes results.
 
-### 9.4 Loose ends
+### 9.3 Loose ends
 
 Both are recorded as open items in §4.2 and neither is worth its own work
 session:
