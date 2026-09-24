@@ -2532,13 +2532,22 @@ only at the method's first action, after the search has dived beneath a doomed
 decomposition, and it cannot soundly prune earlier, because it allows a condition
 to be broken and restored before then.
 
-**`protected` is the cheaper strict reading, and it is the open alternative.**
-It rejects at the foreign action that breaks a link, which is earlier. On
-`chain_b` its mean rollout is 38.8 ms against `at_start`'s 71.8 ms, and its
-worst case is 224 ms against 447 ms — half the tail. It returns the same plans
-on every shipped domain. It is semantically stricter, rejecting a condition
-broken and restored before the method starts, which no shipped domain does. If
-the tail matters more than that distinction, switching is one line.
+**`protected` is the cheaper strict reading, and it was considered and
+declined.** It rejects at the foreign action that breaks a link, which is
+earlier. On `chain_b` its mean rollout is 38.8 ms against `at_start`'s 71.8 ms,
+and its worst case is 224 ms against 447 ms — half the tail. It returns the same
+plans on every shipped domain. It is semantically stricter, rejecting a
+condition broken and restored before the method starts, which no shipped domain
+does.
+
+**The default was confirmed as `at_start` with these corrected figures in
+hand.** The first decision was made on the understated costs this section
+originally reported, and the corrected ones were put back to the person who
+made it before anything else happened. They kept `at_start`. So the choice is
+settled, not pending. The reasoning is `at_start`'s: it is the weaker of the
+two stricter readings, and the one the HDDL authors named. `protected` remains
+available as `--precondition_mode protected` for any domain where the tail
+matters more than that distinction.
 
 `test_MCTS_planner` now asserts that both modes return no redundant lock sequence
 on `chain_b` across three seeds. It first checks its own premise: that
@@ -2559,11 +2568,9 @@ concentrated in the tail.
 space, §8.11–§8.15 with the cost of each node, §8.16 with what a method
 precondition means, and the loose ends — §4.1 notes 17 and 18 — are closed.
 
-One choice from that work is recorded rather than made. `at_start` is the
-default, and `protected` would halve the tail cost on partially ordered domains
-for the same plans on every shipped domain, at the price of rejecting a
-condition broken and restored inside the window (§8.16.2). That is a switch to
-make on evidence from the RTL domains, not from these.
+The one choice that work raised has been made: `at_start` is the default,
+confirmed with the corrected costs in hand, and `protected` stays available as
+an option rather than a pending decision (§8.16.2).
 
 ---
 
