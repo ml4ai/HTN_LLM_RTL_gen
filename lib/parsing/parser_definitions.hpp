@@ -542,7 +542,7 @@ namespace parser {
                                >> -goal
                                > ')';
     BOOST_SPIRIT_DEFINE(problem);
-    struct TProblem: x3::annotate_on_success {};
+    struct TProblem : x3::annotate_on_success, ErrorHandlerBase {};
 
 
 } // namespace parser

@@ -56,7 +56,17 @@ script for example usage.
 ## Current Capabilities
 - Can fully parse and load all features of HDDL aside from the
   unsupported features listed below
+- Validates a domain and problem before building anything from them: every
+  task, action, predicate, type, object, constant and variable used must be
+  declared and in scope, with the declared number of arguments and a compatible
+  type, and orderings must name the method's own subtasks without a cycle. Every
+  problem found is reported at once, each with its file and line, as an
+  `HDDLError`; text the grammar rejects is a `ParseError` carrying the same
+  report the parser prints. `load_hddl` loads a domain and problem from strings
+  rather than files. See [docs/planner\_doc.md](docs/planner_doc.md) §8.17
 - The "either" keyword is not currently supported
+- Typed variables in a `forall` effect, `(forall (?x - package) ...)`, are not
+  currently supported; write them untyped
 - Syntax and logic for the handling of external function calls are not
   currently supported
 - Requirement checking for given requirement keys is not currently supported

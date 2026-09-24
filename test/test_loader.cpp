@@ -302,3 +302,181 @@ BOOST_AUTO_TEST_CASE(test_expr_ast_matches_smt) {
               << std::endl;
 
 }// end of testing the expression IR
+
+
+//planner_doc.md 9.1: the loader validates a domain and problem before building
+//anything. Each case below is a one-line corruption of transport, of the kind a
+//language model makes writing HDDL. Before validation the first four crashed
+//the planner with no message and the rest ran with every rollout failing, or
+//were silently accepted. Each must now be rejected with a message that names
+//the file and line, the construct, and what is wrong.
+namespace {
+std::string slurp(std::string const& path) {
+    std::ifstream f(path);
+    return std::string((std::istreambuf_iterator<char>(f)),
+                       (std::istreambuf_iterator<char>()));
+}
+
+std::string const transport_dom = slurp(HTN_DOMAINS_DIR "/transport_domain.hddl");
+std::string const transport_prob = slurp(HTN_DOMAINS_DIR "/transport_problem.hddl");
+
+std::string replaced(std::string text, std::string const& from, std::string const& to) {
+    auto at = text.find(from);
+    BOOST_REQUIRE_MESSAGE(at != std::string::npos, "fixture text not found: " << from);
+    return text.replace(at, from.size(), to);
+}
+
+//The problems validation reports, or none if the pair loads.
+std::vector<std::string> problems_of(std::string const& dom, std::string const& prob) {
+    try {
+        load_hddl(dom, prob);
+    }
+    catch (HDDLError const& e) {
+        return e.problems();
+    }
+    return {};
+}
+
+void expect_one(std::string const& dom, std::string const& prob, std::string const& expected) {
+    auto ps = problems_of(dom, prob);
+    BOOST_TEST_CONTEXT(expected) {
+        for (auto const& p : ps) {
+            BOOST_TEST_INFO("reported: " << p);
+        }
+        BOOST_TEST_REQUIRE(ps.size() == 1u);
+        BOOST_TEST_INFO("reported: " << ps[0]);
+        BOOST_TEST(ps[0].find(expected) != std::string::npos);
+    }
+}
+}
+
+BOOST_AUTO_TEST_CASE(test_validation_rejects_the_ten_mistakes) {
+    auto const& D = transport_dom;
+    auto const& P = transport_prob;
+    //Used to segfault.
+    expect_one(replaced(D, "(task0 (get_to ?v ?l1))", "(task0 (get_too ?v ?l1))"), P,
+               "domain:42: in method m_deliver_ordering_0: subtask task0, (get_too ?v ?l1): "
+               "get_too is not a declared task or action (did you mean get_to?)");
+    expect_one(replaced(D, ":task (unload ?v ?l ?p)", ":task (unlaod ?v ?l ?p)"), P,
+               "unlaod is not a declared task (did you mean unload?)");
+    expect_one(replaced(D, "(not (at ?v ?l1))\n", "(not (att ?v ?l1))\n"), P,
+               "in action drive: effect (att ?v ?l1): predicate att is not declared in :predicates");
+    expect_one(D, replaced(P, "(task0 (deliver package_0", "(task0 (delivr package_0"),
+               "problem:18: in :htn: subtask task0, (delivr package_0 city_loc_0): "
+               "delivr is not a declared task or action (did you mean deliver?)");
+    //Used to run with every rollout failing and no reason given.
+    expect_one(replaced(D, "(road ?l1 ?l2)\n                        (not", "(raod ?l1 ?l2)\n                        (not"), P,
+               "predicate raod is not declared in :predicates (did you mean road?)");
+    expect_one(replaced(D, "(capacity ?v ?s2)\n", "(capacity ?v)\n"), P,
+               "condition (capacity ?v) gives predicate capacity 1 argument, but it is declared with 2");
+    expect_one(D, replaced(P, "(at truck_0 city_loc_2)", "(at truck_1 city_loc_2)"),
+               "in :init: fact (at truck_1 city_loc_2) uses truck_1, which is not a declared "
+               "object or constant (did you mean truck_0?)");
+    //Used to be accepted silently.
+    expect_one(replaced(D, "(?v - vehicle ?l1 - location ?l2 - location)", "(?v - vehicle ?l1 - locaton ?l2 - location)"), P,
+               "parameter ?l1 has type locaton, which is not declared in :types (did you mean location?)");
+    expect_one(replaced(D, "(at ?p ?l1)\n", "(at ?p ?l9)\n"), P,
+               "uses ?l9, which is not a parameter here or bound by a quantifier (did you mean ?l1?)");
+
+    //The tenth is a parse error, reported by the grammar rather than by
+    //validation. It used to go to stderr, with the exception saying only
+    //"Parsing error!"; the report is now the exception's message.
+    try {
+        load_hddl(replaced(D, "(and\n\t\t\t\t(not (at ?v ?l1))", "(and\n\t\t\t\t(not (at ?v ?l1)"), P);
+        BOOST_FAIL("an unbalanced parenthesis was accepted");
+    }
+    catch (ParseError const& e) {
+        std::string what = e.what();
+        BOOST_TEST_INFO(what);
+        BOOST_TEST(what.find("In file domain, line 135") != std::string::npos);
+        BOOST_TEST(what.find("Expecting: ')'") != std::string::npos);
+    }
+    //A missing parenthesis the grammar notices only at an anonymous
+    //sub-parser. It used to be named by that parser's mangled C++ type.
+    try {
+        load_hddl(replaced(D, "(:task get_to\n\t\t:parameters (?v - vehicle ?l - location)\n\t)",
+                              "(:task get_to\n\t\t:parameters (?v - vehicle ?l - location)\n\t"), P);
+        BOOST_FAIL("a task missing its closing parenthesis was accepted");
+    }
+    catch (ParseError const& e) {
+        std::string what = e.what();
+        BOOST_TEST_INFO(what);
+        BOOST_TEST(what.find("N5boost") == std::string::npos);
+        BOOST_TEST(what.find("a parenthesis is probably missing or extra") != std::string::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_validation_further_checks) {
+    auto const& D = transport_dom;
+    auto const& P = transport_prob;
+    //Swapped arguments: types with nothing in common but `object`. Both
+    //positions are wrong, and both are reported.
+    auto swapped = problems_of(replaced(D, "(task0 (get_to ?v ?l1))", "(task0 (get_to ?l1 ?v))"), P);
+    BOOST_TEST_REQUIRE(swapped.size() == 2u);
+    BOOST_TEST(swapped[0].find("argument 1 (?l1) has type location, but task get_to expects vehicle there") != std::string::npos);
+    BOOST_TEST(swapped[1].find("argument 2 (?v) has type vehicle, but task get_to expects location there") != std::string::npos);
+    expect_one(D, replaced(P, "(capacity truck_0 capacity_2)", "(capacity capacity_2 capacity_2)"),
+               "argument 1 (capacity_2) has type capacity_number, but predicate capacity expects vehicle there");
+    //Orderings.
+    expect_one(replaced(D, "(< task0 task1)", "(< task0 task9)"), P,
+               "ordering (< task0 task9) names task9, which is not one of this network's subtask ids");
+    expect_one(replaced(D, "(< task2 task3)", "(< task2 task3)\n\t\t\t(< task3 task0)"), P,
+               "the :ordering constraints form a cycle");
+    //Declarations.
+    expect_one(replaced(D, "(:action noop", "(:action drive\n\t\t:parameters ()\n\t)\n\t(:action noop"), P,
+               "action drive is declared twice");
+    expect_one(replaced(D, ":task (get_to ?v ?l)\n", ":task (drive ?v ?l ?l)\n"), P,
+               "names action drive; a method decomposes a compound task");
+    expect_one(D, replaced(P, "(:domain  domain)", "(:domain  transport)"),
+               "the problem is for domain transport, but the domain loaded is domain");
+
+    //Every problem is reported, not just the first, and in source order.
+    auto both = problems_of(replaced(replaced(D, "(at ?p ?l1)\n", "(at ?p ?l9)\n"),
+                                     "(task0 (get_to ?v ?l1))", "(task0 (get_too ?v ?l1))"),
+                            replaced(P, "(at truck_0 city_loc_2)", "(at truck_1 city_loc_2)"));
+    BOOST_TEST_REQUIRE(both.size() == 3u);
+    BOOST_TEST(both[0].rfind("domain:35:", 0) == 0);
+    BOOST_TEST(both[1].rfind("domain:42:", 0) == 0);
+    BOOST_TEST(both[2].rfind("problem: in :init:", 0) == 0);
+
+    //Not problems. Every type is also a one-argument predicate true of that
+    //type's objects (KnowledgeBase::initialize), so a condition may use one.
+    BOOST_TEST(problems_of(replaced(D, "(at ?p ?l1)\n", "(at ?p ?l1)\n(vehicle ?v)\n"), P).empty());
+    //A supertype variable passed to a subtype parameter narrows at grounding.
+    BOOST_TEST(problems_of(replaced(D, "?p - package ?v - vehicle)\n\t\t:task (deliver",
+                                       "?p - locatable ?v - vehicle)\n\t\t:task (deliver"), P).empty());
+}
+
+//Every shipped domain and problem pairing validates. A new check that rejects
+//one of these is wrong, or has found a real mistake in it.
+BOOST_AUTO_TEST_CASE(test_shipped_domains_validate) {
+    std::vector<std::pair<std::string,std::string>> pairs = {
+      {"transport_domain", "transport_problem"},
+      {"simple_travel", "simple_travel_problem"},
+      {"sar3", "sar3p1"},
+      {"d18", "p18"},
+      {"d18", "problem_gather_wake_evacuate"},
+      {"forall_test", "forall_test_problem"},
+      {"atom_test", "atom_test_problem"},
+    };
+    for (auto const& d : {"transport_original", "transport_common", "transport_mutex",
+                          "transport_mutex_left", "transport_insert"}) {
+        for (auto const& p : {"a", "b", "c", "d"}) {
+            pairs.push_back({d, std::string("transport_chain_") + p});
+        }
+    }
+    for (auto const& p : {"a", "b", "c", "d"}) {
+        pairs.push_back({"transport_insert", std::string("transport_chain_") + p + "_insert"});
+    }
+    for (auto const& [d,p] : pairs) {
+        BOOST_TEST_CONTEXT(d << " + " << p) {
+            auto ps = problems_of(slurp(HTN_DOMAINS_DIR "/" + d + ".hddl"),
+                                  slurp(HTN_DOMAINS_DIR "/" + p + ".hddl"));
+            for (auto const& x : ps) {
+                BOOST_TEST_INFO(x);
+            }
+            BOOST_TEST(ps.empty());
+        }
+    }
+    BOOST_TEST(loadDomain(HTN_DOMAINS_DIR "/empty_method_test.hddl").first.head == "empty_method_test");
+}

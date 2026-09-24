@@ -2560,6 +2560,130 @@ design; measured to move only `chain_mutex`, and in the right direction.
 reading changes nothing, and up to 10× in total rollout time where it does,
 concentrated in the tail.
 
+### 8.17 Validate a domain at load time — **done; found mistakes in two shipped domains**
+
+The loader trusted its input, and the mistakes a model makes writing HDDL either
+crashed it or failed silently. A validation pass, `lib/cpphop/validate.h`, now
+runs on the parsed domain and problem before anything is built from them. It
+checks that every task, action, predicate, type, constant, object and variable
+used is declared and in scope, that every use has the declared number of
+arguments, that each argument's type can agree with its parameter's, and that a
+method's orderings name its own subtasks and do not form a cycle. It also
+rejects duplicate declarations, a name declared both as a task and as an action,
+a method whose `:task` is an action, and a problem written for a different
+domain.
+
+**Every problem is reported at once, in source order, each with a file and
+line.** The loader throws them together as an `HDDLError` whose `problems()`
+lists them, one message each:
+
+```
+error: 2 problems in the HDDL input:
+  domain.hddl:35: in method m_deliver_ordering_0: condition (at ?p ?l9) uses ?l9, which is not a parameter here or bound by a quantifier (did you mean ?l1?)
+  domain.hddl:42: in method m_deliver_ordering_0: subtask task0, (get_too ?v ?l1): get_too is not a declared task or action (did you mean get_to?)
+```
+
+The line is exact for a subtask, an ordering or a declaration. A condition or
+effect gets the line of the action or method it is in, because the parser does
+not tag atoms with positions. `:init` and `:goal` get no line, but name the fact.
+The "did you mean" suggestion is the nearest declared name close enough to be a
+slip: one edit for a name of up to five letters, two up to eight, and so on,
+counting a swap of neighbouring letters as one edit.
+
+The ten malformed cases of the re-scan, each a one-line corruption of
+`transport`:
+
+| mistake | before | now |
+|---|---|---|
+| a subtask names an undeclared task | segfault | `get_too is not a declared task or action (did you mean get_to?)` |
+| a method for an undeclared task | segfault | `unlaod is not a declared task (did you mean unload?)` |
+| an undeclared predicate in an effect | segfault | `predicate att is not declared in :predicates (did you mean at?)` |
+| an undeclared task in `:htn` | segfault | `delivr is not a declared task or action (did you mean deliver?)` |
+| an undeclared predicate in a precondition | every rollout fails | `predicate raod is not declared in :predicates (did you mean road?)` |
+| a predicate with the wrong arity | every rollout fails | `gives predicate capacity 1 argument, but it is declared with 2` |
+| an undeclared object in `:init` | every rollout fails | `uses truck_1, which is not a declared object or constant (did you mean truck_0?)` |
+| an undeclared type in a parameter list | accepted | `has type locaton, which is not declared in :types (did you mean location?)` |
+| an undeclared variable in a precondition | accepted | `uses ?l9, which is not a parameter here or bound by a quantifier (did you mean ?l1?)` |
+| an unbalanced parenthesis | an error naming a mangled C++ type | the file, line and caret, and `Expecting: ')'` |
+
+**Two rules keep it from rejecting legal domains.** A type is compatible with
+a parameter's type when either is an ancestor of the other. Passing a method's
+`locatable` variable to a `package` parameter is legal, since grounding narrows
+it. What is caught is two types with nothing in common but `object`, which is
+how swapped arguments show up. And a type name may be used as a one-argument
+predicate: `KnowledgeBase::initialize` asserts `(robot r1)` for every object of
+type `robot`, and `forall_test` relies on it.
+
+**Parse errors.** The report the grammar produces (file, line, the source line
+and a caret) used to go to stderr, while the exception said only "Parsing
+error!". It is now the message of a `ParseError`, so a caller that catches it
+has all of it. Where x3 names what it expected by the C++ type of an anonymous
+sub-parser (hundreds of characters of Boost.Spirit template), the message now
+says a parenthesis is probably missing or extra before the caret. The problem
+grammar had no error handler, so an expectation failure there escaped as a bare
+`expectation_failure`; it now has the domain grammar's.
+
+**Loading from text.** `load_hddl(domain_text, problem_text, domain_name,
+problem_name)` does what `load` does without files: a pipeline asking a model for
+HDDL has it in memory. `load` reads the two files and calls it. `loadDomain`
+validates the domain on its own. `loadProblem` is unchanged and unvalidated,
+since a problem cannot be checked without its domain, and nothing calls it any
+more.
+
+**It found real mistakes in two shipped domains.** Both were fixed rather than
+exempted:
+
+* `sar3.hddl`: `m_transport_victim` tests `(holding ?p_1 ?v)` against a
+  one-argument `holding`. Nothing can reach the method, since
+  `go_transport_victim` is neither a subtask nor a top-level task anywhere, so
+  the fix (`(holding ?p_1)`) changes no plan.
+* `d18.hddl` had six errors and `p18.hddl` four. **One made the `d18_p18`
+  benchmark return an invalid plan.** `m_wake_triage_critical` passed `?room`,
+  which is not among its parameters, to `type_the_victim`. The planner grounded
+  the unbound variable to its own name, so the plan contained `(type_the_victim
+  player_1 vic1 room)`, and `room` is not an object. It now passes `?final`, the
+  room the method is about, and the step is `(type_the_victim player_1 vic1
+  room_1)`. The rest changed nothing reachable:
+  * `m_gather_wake_evacuate` gave two subtasks wrong arguments, but no problem
+    reaches it. Its arguments are corrected.
+  * `cleaned` was typed with the undeclared `room`, and nothing uses it. It is
+    now typed `location`.
+  * `triage_victim` and `gather_to_wake` were each declared as both a task and
+    an action. The planner always treated such a name as the action, so the task
+    declarations, and `m_gather_to_wake` (the one method for either), were dead.
+    They are removed. Renaming the action instead would have brought the method
+    into use and changed both `d18` plans.
+  * `p18`'s `:htn` wrote its objects as `?player_1`, `?vic1`… with no
+    parameters to bind them. That worked by accident: variable names are stored
+    without the `?`, so each "variable" was already the object's name. It now
+    names the objects.
+
+**Checked against the previous commit** with `scripts/benchmark --compare`. The
+one semantic field that moved is `d18_p18`'s plan, in the step above. No
+`rng_after` moved, so the search made the same random draws everywhere.
+AddressSanitizer and UndefinedBehaviorSanitizer are clean over `test_loader`,
+`test_parser` and the malformed cases. `test_loader` gains three cases: the ten
+mistakes above plus a parenthesis the grammar notices only at an anonymous
+sub-parser; further checks (swapped arguments, orderings, cycles, duplicates, a
+method decomposing an action, a problem for another domain, several problems at
+once and their order, and the two legal patterns above); and every shipped
+domain and problem pairing, which must validate.
+
+**What it does not check.** `:requirements` are not compared against the
+features used. A task that no method decomposes and no problem mentions is not
+reported, and neither is a method that can never apply. Typed variables in a
+`forall` *effect*, `(forall (?x - package) …)`, are legal HDDL, but this
+grammar accepts only untyped ones. Such an effect is a parse error, and the
+parenthesis hint is then misleading. That is a gap in the parser, not in
+validation. The planner still grounds an unbound variable to its own name.
+Validation now keeps one from reaching it, but a domain built in code rather
+than loaded is not protected.
+
+**Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
+shipped domains had to be fixed to pass. **Payoff:** a model's HDDL mistakes
+come back as a list it can be asked to fix, instead of a segfault or a planner
+that fails every rollout without saying why.
+
 ---
 
 ## 9. Remaining work
@@ -2579,50 +2703,11 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
+The first item of that list, validating a domain at load time, is done: §8.17.
 
 ---
 
-### 9.1 Validate a domain at load time
-
-**The loader barely validates its input, and the mistakes a model makes
-writing HDDL crash the planner or fail silently.** Each case below is a
-one-line corruption of `transport_domain.hddl` or `transport_problem.hddl`, run
-through a normal build:
-
-| mistake | what happens |
-|---|---|
-| a subtask names an undeclared task (`get_too`) | **segfault, no message** |
-| a method for an undeclared task | **segfault, no message** |
-| an undeclared predicate in an effect | **segfault, no message** |
-| an undeclared task in `:htn` | **segfault, no message** |
-| an undeclared predicate in a precondition | runs; every rollout fails with no reason given |
-| a predicate with the wrong arity in a precondition | runs; every rollout fails with no reason given |
-| an undeclared object in `:init` | runs; every rollout fails with no reason given (§8.11 made `tell` drop such facts) |
-| an undeclared type in a parameter list | accepted silently |
-| an undeclared variable in a precondition | accepted silently |
-| an unbalanced parenthesis | an error, but naming a mangled type: `N5boost6spirit2x38sequence…` |
-
-The first crash is `get_subtasks` indexing `ttypes[st.name][i]` with no checks.
-`operator[]` on an undeclared task name inserts an empty vector, and the index
-then runs off its end. The undefined-behaviour sanitizer names the line. The
-other crashes are likely the same pattern elsewhere in the loader, but each
-should be confirmed rather than assumed.
-
-The fix is a validation pass after parsing and before anything is built. It
-should check that every referenced task, action, predicate, type, object and
-variable is declared, and that every use has the declared arity. Each failure
-should produce one message naming the construct, the name and the method or
-action it appears in. That turns all ten rows into something a model can be
-told and asked to correct, and self-correction is what an LLM-to-HDDL pipeline
-runs on. The parser's own error text should name the construct it expected
-rather than print a C++ type.
-
-**Depends on:** nothing. **Risk:** low; it rejects only input that crashes or
-misbehaves now. **Payoff:** the difference between a pipeline that can
-self-correct and one that segfaults. Each of the ten rows should become a
-`test_loader` case.
-
-### 9.2 Fix the `sar3` score function, and stop score functions rebuilding the state
+### 9.1 Fix the `sar3` score function, and stop score functions rebuilding the state
 
 Two problems in one function, which is why they go together.
 
@@ -2646,7 +2731,7 @@ divided by its arity. A small `count_facts(head)` and a `holds(fact)` on
 scores wherever not everyone is rescued. **Payoff:** a correct scorer and 8.8%
 off `sar3`.
 
-### 9.3 Bring the benchmark harness up to date
+### 9.2 Bring the benchmark harness up to date
 
 Three settings in `scripts/benchmark` rest on costs from before §8.4:
 
@@ -2666,7 +2751,7 @@ Three settings in `scripts/benchmark` rest on costs from before §8.4:
 runs, and its baseline is taken fresh anyway. **Payoff:** coverage where it was
 missing, and trustworthy timing for transport.
 
-### 9.4 Make the planner linkable from more than one source file
+### 9.3 Make the planner linkable from more than one source file
 
 The library is header-only, and its free functions are not `inline`. Every
 executable here is one `.cpp`, so nothing has tripped over it. But two
@@ -2681,7 +2766,7 @@ source file, which an RTL-generation pipeline is likely to be. The fix is
 **Depends on:** nothing. **Risk:** none; behaviour-preserving by construction.
 **Payoff:** the planner can be used as a library.
 
-### 9.5 Cleanup
+### 9.4 Cleanup
 
 Each item is small; together they remove traps.
 
@@ -2706,7 +2791,7 @@ Each item is small; together they remove traps.
 
 **Depends on:** nothing. **Risk:** none.
 
-### 9.6 Revamp the task-hierarchy graph
+### 9.5 Revamp the task-hierarchy graph
 
 The graph `--graph` draws is hard to read. It also leaves out what a reader
 most wants from it: which method decomposed each task, and when each action runs.
@@ -2763,12 +2848,12 @@ The implementation stays in `grapher.h`, using the cgraph API it already uses.
 The labels need `agstrdup_html`. The README's description of `--graph` changes
 with it: the graph may now be SVG, and a legend explains it.
 
-**Depends on:** §9.5's two `grapher.h` items, which a rewrite absorbs, and
-§9.4's `inline` if that lands first. **Risk:** low; nothing reads the graph
+**Depends on:** §9.4's two `grapher.h` items, which a rewrite absorbs, and
+§9.3's `inline` if that lands first. **Risk:** low; nothing reads the graph
 but a person. **Payoff:** a graph that shows how a plan was reached, which
 is what one is for when checking a model-written domain.
 
-### 9.7 What is left of performance
+### 9.6 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding
@@ -2786,7 +2871,7 @@ The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding
 
 None of these is large. Expect diminishing returns, and measure each.
 
-**Depends on:** §9.2 for the scorer share. **Risk:** low. **Payoff:** tens of
+**Depends on:** §9.1 for the scorer share. **Risk:** low. **Payoff:** tens of
 percent at most, together.
 
 ---

@@ -15,6 +15,19 @@ namespace parser {
     template <typename Iterator>
     using error_handler = x3::error_handler<Iterator>;
 
+    //x3 names what it expected by the failing rule's name when it has one,
+    //and otherwise by the C++ type of the anonymous sub-parser -- hundreds of
+    //characters of mangled Boost.Spirit template, useless to a person and
+    //worse to a language model asked to fix its input. The usual cause is a
+    //parenthesis missing or extra somewhere before the caret, so say that.
+    inline std::string describe_expectation(std::string const& which) {
+        if (which.rfind("N5boost", 0) == 0 || which.find("boost::spirit") != std::string::npos) {
+            return "the rest of this construct (a parenthesis is probably "
+                   "missing or extra at or before this point)";
+        }
+        return which;
+    }
+
     struct ErrorHandlerBase {
         ErrorHandlerBase();
 
@@ -55,6 +68,7 @@ namespace parser {
         if (iter != id_map.end()) {
             which = iter->second;
         }
+        which = describe_expectation(which);
 
         std::string message = "Error! Expecting: " + which + " here:";
         auto& error_handler = x3::get<x3::error_handler_tag>(context).get();

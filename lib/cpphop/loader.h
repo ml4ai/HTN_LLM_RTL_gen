@@ -14,6 +14,7 @@
 #include <boost/spirit/home/x3/support/ast/variant.hpp>
 #include "kb.h"
 #include "typedefs.h"
+#include "validate.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -693,20 +694,23 @@ std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks subtasks, Tasktypes tty
   return subs;
 }
 
-Domain dom_loader(std::string dom_file) {
-  fs::path filePath = dom_file;
-  if (filePath.extension() == ".hddl") {
-    std::error_code ec;
-    bool exists = fs::exists(filePath,ec);
-    if (exists) {
-      std::ifstream f(dom_file);
-      std::string s_dom((std::istreambuf_iterator<char>(f)),
-                        (std::istreambuf_iterator<char>()));
-      return parse<Domain>(s_dom);
-    }
+//The text of an .hddl file, or an exception saying why there is none.
+inline std::string read_hddl_file(std::string const& file) {
+  fs::path filePath = file;
+  if (filePath.extension() != ".hddl") {
+    throw fs::filesystem_error(filePath.extension().string() + " is an invalid extension, only .hddl is a valid extension!",std::error_code());
+  }
+  std::error_code ec;
+  if (!fs::exists(filePath,ec)) {
     throw fs::filesystem_error("No file "+filePath.filename().string()+" found!",ec);
   }
-  throw fs::filesystem_error(filePath.extension().string() + " is an invalid extension, only .hddl is a valid extension!",std::error_code());
+  std::ifstream f(file);
+  return std::string((std::istreambuf_iterator<char>(f)),
+                     (std::istreambuf_iterator<char>()));
+}
+
+Domain dom_loader(std::string dom_file) {
+  return parse<Domain>(read_hddl_file(dom_file),dom_file);
 }
 
 std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
@@ -921,25 +925,17 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
   return std::make_pair(DD,std::make_pair(ptypes,ttypes));
 }
 
+//Parses, validates (validate.h) and builds a domain on its own. A problem
+//needs its domain to be checked, so use load() or load_hddl() for the pair.
 std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> loadDomain(std::string dom_file) {
-  Domain dom = dom_loader(dom_file);
+  SourceLines lines;
+  Domain dom = parse<Domain>(read_hddl_file(dom_file),dom_file,&lines);
+  validate_hddl(dom,lines);
   return createDomainDef(dom);
 }
 
 Problem prob_loader(std::string prob_file) {
-  fs::path filePath = prob_file;
-  if (filePath.extension() == ".hddl") {
-    std::error_code ec;
-    bool exists = fs::exists(filePath,ec);
-    if (exists) {
-      std::ifstream f(prob_file);
-      std::string s_prob((std::istreambuf_iterator<char>(f)),
-                        (std::istreambuf_iterator<char>()));
-      return parse<Problem>(s_prob);
-    }
-    throw fs::filesystem_error("No file "+filePath.filename().string()+" found!",ec);
-  }
-  throw fs::filesystem_error(filePath.extension().string() + " is an invalid extension, only .hddl is a valid extension!",std::error_code());
+  return parse<Problem>(read_hddl_file(prob_file),prob_file);
 }
 
 ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes) {
@@ -1038,18 +1034,27 @@ ProblemDef loadProblem(std::string prob_file, Ptypes ptypes, Tasktypes ttypes) {
   return createProblemDef(prob,ptypes,ttypes);
 }
 
+//Loads a domain and problem from their text rather than from files -- the
+//form a pipeline that asks a language model for HDDL has them in. The names
+//are what errors are reported against. Throws ParseError for text the grammar
+//rejects, and HDDLError listing every problem validate.h finds, before
+//anything is built.
+std::pair<DomainDef, ProblemDef> load_hddl(std::string const& dom_text,
+                                           std::string const& prob_text,
+                                           std::string const& dom_name = "domain",
+                                           std::string const& prob_name = "problem") {
+  SourceLines dom_lines, prob_lines;
+  Domain dom = parse<Domain>(dom_text,dom_name,&dom_lines);
+  Problem prob = parse<Problem>(prob_text,prob_name,&prob_lines);
+  validate_hddl(dom,dom_lines,&prob,&prob_lines);
+
+  auto [domDef,types] = createDomainDef(dom);
+  auto probDef = createProblemDef(prob,types.first,types.second);
+  domDef.methods[probDef.initM.get_task().first].push_back(probDef.initM);
+  probDef.objects.merge(domDef.constants);
+  return std::make_pair(domDef,probDef);
+}
+
 std::pair<DomainDef, ProblemDef> load(std::string dom_file, std::string prob_file) {
-  auto dom = loadDomain(dom_file);
-  auto probDef = loadProblem(prob_file,dom.second.first,dom.second.second);
-  if (dom.first.head == probDef.domain_name) {
-    dom.first.methods[probDef.initM.get_task().first].push_back(probDef.initM);
-    probDef.objects.merge(dom.first.constants);
-    return std::make_pair(dom.first,probDef);
-  }
-  throw std::invalid_argument("Loaded Domain Definition is for "+
-                              dom.first.head+
-                              ", but was given a Problem Definition "+
-                              probDef.head+
-                              " for Domain Definition "+
-                              probDef.domain_name+"!");
+  return load_hddl(read_hddl_file(dom_file),read_hddl_file(prob_file),dom_file,prob_file);
 }

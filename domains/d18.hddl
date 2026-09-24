@@ -20,7 +20,7 @@
                 (at ?arg0 - human ?arg1 - location)
                 (free ?arg0 - player)
                 (present ?arg0 - rubble ?arg1 - location)
-                (cleaned ?arg0 - room)
+                (cleaned ?arg0 - location)
                 (matched ?arg0 - victim ?arg1 - sickbay)
                 (proximity ?arg0 - player ?arg1 - location)
                 (is_medic ?arg0 - player)
@@ -52,11 +52,6 @@
                              ?pos1 ?pos2 ?pos3 - location ?room - location)
         )
 
-        (:task triage_victim
-                :parameters (?p_1 - player ?v - victim
-                             ?room - location)
-        )
-
         (:task go_triage_victim
                 :parameters (?p_1 - player ?v - victim
                              ?pos ?room - location)
@@ -76,12 +71,6 @@
                 :parameters (?p_1 - player ?v - victim
                              ?pos ?room ?final - location)
         )   
-
-        (:task gather_to_wake
-                :parameters (?p_1 ?p_2 - player 
-                             ?v - victim 
-                             ?pos ?room ?final - location)
-        )
 
         (:task wake_triage_critical
                 :parameters (?p_1 ?p_2 - player 
@@ -117,8 +106,8 @@
                                    (not (awakened ?v)))
                 :ordered-subtasks (and
                        (gather_to_wake ?p_1 ?p_2 ?v ?pos ?room ?final)
-                       (wake_triage_critical ?p_1 ?p_2 ?room ?final)
-                       (evacuate_victim ?p_1 ?final ?sb)
+                       (wake_triage_critical ?p_1 ?p_2 ?v ?final)
+                       (evacuate_victim ?p_1 ?v ?final ?sb)
                 )
         )
         (:method m_carry_victim
@@ -176,22 +165,7 @@
                 :ordered-subtasks (and
                     (wake_critical ?p_1 ?p_2 ?v ?final)
                     (triage_victim ?p_1 ?v ?final)
-                    (type_the_victim ?p_1 ?v ?room))
-        )
-
-        (:method m_gather_to_wake
-                :parameters (?p_1 ?p_2 - player 
-                             ?v - victim 
-                             ?pos ?room ?final - location)
-                :task (gather_to_wake ?p_1 ?p_2 ?v ?pos ?room ?final)
-                :precondition (and (at ?p_1 ?pos)
-                                   (is_medic ?p_1)
-                                   (at ?p_2 ?room)
-                                   (at ?v ?final)
-                                   (not (awakened ?v)))
-                :ordered-subtasks (and
-                    (location ?p_1 ?pos ?final)
-                    (location ?p_2 ?room ?final))
+                    (type_the_victim ?p_1 ?v ?final))
         )
 
         (:method m_go_transport_victim

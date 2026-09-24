@@ -239,7 +239,7 @@
                              ?pos ?room - location)
                 :task (transport_victim ?p_1 ?v ?pos ?room)
                 :precondition (and (at ?p_1 ?pos) 
-                                   (holding ?p_1 ?v)
+                                   (holding ?p_1)
                                    (not 
                                     (or 
                                      (and (healed ?v) (vic_is_type_A ?v) (sb_is_type_A ?room))
