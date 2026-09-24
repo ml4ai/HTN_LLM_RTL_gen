@@ -64,6 +64,57 @@ BOOST_AUTO_TEST_CASE(test_forall_effects) {
 
 }// end of testing quantified effects
 
+//The sar3 score function (planner_doc.md 8.18). It used to count regular
+//rescues only when some critical victim had been rescued too, and to divide by
+//zero on a problem with no victims. It now also counts what it needs from the
+//fact index instead of rebuilding the state as strings.
+BOOST_AUTO_TEST_CASE(test_sar3_scorer) {
+    std::ifstream fd(HTN_DOMAINS_DIR "/sar3.hddl");
+    std::string dom((std::istreambuf_iterator<char>(fd)), std::istreambuf_iterator<char>());
+    std::ifstream fp(HTN_DOMAINS_DIR "/sar3p1.hddl");
+    std::string prob((std::istreambuf_iterator<char>(fp)), std::istreambuf_iterator<char>());
+    //Two more victims: vic2 of type A, and vic3 of no type at all, whom the
+    //domain's rescue effect would still mark rescued_r.
+    auto at = prob.find("vic1 - victim");
+    BOOST_REQUIRE(at != std::string::npos);
+    prob.replace(at, 13, "vic1 vic2 vic3 - victim");
+    auto [domain,problem] = load_hddl(dom, prob);
+
+    auto kb_with = [&](std::vector<std::string> const& facts,
+                       std::vector<std::string> const& drop_objects = {}) {
+        auto objects = problem.objects;
+        for (auto const& o : drop_objects) {
+            objects.erase(o);
+        }
+        KnowledgeBase kb(domain.predicates, objects, domain.typetree);
+        for (auto const& f : problem.initF) {
+            kb.tell(f, false, false);
+        }
+        kb.tell("(vic_is_type_A vic2)", false, false);
+        for (auto const& f : facts) {
+            BOOST_REQUIRE(kb.tell(f, false, false));
+        }
+        kb.update_state();
+        return kb;
+    };
+    std::vector<std::string> plan;
+    //vic1 is critical (50 points); vic2 and vic3 are regular (10 each).
+    auto none = kb_with({});
+    BOOST_TEST(sar3(none, plan) == 0.0);
+    //The bug: with no critical victim rescued this scored 0.
+    auto regular_only = kb_with({"(rescued_r vic2)"});
+    BOOST_TEST(sar3(regular_only, plan) == 10.0/70.0, boost::test_tools::tolerance(1e-12));
+    //vic3 is of neither type A nor B, and still counts against the total, so
+    //rescuing everyone scores exactly 1 rather than more.
+    auto everyone = kb_with({"(rescued_c vic1)", "(rescued_r vic2)", "(rescued_r vic3)"});
+    BOOST_TEST(sar3(everyone, plan) == 1.0, boost::test_tools::tolerance(1e-12));
+    //No victims: nothing to rescue, and not NaN.
+    auto empty = kb_with({}, {"vic1", "vic2", "vic3"});
+    double score = sar3(empty, plan);
+    BOOST_TEST(!std::isnan(score));
+    BOOST_TEST(score == 1.0);
+}
+
 //(either a b) types (planner_doc.md 8.17). The loader used to throw bad_get on
 //one. A parameter or quantified variable of type (either cat dog) must range
 //over the objects of both types and nothing else: never the bird.

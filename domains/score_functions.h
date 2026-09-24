@@ -30,15 +30,16 @@ double delivery_one(KnowledgeBase& kb,std::vector<std::string>& plan) {
 //encodings comparable on plan quality: the insert model is free to emit a
 //drive nothing asked for, and this is what notices.
 double delivery_chain(KnowledgeBase& kb, std::vector<std::string>& plan) {
-  auto facts = kb.get_facts();
-  auto const& dests = facts["dest"];
+  //Asks the fact index for the dest facts and one lookup per package, rather
+  //than rebuilding the whole state as strings with get_facts().
+  auto dests = kb.facts_of("dest");
   if (dests.empty()) {
     return 0.0;
   }
   double delivered = 0.0;
   for (auto const& d : dests) {
-    //"(dest package_0 city_loc_3)" -> "(at package_0 city_loc_3)"
-    if (facts["at"].contains("(at"+d.substr(5))) {
+    //(dest package_0 city_loc_3) is met by (at package_0 city_loc_3).
+    if (kb.holds("at",d)) {
       delivered += 1.0;
     }
   }
@@ -69,39 +70,27 @@ double travel_one(KnowledgeBase& kb, std::vector<std::string>& plan) {
   return 0.0;
 }
 
+//The share of the available points the plan earns: 50 for each critical
+//(type C) victim rescued, 10 for each regular one.
+//
+//"Regular" means what sar3's rescue effect means by it -- a victim that is not
+//type C gets rescued_r -- so the regular total is every victim less the
+//critical ones. It used to be the type A and type B victims, which let a
+//victim of neither type score points it was never counted against.
+//
+//Two faults fixed here (planner_doc.md 8.18). Regular rescues were counted only
+//when rescued_c had any fact at all, a copy-paste slip, so a plan rescuing only
+//regular victims scored nothing for them. And a problem with no victims divided
+//by zero; a NaN in a node's value corrupts UCT's comparisons. With nothing to
+//rescue, every plan has done all there is to do.
 double sar3(KnowledgeBase& kb, std::vector<std::string>& plan) {
-  auto facts = kb.get_facts();
-  double c_vic_count = 0.0;
-  if (facts.find("vic_is_type_C") != facts.end()) {
-    for (auto const& p : facts["vic_is_type_C"]) {
-      c_vic_count += 1.0; 
-    }
+  double critical = kb.count_facts("vic_is_type_C");
+  double regular = std::max(0.0, (double)kb.count_facts("victim") - critical);
+  double p_total = critical*50.0 + regular*10.0;
+  if (p_total == 0.0) {
+    return 1.0;
   }
-  double r_vic_count = 0.0;
-  if (facts.find("vic_is_type_A") != facts.end()) {
-    for (auto const& p : facts["vic_is_type_A"]) {
-      r_vic_count += 1.0;
-    }
-  }
-  if (facts.find("vic_is_type_B") != facts.end()) {
-    for (auto const& p : facts["vic_is_type_B"]) {
-      r_vic_count += 1.0;
-    }
-  }
-  double c_res = 0.0;
-  if (facts.find("rescued_c") != facts.end()) {
-    for (auto const& p : facts["rescued_c"]) {
-      c_res += 1.0;
-    }
-  }
-  double r_res = 0.0;
-  if (facts.find("rescued_c") != facts.end()) {
-    for (auto const& p : facts["rescued_r"]) {
-      r_res += 1.0;
-    }
-  }
-  double p_total = c_vic_count*50.0 + r_vic_count*10.0;
-  double points = c_res*50.0 + r_res*10.0;
+  double points = kb.count_facts("rescued_c")*50.0 + kb.count_facts("rescued_r")*10.0;
   return points/p_total;
 }
 

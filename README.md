@@ -163,6 +163,11 @@ Run with the help flag,
 To see what options are available including how to run the planner with
 different domain and problem definitions and score functions. Score functions
 must be predefined in a similar way to the "delivery\_one" function mentioned above. 
+A score function runs on every finished rollout, so it should ask the
+`KnowledgeBase` only for what it needs: `holds(head, args)`,
+`count_facts(head)` and `facts_of(head)` answer from the fact index, and
+`ask("(ground expression)")` evaluates a ground query. `get_facts()` rebuilds
+the whole state as strings and is too slow to call per rollout. 
 
 ### A note on `--time_limit`
 

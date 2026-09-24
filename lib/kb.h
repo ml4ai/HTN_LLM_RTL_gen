@@ -627,20 +627,7 @@ class KnowledgeBase {
         }
         auto holds = [this](std::string const& head,
                             std::vector<std::string> const& args) {
-          int pid = this->predicate_id(head);
-          if (pid < 0 || this->schema->arity[pid] != args.size()) {
-            return false;
-          }
-          std::vector<int> tup;
-          tup.reserve(args.size());
-          for (auto const& a : args) {
-            int oid = this->object_id(a);
-            if (oid < 0) {
-              return false;
-            }
-            tup.push_back(oid);
-          }
-          return find_tuple(this->relation_of(pid),tup,args.size()) != std::string::npos;
+          return this->holds(head,args);
         };
         auto direct = ::expr::eval_ground(it->second,holds);
 
@@ -722,6 +709,70 @@ class KnowledgeBase {
           return none;
         }
         return this->relation_of(pid);
+      }
+
+      //What a score function needs, answered from the fact index. Score
+      //functions run on every finished rollout; get_facts() rebuilds the whole
+      //state as strings in hash sets, which made sar3's scorer 8.8% of that
+      //domain's runtime just to count four predicates (planner_doc.md 8.18).
+
+      //Whether the ground fact (head args...) holds. False for an unknown
+      //predicate, a wrong arity or an unknown object.
+      bool holds(std::string const& head, std::vector<std::string> const& args) const {
+        int pid = this->predicate_id(head);
+        if (pid < 0 || this->schema->arity[pid] != args.size()) {
+          return false;
+        }
+        std::vector<int> tup;
+        tup.reserve(args.size());
+        for (auto const& a : args) {
+          int oid = this->object_id(a);
+          if (oid < 0) {
+            return false;
+          }
+          tup.push_back(oid);
+        }
+        return find_tuple(this->relation_of(pid),tup,args.size()) != std::string::npos;
+      }
+
+      //How many facts of a predicate hold: the length of its buffer over its
+      //arity. A type is a one-argument predicate, so this also counts a type's
+      //objects. Zero for an unknown predicate.
+      size_t count_facts(std::string const& head) const {
+        int pid = this->predicate_id(head);
+        if (pid < 0) {
+          return 0;
+        }
+        size_t a = this->schema->arity[pid];
+        size_t n = this->relation_of(pid).size();
+        return a == 0 ? (n > 0 ? 1 : 0) : n / a;
+      }
+
+      //The argument lists of every fact of a predicate, as object names. For a
+      //scorer that must look at which facts hold, not just how many.
+      std::vector<std::vector<std::string>> facts_of(std::string const& head) const {
+        std::vector<std::vector<std::string>> out;
+        int pid = this->predicate_id(head);
+        if (pid < 0) {
+          return out;
+        }
+        size_t a = this->schema->arity[pid];
+        auto const& rel = this->relation_of(pid);
+        if (a == 0) {
+          if (!rel.empty()) {
+            out.emplace_back();
+          }
+          return out;
+        }
+        for (size_t off = 0; off + a <= rel.size(); off += a) {
+          std::vector<std::string> args;
+          args.reserve(a);
+          for (size_t i = 0; i < a; i++) {
+            args.push_back(this->schema->obj_name[rel[off+i]]);
+          }
+          out.push_back(std::move(args));
+        }
+        return out;
       }
 
       std::unordered_set<std::string> get_facts(std::string head) {

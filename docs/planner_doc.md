@@ -2742,7 +2742,7 @@ and `test_validation_checks_requirements` in `test_loader`, and
 `test_typed_forall_effects`, `test_either_types` and
 `test_planner_rejects_unbound_names` in `test_MCTS_planner`.
 
-**Still open, on the list as §9.6 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
+**Still open, on the list as §9.5 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
 case-insensitive; and a declaration nothing uses is not reported.
 
 **Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
@@ -2750,6 +2750,51 @@ shipped domains had to be fixed to pass. §8.17.1 widened what parses, and chang
 no plan on any shipped domain. **Payoff:** a model's HDDL mistakes
 come back as a list it can be asked to fix, instead of a segfault or a planner
 that fails every rollout without saying why.
+
+### 8.18 The `sar3` score function, and score functions that rebuild the state — **done**
+
+**It was wrong in three ways.**
+* Regular-victim rescues were counted only if `rescued_c` held of anything: it
+  tested `facts.find("rescued_c")` and then counted `facts["rescued_r"]`. A plan
+  rescuing only regular victims scored nothing for them.
+* The total counted type A and type B victims as the regular ones. The domain's
+  rescue effect marks *every* victim that is not type C `rescued_r`, so a victim
+  of neither type scored points it was never counted against, and a plan
+  rescuing everyone could score above 1. The regular total is now every victim
+  less the critical ones, which is the domain's own definition.
+* A problem with no victims divided by zero, and a NaN in a node's value
+  corrupts UCT's comparisons. With nothing to rescue it now scores 1: every plan
+  has done all there is to do.
+
+`test_sar3_scorer` fails on the old function in all three places. It scored 0
+for regular rescues alone (now 10/70), 1.17 for rescuing everyone with a victim
+of neither type (now 1), and NaN with no victims (now 1).
+
+**It was slow because it asked for the whole state.** It called
+`kb.get_facts()`, which rebuilds every fact as a string in hash sets, to count
+four predicates, on every finished rollout. `KnowledgeBase` now answers what a
+scorer needs straight from the fact index of §8.11:
+* `count_facts(head)`: a buffer length over an arity.
+* `holds(head, args)`: one tuple lookup. `ask` now uses it too, where it had
+  its own copy.
+* `facts_of(head)`: the argument lists of one predicate.
+
+`sar3` uses `count_facts`, and `delivery_chain` (§8.7) uses `facts_of` and
+`holds`.
+
+**Measured** interleaved against the previous commit, seven repetitions each,
+on total wall time. `sar3`, 3 000 rollouts: 0.236 s to 0.215 s, **1.096×**,
+which is what removing the 8.8% the profile attributed to the scorer predicts
+(1/0.912). `chain_mutex`, 150 rollouts: 1.003×, within noise. Its rollouts cost
+tens of milliseconds, so the scorer was never a visible share there, however
+wasteful. Rollout scores are identical in both, since every `sar3p1` rollout
+rescues its one critical victim and scores 1. `scripts/benchmark --compare`
+reports no semantic difference on any domain. AddressSanitizer and
+UndefinedBehaviorSanitizer are clean over `test_MCTS_planner` and `test_kb`.
+
+**Depends on:** §8.11. **Risk:** changes `sar3` scores wherever not everyone is
+rescued, which no shipped problem reaches. **Payoff:** a correct scorer, and 9%
+off `sar3`.
 
 ---
 
@@ -2770,35 +2815,12 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
-The first item of that list, validating a domain at load time, is done: §8.17.
+The first two items of that list are done: validating a domain at load time
+(§8.17) and the `sar3` score function (§8.18).
 
 ---
 
-### 9.1 Fix the `sar3` score function, and stop score functions rebuilding the state
-
-Two problems in one function, which is why they go together.
-
-**It is wrong.** It checks `facts.find("rescued_c")` and then counts
-`facts["rescued_r"]` — a copy-paste slip. Regular-victim rescues count only if
-at least one critical victim was also rescued, so a plan rescuing only regular
-victims scores 0 for them. The benchmark cannot see this, because every `sar3`
-rollout rescues everyone and scores 1.0. The function also divides by
-`p_total`, which is zero on a problem with no victims. The result is NaN, and
-a NaN in a node's value corrupts UCT's comparisons.
-
-**It is slow.** It is **8.8% of `sar3`'s entire runtime**. It runs on every
-finished rollout and calls `kb.get_facts()`, which rebuilds every fact in the
-state as a string into hash sets, only to count four predicates.
-`delivery_chain`, written in §8.7, has the same cost for the same reason. The
-id-based store of §8.11 can count a predicate's facts as a buffer length
-divided by its arity. A small `count_facts(head)` and a `holds(fact)` on
-`KnowledgeBase` would let score functions ask for what they need.
-
-**Depends on:** nothing. **Risk:** low, but fixing the bug changes `sar3`'s
-scores wherever not everyone is rescued. **Payoff:** a correct scorer and 8.8%
-off `sar3`.
-
-### 9.2 Bring the benchmark harness up to date
+### 9.1 Bring the benchmark harness up to date
 
 Three settings in `scripts/benchmark` rest on costs from before §8.4:
 
@@ -2818,7 +2840,7 @@ Three settings in `scripts/benchmark` rest on costs from before §8.4:
 runs, and its baseline is taken fresh anyway. **Payoff:** coverage where it was
 missing, and trustworthy timing for transport.
 
-### 9.3 Make the planner linkable from more than one source file
+### 9.2 Make the planner linkable from more than one source file
 
 The library is header-only, and its free functions are not `inline`. Every
 executable here is one `.cpp`, so nothing has tripped over it. But two
@@ -2833,7 +2855,7 @@ source file, which an RTL-generation pipeline is likely to be. The fix is
 **Depends on:** nothing. **Risk:** none; behaviour-preserving by construction.
 **Payoff:** the planner can be used as a library.
 
-### 9.4 Cleanup
+### 9.3 Cleanup
 
 Each item is small; together they remove traps.
 
@@ -2858,7 +2880,7 @@ Each item is small; together they remove traps.
 
 **Depends on:** nothing. **Risk:** none.
 
-### 9.5 Revamp the task-hierarchy graph
+### 9.4 Revamp the task-hierarchy graph
 
 The graph `--graph` draws is hard to read. It also leaves out what a reader
 most wants from it: which method decomposed each task, and when each action runs.
@@ -2915,12 +2937,12 @@ The implementation stays in `grapher.h`, using the cgraph API it already uses.
 The labels need `agstrdup_html`. The README's description of `--graph` changes
 with it: the graph may now be SVG, and a legend explains it.
 
-**Depends on:** §9.4's two `grapher.h` items, which a rewrite absorbs, and
-§9.3's `inline` if that lands first. **Risk:** low; nothing reads the graph
+**Depends on:** §9.3's two `grapher.h` items, which a rewrite absorbs, and
+§9.2's `inline` if that lands first. **Risk:** low; nothing reads the graph
 but a person. **Payoff:** a graph that shows how a plan was reached, which
 is what one is for when checking a model-written domain.
 
-### 9.6 Finish the parser: case and warnings
+### 9.5 Finish the parser: case and warnings
 
 Left over from §8.17.1, which closed the rest of the parser's gaps.
 
@@ -2941,7 +2963,7 @@ Left over from §8.17.1, which closed the rest of the parser's gaps.
 is opt-in or decided first. **Payoff:** fewer rejections of HDDL a model writes in
 the wrong case, and feedback on mistakes that are not errors.
 
-### 9.7 What is left of performance
+### 9.6 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding
@@ -2959,7 +2981,7 @@ The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding
 
 None of these is large. Expect diminishing returns, and measure each.
 
-**Depends on:** §9.1 for the scorer share. **Risk:** low. **Payoff:** tens of
+**Depends on:** nothing; the scorer share went with §8.18. **Risk:** low. **Payoff:** tens of
 percent at most, together.
 
 ---
