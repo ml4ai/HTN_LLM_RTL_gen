@@ -174,9 +174,10 @@ the whole state as strings and is too slow to call per rollout.
 `--time_limit` (or `-T`) is the budget for **each planning decision**, and MCTS
 always spends all of it, so the total run is roughly the budget times the number
 of decisions. At the default of 1000 ms the transport domain above takes about
-30 seconds over its 29 decisions. Passing a budget larger than a domain needs
-only makes the run longer, never better: `simple_travel` is comfortable at
-`-T 500`.
+30 seconds over its 29 decisions. Far less is enough: across five seeds every
+shipped domain solved reliably at 25 ms per decision, except `transport` (50 ms)
+and the chain instances (about 1000 ms, because a single rollout there can take
+hundreds of milliseconds). See [docs/planner\_doc.md](docs/planner_doc.md) §8.19.
 
 Preconditions are evaluated directly against an index of the ground facts
 rather than by a solver, which is what makes those numbers what they are — the
@@ -197,9 +198,11 @@ is meant to preserve behaviour:
     scripts/benchmark --compare before.json
 
 It exits non-zero if the plans, scores or final states moved, and prints timing
-deltas without failing on them. The default run takes about 40 seconds;
-`--full` swaps the fixed-iteration runs for the real time-limited planner and
-takes roughly 20 minutes. See [docs/planner\_doc.md](docs/planner_doc.md) §6.5.
+deltas above its measured run-to-run noise (15%) without failing on them. The
+default run takes about 15 seconds; `--full` swaps the fixed-iteration runs for
+the real time-limited planner and takes about 3 minutes. A baseline must come
+from the same harness version, seed and mode, and `--compare` says so up front
+if it does not. See [docs/planner\_doc.md](docs/planner_doc.md) §6.5 and §8.19.
 
 Passing the `--graph` (or `-g`) flag saves a visual representation of the task
 hierarchy behind the returned plan as a png. By default it is written to the

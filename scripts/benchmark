@@ -8,7 +8,7 @@
 
 Two kinds of number come back, and they are read differently.
 
-  Semantic fields -- rollout_scores, rollout_failed, plan, plan_len,
+  Semantic fields -- rollout_scores_hash, rollout_failed, plan, plan_len,
   final_state_hash -- are driven by the seeded RNG, not the clock. A change to
   any of them means behaviour changed. For a refactor that is supposed to
   preserve behaviour, that is a failure, and --compare exits non-zero.
@@ -20,8 +20,12 @@ Two kinds of number come back, and they are read differently.
   change to the tree search is invisible without it.
 
   Timing fields are informational. They vary with machine load, so --compare
-  reports the delta but never fails on it. Compare medians, not means: a single
-  unlucky rollout can cost several times the typical one.
+  reports the delta but never fails on it. Read the median and the mean
+  together. The median is steady but blind to the tail, and the tail is where
+  a change can hide its cost: a single unlucky rollout can cost several times
+  the typical one, and planner_doc.md 8.16 once reported 2x from median
+  rollouts where total time was 10x. For a real speed claim, time the two builds
+  interleaved over many runs; this harness runs each domain once.
 
   rng_after sits in between. It is a tripwire on control flow -- it moves if the
   search makes a different number of random draws -- so it is more sensitive
@@ -40,35 +44,62 @@ ROOT = os.path.dirname(HERE)
 
 # name, domain, problem, scorer, rollouts, plan_iters, plan time limit, plan sims
 #
-# Counts are per-domain on purpose. transport costs seconds per rollout (see
-# planner_doc.md 6.1), so it gets few of them and is skipped entirely by the
-# deterministic plan check -- even two fixed iterations take nine minutes there.
-# plan_iters of 0 means "no deterministic plan in the default run"; the
-# time-limited budgets are the smallest that reliably solve each domain and are
-# only used by --full.
-# Rollout counts are sized so each domain is timed over enough work to be
-# meaningful. They were raised once the direct evaluator (6.6) put several
-# domains into the tens of microseconds, where a handful of samples is mostly
-# scheduler noise. Raising them changes rollout_scores and rng_after, so a
-# baseline taken before that change will not compare.
+# Rollout counts give each domain roughly half a second of rollout work, or at
+# least a few hundred rollouts, so its timing is read over enough samples to
+# mean something. They are set from per-rollout costs measured for
+# planner_doc.md 8.19. The fastest domains' rollouts take about ten
+# microseconds, and at the old counts of 30-200 a domain was timed over about
+# a millisecond of work in all, mostly scheduler noise.
+#
+# plan_iters is the deterministic planner check: a fixed number of MCTS
+# iterations per decision, reproducible where the time-limited run is not, and
+# the only thing that exercises expansion, selection, backprop and the commit
+# loop. Every domain has one. transport used to be skipped, on a cost
+# ("nine minutes") from before 8.4; it now takes a fraction of a second.
+#
+# The time limit and simulations are used only by --full. Each limit is about
+# four times the smallest that solved all of five seeds (8.19), which is
+# margin for a slower or busier machine.
+#
+# Changing a rollout count changes the rollout scores and rng_after, so a
+# baseline taken with other counts will not compare; the payload records the
+# harness FORMAT so --compare can say so rather than report every domain as
+# changed.
 CONFIGS = [
-    ("transport",     "transport_domain.hddl", "transport_problem.hddl",           "delivery_one",   5,  0, 20000, 5),
-    ("simple_travel", "simple_travel.hddl",    "simple_travel_problem.hddl",       "travel_one",    30, 30,   500, 5),
-    ("sar3",          "sar3.hddl",             "sar3p1.hddl",                      "sar3",          50,  8,  4000, 5),
-    ("d18_gather",    "d18.hddl",              "problem_gather_wake_evacuate.hddl","simple",        50, 12,  2000, 5),
-    ("d18_p18",       "d18.hddl",              "p18.hddl",                         "simple",        50, 12,  2000, 5),
-    ("forall_test",   "forall_test.hddl",      "forall_test_problem.hddl",         "simple",       100, 30,   300, 5),
-    ("atom_test",     "atom_test.hddl",        "atom_test_problem.hddl",           "simple",       200, 30,   300, 5),
+    ("transport",     "transport_domain.hddl", "transport_problem.hddl",           "delivery_one",   150, 10,  200, 5),
+    ("simple_travel", "simple_travel.hddl",    "simple_travel_problem.hddl",       "travel_one",   20000, 30,  100, 5),
+    ("sar3",          "sar3.hddl",             "sar3p1.hddl",                      "sar3",          6000,  8,  100, 5),
+    ("d18_gather",    "d18.hddl",              "problem_gather_wake_evacuate.hddl","simple",        6000, 12,  100, 5),
+    ("d18_p18",       "d18.hddl",              "p18.hddl",                         "simple",        6000, 12,  100, 5),
+    ("forall_test",   "forall_test.hddl",      "forall_test_problem.hddl",         "simple",       40000, 30,  100, 5),
+    ("atom_test",     "atom_test.hddl",        "atom_test_problem.hddl",           "simple",      100000, 30,  100, 5),
     # One of the 8.7 encodings, so the transport_* variant domains and the
     # delivery_chain scorer stay covered by the regression harness. The other
     # four are slower and are compared against each other by
     # scripts/goto_experiment, which is where that question belongs.
-    ("chain_mutex",   "transport_mutex_left.hddl", "transport_chain_b.hddl",       "delivery_chain", 20, 6, 4000, 5),
+    ("chain_mutex",   "transport_mutex_left.hddl", "transport_chain_b.hddl",       "delivery_chain",  20,  6, 4000, 5),
 ]
 
-SEMANTIC = ["rollout_scores", "rollout_failed", "plan_ok", "plan_len", "plan", "final_state_hash"]
+# Bumped whenever a change to CONFIGS or to planner_bench's output makes an
+# older baseline incomparable.
+FORMAT = 2
+
+SEMANTIC = ["rollout_scores_hash", "rollout_scores", "rollout_failed", "plan_ok", "plan_len", "plan", "final_state_hash"]
 TRIPWIRE = ["rng_after"]
 TIMING = ["rollout_ms_median", "rollout_ms_mean", "plan_wall_ms"]
+
+# Run-to-run noise, measured by comparing identical builds against each other
+# (planner_doc.md 8.19): up to about 7% on transport's rollout times and 12% on
+# the microsecond-scale ones. A delta is printed only above NOISE_PCT, and a
+# planning time only when it is long enough to time: the fixed-iteration plans
+# of the small domains finish in a fraction of a millisecond.
+NOISE_PCT = 15.0
+MIN_PLAN_MS = 5.0
+
+# Rough wall time of the whole run, printed before it starts. Measured with
+# these CONFIGS (8.19).
+DEFAULT_SECONDS = 15
+FULL_SECONDS = 200
 
 
 def find_bench(explicit):
@@ -107,9 +138,9 @@ def run_one(bench, cfg, full, seed):
     return out
 
 
-def fmt(v, width=10):
+def fmt(v, width=10, places=4):
     try:
-        return f"{float(v):{width}.2f}"
+        return f"{float(v):{width}.{places}f}"
     except (TypeError, ValueError):
         return f"{str(v):>{width}}"
 
@@ -131,8 +162,24 @@ def main():
     if not configs:
         sys.exit(f"error: no config matches {args.only!r}")
 
-    if args.full:
-        print("running in --full mode; transport alone takes ~17 minutes\n")
+    # Refuse an incomparable baseline before spending the run on it.
+    base = None
+    if args.compare:
+        with open(args.compare) as f:
+            base = json.load(f)
+        if base.get("format") != FORMAT:
+            sys.exit(f"error: {args.compare} was saved by harness format {base.get('format', 1)}, "
+                     f"and this is format {FORMAT}; its rollout counts or fields differ, so\n"
+                     f"       every domain would read as changed. Save a fresh baseline from the\n"
+                     f"       commit you are comparing against (scripts/benchmark --save).")
+        for key, what in (("full", "--full"), ("seed", "--seed")):
+            if base.get(key) != getattr(args, key):
+                sys.exit(f"error: the baseline was taken with {what} {base.get(key)} and this run "
+                         f"uses {getattr(args, key)}; compare like with like.")
+
+    if not args.only:
+        seconds = FULL_SECONDS if args.full else DEFAULT_SECONDS
+        print(f"{'--full: ' if args.full else ''}about {seconds} seconds in all\n")
 
     results = {}
     print(f"{'domain':<15}{'roll ms (med)':>14}{'  scores':<34}{'rng_after':>18}")
@@ -157,7 +204,7 @@ def main():
             else:
                 print(f"{'':<15}  {kind} FAILED: {res.get('plan_error', '?')[:60]}")
 
-    payload = {"seed": args.seed, "full": args.full, "results": results}
+    payload = {"format": FORMAT, "seed": args.seed, "full": args.full, "results": results}
 
     if args.save:
         with open(args.save, "w") as f:
@@ -165,8 +212,6 @@ def main():
         print(f"\nbaseline written to {args.save}")
 
     if args.compare:
-        with open(args.compare) as f:
-            base = json.load(f)
         failures, warnings = [], []
         print("\n" + "=" * 81)
         print(f"comparing against {args.compare}")
@@ -189,12 +234,16 @@ def main():
                         a, b = float(old[k]), float(cur[k])
                     except ValueError:
                         continue
+                    if k == "plan_wall_ms" and max(a, b) < MIN_PLAN_MS:
+                        continue
                     if a > 0:
                         pct = 100.0 * (b - a) / a
-                        if abs(pct) >= 5.0:
+                        if abs(pct) >= NOISE_PCT:
                             arrow = "faster" if pct < 0 else "slower"
-                            print(f"  {name}.{k}: {a:.2f} -> {b:.2f} ms  ({abs(pct):.0f}% {arrow})")
+                            print(f"  {name}.{k}: {a:.4f} -> {b:.4f} ms  ({abs(pct):.0f}% {arrow})")
 
+        print(f"  (timing deltas under {NOISE_PCT:.0f}% are within run-to-run noise and not shown;"
+              f" time a speed claim\n   interleaved over many runs, not from one run of this harness)")
         if warnings:
             print("\nwarnings (look, but not necessarily wrong):")
             for w in warnings:

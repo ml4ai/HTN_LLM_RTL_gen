@@ -1145,7 +1145,8 @@ Two caveats worth keeping in mind:
 
 * **`transport` is excluded from the deterministic plan check.** Even *two*
   fixed iterations take about nine minutes there, for the reasons in §6.1. It
-  still contributes rollout timing and scores.
+  still contributes rollout timing and scores. *(No longer true: after §8.4 ten
+  iterations take a fraction of a second, and §8.19 put it back.)*
 * **`rng_after` is a tripwire, not a verdict.** It hashes the RNG state after
   the rollouts, so it moves if the search makes a different number of draws —
   more sensitive than the scores, and sensitive enough that a genuinely
@@ -2742,7 +2743,7 @@ and `test_validation_checks_requirements` in `test_loader`, and
 `test_typed_forall_effects`, `test_either_types` and
 `test_planner_rejects_unbound_names` in `test_MCTS_planner`.
 
-**Still open, on the list as §9.5 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
+**Still open, on the list as §9.4 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
 case-insensitive; and a declaration nothing uses is not reported.
 
 **Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
@@ -2796,6 +2797,81 @@ UndefinedBehaviorSanitizer are clean over `test_MCTS_planner` and `test_kb`.
 rescued, which no shipped problem reaches. **Payoff:** a correct scorer, and 9%
 off `sar3`.
 
+### 8.19 The benchmark harness brought up to date — **done**
+
+`scripts/benchmark`'s settings dated from before §8.4, when a `transport`
+rollout cost seconds. Rollouts are now hundreds to thousands of times cheaper
+(§8.1's figures), so its costs were re-measured and every setting reset from
+the measurements.
+
+**Coverage.** `transport` had no deterministic tree-search check in the default
+run, excused by "even two fixed iterations take nine minutes". Ten iterations
+now take 0.2 s, so it has one: 10 iterations, reaching the full 8-action plan.
+Every domain now exercises expansion, selection, backprop and the commit loop
+in the default run.
+
+**Sample sizes.** Each domain now times about half a second of rollout work,
+not a handful of rollouts:
+
+| domain | rollouts before | now | per rollout |
+|---|---|---|---|
+| `transport` | 5 | 150 | 3.3 ms median, 3.9 mean |
+| `simple_travel` | 30 | 20 000 | 7 µs |
+| `sar3`, `d18_gather`, `d18_p18` | 50 | 6 000 | 60–80 µs |
+| `forall_test` | 100 | 40 000 | 11 µs |
+| `atom_test` | 200 | 100 000 | 4 µs |
+| `chain_mutex` | 20 | 20 | 9 ms median, 73 ms mean |
+
+At the old counts the fast domains were timed over about a millisecond of work
+in all. Five `transport` samples produced the false "39% slower" of §8.13.
+
+**`--full` budgets** are set from a search. For each domain, the budget per
+decision rose through 25, 50, 100, 200, 400 and 1000 ms until five seeds out
+of five solved. Each budget is then about four times that, as margin for a
+slower or busier machine:
+
+| domain | old budget | smallest solving 5/5 | new budget |
+|---|---|---|---|
+| `transport` | 20 000 ms | 50 ms (25 ms: 3/5) | 200 ms |
+| `simple_travel`, `sar3`, both `d18`, `forall_test`, `atom_test` | 300–4 000 ms | 25 ms | 100 ms |
+| `chain_mutex` | 4 000 ms | 1 000 ms (400 ms: 2/5) | 4 000 ms, unchanged |
+
+`chain_mutex` needs the most because a single rollout there can take hundreds
+of milliseconds, and a smaller budget ends before one finishes.
+
+**Run times.** The default run takes 12 s, not about 40, while covering more.
+`--full` takes 190 s, not about 20 minutes; `transport`'s part fell from about
+ten minutes to 6 s, and `chain_mutex` is now 174 s of the 190. Each run prints
+its expected time; the old "~17 minutes" was stale.
+
+**Timing that can be trusted, and says how far.** `planner_bench` printed times
+to two decimals of a millisecond, so `atom_test`'s 4 µs rollouts read 0.00 or
+0.01, and the harness reported "100% faster" from rounding. It prints four
+decimals now, and planning times to a microsecond. Comparing identical builds
+against each other (an A/A test) then measured the noise that is left: up to
+about 7% on `transport`'s rollout times, 12% on `simple_travel`'s
+7-microsecond median, and 5–15% on the fixed-iteration planning times, which
+for the small domains are under a millisecond. So `--compare` prints a timing
+delta only above 15%, skips planning times under 5 ms, and says so in its
+output. Three A/A comparisons at those settings printed nothing. The docstring
+no longer says to compare medians, not means: §8.16 first reported 2× from
+median rollouts where total time was 10×, and dismissed a real 29% on `sar3` as
+rounding — the same two-decimal rounding fixed here. It now says to read both,
+and to time a real speed claim interleaved over many runs.
+
+**Output.** Rollout scores are hashed (`rollout_scores_hash`, FNV-1a over all of
+them), with the first twenty printed for reading; at 100 000 rollouts the list
+itself is not something to diff. `rollout_ms_total` is new. The baseline records
+a format number. `--compare` refuses a baseline of another format, or one taken
+with a different `--full` or `--seed`, before running anything, instead of
+reporting every domain as changed. It still exits non-zero on a real
+difference: run with another seed, it flags `sar3`'s changed plan and final
+state.
+
+**Depends on:** nothing. **Risk:** none to the planner; old baselines no longer
+compare, by design. **Payoff:** tree-search coverage on every domain, a default
+run a third as long and a `--full` run a sixth, and timing deltas that are signal.
+
 ---
 
 ## 9. Remaining work
@@ -2815,32 +2891,12 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
-The first two items of that list are done: validating a domain at load time
-(§8.17) and the `sar3` score function (§8.18).
+The first three items of that list are done: validating a domain at load time
+(§8.17), the `sar3` score function (§8.18) and the benchmark harness (§8.19).
 
 ---
 
-### 9.1 Bring the benchmark harness up to date
-
-Three settings in `scripts/benchmark` rest on costs from before §8.4:
-
-* **Transport is excluded from the deterministic tree-search check** because
-  "even two fixed iterations take nine minutes there". Measured now: 0.2–0.4 s.
-  So the most important domain has had no tree-search regression coverage in
-  the default run, for a reason about 2 700× out of date.
-* **Transport gets 5 rollouts**, because a rollout "costs seconds"; it now
-  costs about 3 ms. A median over five samples is what produced the false
-  "39% slower" reading in §8.13.
-* **`--full` gives transport 20 000 ms per decision**, twenty times what the
-  README says it needs. Transport makes about 29 decisions, so that is roughly
-  ten minutes of the "about 20 minutes" the README quotes for `--full`. The
-  script's own "~17 minutes" message is stale too.
-
-**Depends on:** nothing. **Risk:** none. It changes only what the harness
-runs, and its baseline is taken fresh anyway. **Payoff:** coverage where it was
-missing, and trustworthy timing for transport.
-
-### 9.2 Make the planner linkable from more than one source file
+### 9.1 Make the planner linkable from more than one source file
 
 The library is header-only, and its free functions are not `inline`. Every
 executable here is one `.cpp`, so nothing has tripped over it. But two
@@ -2855,7 +2911,7 @@ source file, which an RTL-generation pipeline is likely to be. The fix is
 **Depends on:** nothing. **Risk:** none; behaviour-preserving by construction.
 **Payoff:** the planner can be used as a library.
 
-### 9.3 Cleanup
+### 9.2 Cleanup
 
 Each item is small; together they remove traps.
 
@@ -2880,7 +2936,7 @@ Each item is small; together they remove traps.
 
 **Depends on:** nothing. **Risk:** none.
 
-### 9.4 Revamp the task-hierarchy graph
+### 9.3 Revamp the task-hierarchy graph
 
 The graph `--graph` draws is hard to read. It also leaves out what a reader
 most wants from it: which method decomposed each task, and when each action runs.
@@ -2937,12 +2993,12 @@ The implementation stays in `grapher.h`, using the cgraph API it already uses.
 The labels need `agstrdup_html`. The README's description of `--graph` changes
 with it: the graph may now be SVG, and a legend explains it.
 
-**Depends on:** §9.3's two `grapher.h` items, which a rewrite absorbs, and
-§9.2's `inline` if that lands first. **Risk:** low; nothing reads the graph
+**Depends on:** §9.2's two `grapher.h` items, which a rewrite absorbs, and
+§9.1's `inline` if that lands first. **Risk:** low; nothing reads the graph
 but a person. **Payoff:** a graph that shows how a plan was reached, which
 is what one is for when checking a model-written domain.
 
-### 9.5 Finish the parser: case and warnings
+### 9.4 Finish the parser: case and warnings
 
 Left over from §8.17.1, which closed the rest of the parser's gaps.
 
@@ -2963,7 +3019,7 @@ Left over from §8.17.1, which closed the rest of the parser's gaps.
 is opt-in or decided first. **Payoff:** fewer rejections of HDDL a model writes in
 the wrong case, and feedback on mistakes that are not errors.
 
-### 9.6 What is left of performance
+### 9.5 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding

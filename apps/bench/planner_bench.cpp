@@ -51,6 +51,7 @@
 #include "cpphop/cppMCTShop.h"
 #include <boost/program_options.hpp>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -226,14 +227,36 @@ int main(int argc, char* argv[]) {
       std::cout << "rollout_cutoff=" << cut << "\n";
       std::cout << "max_depth=" << max_depth << "\n";
       std::cout << "restrict_rollouts=" << restrict_rollouts << "\n";
-      std::cout << std::fixed << std::setprecision(2);
+      //Four decimals: the fastest domains' rollouts take about ten
+      //microseconds, which two decimals rounded to 0.01 or 0.00 -- a
+      //"100% faster" out of nothing.
+      std::cout << std::fixed << std::setprecision(4);
       std::cout << "rollout_ms_median=" << median << "\n";
       std::cout << "rollout_ms_mean=" << sum/ms.size() << "\n";
+      std::cout << "rollout_ms_total=" << sum << "\n";
       std::cout << "rollout_ms_min=" << sorted.front() << "\n";
       std::cout << "rollout_ms_max=" << sorted.back() << "\n";
       //The reproducible part. Timing above will differ between machines; these
-      //should not.
-      std::cout << "rollout_scores=" << scores.str() << "\n";
+      //should not. Every score goes into the hash; the first few are printed
+      //as well, so a difference can be read without the whole list, which for
+      //a timing-sized run is thousands of entries.
+      std::string all = scores.str();
+      uint64_t h = 1469598103934665603ULL;  //FNV-1a
+      for (unsigned char c : all) {
+        h = (h ^ c) * 1099511628211ULL;
+      }
+      std::string head = all;
+      size_t cut_at = 0;
+      for (int n = 0; n < 20 && cut_at != std::string::npos; n++) {
+        cut_at = head.find(',', cut_at == 0 ? 0 : cut_at + 1);
+      }
+      if (cut_at != std::string::npos) {
+        head = head.substr(0,cut_at) + ",...";
+      }
+      std::ostringstream hs;
+      hs << std::hex << std::setw(16) << std::setfill('0') << h;
+      std::cout << "rollout_scores=" << head << "\n";
+      std::cout << "rollout_scores_hash=" << hs.str() << "\n";
       std::ostringstream rng;
       rng << std::hex << std::setw(16) << std::setfill('0') << g();
       std::cout << "rng_after=" << rng.str() << "\n";
@@ -277,7 +300,7 @@ int main(int argc, char* argv[]) {
       std::cout.rdbuf(saved);
 
       std::cout << "plan_ok=" << (ok ? "1" : "0") << "\n";
-      std::cout << std::fixed << std::setprecision(1) << "plan_wall_ms=" << wall << "\n";
+      std::cout << std::fixed << std::setprecision(3) << "plan_wall_ms=" << wall << "\n";
       if (ok) {
         std::cout << "plan_len=" << plan_len << "\n";
         std::cout << "plan=" << plan_joined << "\n";
