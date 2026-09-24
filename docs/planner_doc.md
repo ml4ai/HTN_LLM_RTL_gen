@@ -1267,7 +1267,7 @@ Two caveats, both important:
    protection-by-pruning does not.
 
 Neither caveat is a reason to avoid it, but both are reasons not to make it the
-default without measuring. It is §9.2.
+default without measuring. It is §9.1.
 
 ---
 
@@ -1516,7 +1516,8 @@ malloc, 30.3% our own code, 10% memcpy/memset**. The allocation is
 per search node, one per binding in `apply_binding`. Two things would move it,
 larger first: interning, which §8.5 also left open, and a trail-based state.
 Interning has since been done, in §8.11–§8.14, after the search-space work of
-§8.7–§8.10 was put ahead of it. The trail-based state is §9.1.
+§8.7–§8.10 was put ahead of it. The trail-based state was done afterwards,
+as structural sharing rather than a trail, in §8.15.
 
 **Depends on:** §8.4. **Risk:** low, discharged. **Payoff:** 1.2x–117x on top
 of §8.5.
@@ -2279,48 +2280,82 @@ help: that dive is not deep, it is wide.
 the multi-seed quality comparison. **Payoff:** 1.03×–1.25×, plus a random
 stream that no longer depends on the standard library's hash table.
 
+### 8.15 Stop copying unchanged state — **done, as structural sharing rather than a trail**
+
+This item was proposed as a trail: apply an action's effects in place and undo
+them on the way back out, instead of copying the fact base for every successor.
+
+**The premise was checked before building anything, and it had weakened.** The
+trail was motivated by what a copy cost *before* §8.11, when the fact base was
+strings — an allocation per predicate, per tuple and per argument. §8.11 made
+it flat integer arrays. Profiling `transport` and `chain_b` put everything to do
+with state — copying, destroying, applying effects — at **7.8% of runtime**, so a
+perfect trail could remove only the copy-and-destroy part, about 5%.
+
+**And a trail does not fit this planner**, which is the difficulty the item
+itself recorded. The MCTS tree keeps many states alive at once, one per node, so
+there is no single stack of changes to unwind.
+
+**What does fit is structural sharing.** Each predicate's buffer is now held by a
+`shared_ptr` and copied only when a state writes to it. A successor shares every
+relation its action left alone, and an action touches one to three relations out
+of 12–36. Copying a `KnowledgeBase` becomes one allocation plus a refcount bump
+per predicate, where it was an allocation and a copy per predicate. Nothing is
+unwound, so it is safe with any number of live states. It gets what a trail was
+for without a trail's constraint.
+
+Two details carry the correctness. Every write goes through `relation_mut`,
+which detaches a shared buffer before returning it, so a write can never be seen
+by a state it was not made in. And `tell` looks before it writes: adding a fact
+that already holds, or removing one that does not, takes no copy.
+
+**Measured, and the ceiling was wrong in the favourable direction.** Interleaved
+A/B, seven repetitions, about a second of rollouts each. The result is
+byte-identical — scores and RNG state match on every domain:
+
+| domain | relations | before | after | |
+|---|---|---|---|---|
+| `sar3` | 36 | 0.594 s | 0.511 s | **1.16×** |
+| `simple_travel` | 12 | 0.251 s | 0.215 s | **1.17×** |
+| `d18_gather` | 27 | 1.057 s | 0.926 s | **1.14×** |
+| `d18_p18` | 27 | 0.749 s | 0.663 s | 1.13× |
+| `transport` | 12 | 0.821 s | 0.784 s | 1.05× |
+| `chain_b` / `mutex_left` | 14 | 0.916 s | 0.879 s | 1.04× |
+
+The ~5% ceiling came from profiling `transport` and `chain_b`, and those turn out
+to be the two domains where state copying matters *least*. The ceiling was
+measured on the least favourable cases and then treated as general. The likely
+reasons the others gain more are relation count for `sar3` and `d18`, since
+sharing saves a copy per untouched relation, and, for `simple_travel`, how
+little else each step does, which makes the copy a larger share of it. Those
+explanations fit the numbers but were not separately measured.
+
+**The gain is all sharing.** The change also made `type_extension` return a
+reference rather than a copy of the relation. Timed on its own that part came
+to 0.99–1.00× — nothing measurable. It stays, being harmless, but it bought
+nothing.
+
+**Depends on:** §8.11. **Risk:** low — byte-identical; discharged. **Payoff:**
+1.13×–1.17× on the predicate-heavy and lightweight domains, 1.04×–1.05× on
+the task-heavy ones.
+
 ---
 
 ## 9. Remaining work
 
-Ordered by what to do next. Three items are left, and they are of three
-different kinds.
+Two items are left, and only one of them is substantive.
 
-**The search-space and cost-per-node work is done.** §8.7–§8.10 dealt with the
-number of nodes, and §8.11–§8.14 took the representation apart: the fact base,
-the evaluator's bindings, the redundant copies on the task side, and the task
-network's container. What survives of that line of work is §9.1, and it is a
-different kind of change from everything before it — a redesign of how a
-successor gets its state, not a cheaper version of the same thing.
+**Every performance item is done.** §8.7–§8.10 dealt with the number of nodes,
+§8.11–§8.14 took the representation apart, and §8.15 stopped successors copying
+state they did not change. That was the reason this list was ordered
+performance-first: the one semantic change left has to be evaluated by running
+the planner a great deal, and the planner is now fast enough for that.
 
-* **§9.1 — a trail-based state.** Cost per node, and the last large lever of that
-  kind. Deliberately after the representation work, which has now stopped
-  changing the structures it would build on.
-* **§9.2 — what a method precondition should mean.** Semantics. The one item
-  that changes what the planner *answers* rather than how fast, and the reason
-  this whole list was ordered performance-first: evaluating it means running
-  the planner a great deal.
-* **§9.3 — loose ends.** Hygiene; fold in anywhere.
+* **§9.1 — what a method precondition should mean.** The one item that changes
+  what the planner *answers*, not how fast it answers.
+* **§9.2 — loose ends.** Hygiene; fold in anywhere.
 
-**If the near-term goal is generating and running many small RTL domains**
-rather than planning on harder instances, §9.2 should come before §9.1: on
-small domains the planner is already fast, and what matters is whether it means
-what the domain author meant.
-
-### 9.1 Trail-based apply/undo state
-
-Also left over from §8.6. Apply an action's effects and undo them on the way
-back out, instead of copying the fact base per successor. It removes copying
-rather than shrinking it, which is why it came after the interning of
-§8.11–§8.14 shrank what there is to copy.
-
-A bigger design change than it sounds: the MCTS tree holds states, not just the
-rollout, so the trail cannot simply be unwound at every level.
-
-**Depends on:** §8.11–§8.14. **Risk:** medium-high. **Payoff:** removes the copy rather
-than making it cheaper.
-
-### 9.2 Decide what a method precondition should mean here
+### 9.1 Decide what a method precondition should mean here
 
 §7.4 sets out a protected-condition set: register the literals a synthesised
 precondition action checked, keep them protected until the method's subtasks
@@ -2335,12 +2370,12 @@ planner would find. Measure before defaulting it on.
 
 It sits last among the substantive items for the reason §8's sequence gave:
 every semantic change has to be evaluated by running the planner a great deal,
-and that is cheaper after §9.1. It is not blocked by it, so if the
+and every item ahead of it is now done. It was never blocked by them, so if the
 research needs it sooner, it can move.
 
 **Depends on:** §8.1 and §8.4. **Risk:** medium, and it changes results.
 
-### 9.3 Loose ends
+### 9.2 Loose ends
 
 Both are recorded as open items in §4.2 and neither is worth its own work
 session:

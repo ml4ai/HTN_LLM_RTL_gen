@@ -178,7 +178,33 @@ class KnowledgeBase {
       //KnowledgeBase -- one per search node, one per binding in apply_binding
       //-- should be a handful of integer buffers rather than an allocation per
       //predicate, per tuple and per argument.
-      std::vector<std::vector<int>> relations;
+      //Each predicate's buffer is shared between states and copied only when a
+      //state writes to it (copy-on-write); a null entry is an empty relation.
+      //
+      //This is the planner's answer to "stop copying the fact base per
+      //successor". A trail -- apply effects in place, undo them on the way
+      //back -- was the original plan, and it does not fit: the MCTS tree holds
+      //many states alive at once, so there is no single stack to unwind.
+      //Sharing gets what a trail was for without the unwinding. A successor
+      //shares every relation its action did not touch, and an action touches
+      //one to three of a dozen or more (the type predicates alone are several).
+      //Copying a KnowledgeBase is then one allocation and a refcount bump per
+      //predicate, not an allocation and a copy per predicate.
+      std::vector<std::shared_ptr<std::vector<int>>> relations;
+
+      //The one way to get a relation you may write to: detaches it from every
+      //other state first if it is shared, so a write can never be seen by a
+      //state it was not made in.
+      std::vector<int>& relation_mut(int pid) {
+        auto& p = this->relations[pid];
+        if (!p) {
+          p = std::make_shared<std::vector<int>>();
+        }
+        else if (p.use_count() > 1) {
+          p = std::make_shared<std::vector<int>>(*p);
+        }
+        return *p;
+      }
 
       static std::string fact_string(std::string const& head,
                                      std::vector<std::string> const& args) {
@@ -196,7 +222,7 @@ class KnowledgeBase {
         std::string f = "("+this->schema->predicates[pid].first;
         size_t a = this->schema->arity[pid];
         for (size_t i = 0; i < a; i++) {
-          f += " "+this->schema->obj_name[this->relations[pid][off+i]];
+          f += " "+this->schema->obj_name[this->relation_of(pid)[off+i]];
         }
         return f+")";
       }
@@ -274,7 +300,7 @@ class KnowledgeBase {
         //The type predicates were just appended above, so intern now that the
         //signature list is final.
         sch.intern();
-        this->relations.assign(sch.predicates.size(),{});
+        this->relations.assign(sch.predicates.size(),nullptr);
         for (auto const& [o1,o2] : sch.objects) {
           int t = typetree.find_type(o2);
           int oid = sch.obj_id.at(o1);
@@ -283,9 +309,9 @@ class KnowledgeBase {
                 t2.type == o2) {
               //Type facts are unary: (type object).
               int pid = sch.pred_id.at(t2.type);
-              auto& rel = this->relations[pid];
-              if (std::find(rel.begin(),rel.end(),oid) == rel.end()) {
-                rel.push_back(oid);
+              if (std::find(this->relation_of(pid).begin(),this->relation_of(pid).end(),oid)
+                  == this->relation_of(pid).end()) {
+                this->relation_mut(pid).push_back(oid);
               }
             } 
           }
@@ -343,7 +369,7 @@ class KnowledgeBase {
           if (p.second.empty()) {
             this->smt_state += "(declare-fun "+p.first+" () Bool)\n";
             int pid0 = this->predicate_id(p.first);
-            if (pid0 >= 0 && !this->relations[pid0].empty()) {
+            if (pid0 >= 0 && !this->relation_of(pid0).empty()) {
               this->smt_state += "(assert "+p.first+")\n";
             }
             else {
@@ -353,7 +379,7 @@ class KnowledgeBase {
           }
           int pid = this->predicate_id(p.first);
           if (pid >= 0) {
-            if (!this->relations[pid].empty()) {
+            if (!this->relation_of(pid).empty()) {
               this->smt_state += "(declare-fun "+p.first+" (";
               std::string pred_assert = "(assert (forall (";
               int i = 0;
@@ -366,7 +392,7 @@ class KnowledgeBase {
               }
               pred_assert += ") (= ("+p.first+var_assert+") (or ";
               size_t ar = this->schema->arity[pid];
-              auto const& rel = this->relations[pid];
+              auto const& rel = this->relation_of(pid);
               for (size_t off = 0; ar > 0 && off + ar <= rel.size(); off += ar) {
                 pred_assert += "(and ";
                 for (size_t j = 0; j < ar; j++) {
@@ -471,11 +497,14 @@ class KnowledgeBase {
           }
           tup.push_back(it->second);
         }
-        auto& rel = this->relations[pid];
         size_t a = this->schema->arity[pid];
-        size_t at = this->find_tuple(rel,tup,a);
+        //Look before writing: relation_mut detaches a shared buffer, and adding
+        //a fact that already holds or removing one that does not should not
+        //cost a copy.
+        size_t at = this->find_tuple(this->relation_of(pid),tup,a);
         if (remove) {
           if (at != std::string::npos) {
+            auto& rel = this->relation_mut(pid);
             rel.erase(rel.begin()+at,rel.begin()+at+(a == 0 ? 1 : a));
           }
           if (update_state) {
@@ -484,6 +513,7 @@ class KnowledgeBase {
           return true;
         }
         if (at == std::string::npos) {
+          auto& rel = this->relation_mut(pid);
           if (a == 0) {
             //A propositional atom has no arguments; one sentinel entry records
             //that it holds.
@@ -577,7 +607,7 @@ class KnowledgeBase {
             }
             tup.push_back(oid);
           }
-          return find_tuple(this->relations[pid],tup,args.size()) != std::string::npos;
+          return find_tuple(this->relation_of(pid),tup,args.size()) != std::string::npos;
         };
         auto direct = ::expr::eval_ground(it->second,holds);
 
@@ -641,18 +671,24 @@ class KnowledgeBase {
       //[k*arity, (k+1)*arity). Empty if the predicate holds of nothing.
       std::vector<int> const& relation_of(int pid) const {
         static const std::vector<int> none;
-        return pid < 0 ? none : this->relations[pid];
+        if (pid < 0 || !this->relations[pid]) {
+          return none;
+        }
+        return *this->relations[pid];
       }
 
       //Objects of a given type, as ids. Types are unary predicates asserted for
       //every object and all of its ancestors (see initialize), so a type's
       //extension is just its relation.
-      std::vector<int> type_extension(std::string const& type) const {
+      //By reference: it used to return the relation by value, a copy per call,
+      //and the evaluator calls it once per unbound parameter per query.
+      std::vector<int> const& type_extension(std::string const& type) const {
+        static const std::vector<int> none;
         int pid = this->predicate_id(type);
         if (pid < 0 || this->schema->arity[pid] != 1) {
-          return {};
+          return none;
         }
-        return this->relations[pid];
+        return this->relation_of(pid);
       }
 
       std::unordered_set<std::string> get_facts(std::string head) {
@@ -662,7 +698,7 @@ class KnowledgeBase {
           return out;
         }
         size_t a = this->schema->arity[pid];
-        auto const& rel = this->relations[pid];
+        auto const& rel = this->relation_of(pid);
         if (a == 0) {
           if (!rel.empty()) {
             out.insert("("+head+")");
@@ -690,7 +726,7 @@ class KnowledgeBase {
           return out;
         }
         for (size_t pid = 0; pid < this->relations.size(); pid++) {
-          if (this->relations[pid].empty()) {
+          if (this->relation_of(pid).empty()) {
             continue;
           }
           out[this->schema->predicates[pid].first] =
