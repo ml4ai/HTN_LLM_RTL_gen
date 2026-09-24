@@ -2564,13 +2564,168 @@ concentrated in the tail.
 
 ## 9. Remaining work
 
-**Nothing on the list is left.** §8.7–§8.10 dealt with the size of the search
+The list from §8 is finished: §8.7–§8.10 dealt with the size of the search
 space, §8.11–§8.15 with the cost of each node, §8.16 with what a method
-precondition means, and the loose ends — §4.1 notes 17 and 18 — are closed.
+precondition means, and §4.1 notes 17 and 18 closed the loose ends. The one
+choice that work raised has been made: `at_start` is the default (§8.16.2).
 
-The one choice that work raised has been made: `at_start` is the default,
-confirmed with the corrected costs in hand, and `protected` stays available as
-an option rather than a pending decision (§8.16.2).
+What follows came out of a re-scan after that work. The scan used a build with
+`-Wall -Wextra -Wshadow`, an AddressSanitizer and UndefinedBehaviorSanitizer
+build run over the tests and 70 benchmark configurations covering every domain
+and every switch, fresh profiles, ten deliberately malformed domains, and a read
+of the files the performance work had not touched. **The sanitizers found
+nothing**, so the copy-on-write state, flat vectors and moves of §8.11–§8.15
+hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
+20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
+
+The order puts first what matters most for domains a language model writes.
+
+---
+
+### 9.1 Validate a domain at load time
+
+**The loader barely validates its input, and the mistakes a model makes
+writing HDDL crash the planner or fail silently.** Each case below is a
+one-line corruption of `transport_domain.hddl` or `transport_problem.hddl`, run
+through a normal build:
+
+| mistake | what happens |
+|---|---|
+| a subtask names an undeclared task (`get_too`) | **segfault, no message** |
+| a method for an undeclared task | **segfault, no message** |
+| an undeclared predicate in an effect | **segfault, no message** |
+| an undeclared task in `:htn` | **segfault, no message** |
+| an undeclared predicate in a precondition | runs; every rollout fails with no reason given |
+| a predicate with the wrong arity in a precondition | runs; every rollout fails with no reason given |
+| an undeclared object in `:init` | runs; every rollout fails with no reason given (§8.11 made `tell` drop such facts) |
+| an undeclared type in a parameter list | accepted silently |
+| an undeclared variable in a precondition | accepted silently |
+| an unbalanced parenthesis | an error, but naming a mangled type: `N5boost6spirit2x38sequence…` |
+
+The first crash is `get_subtasks` indexing `ttypes[st.name][i]` with no checks.
+`operator[]` on an undeclared task name inserts an empty vector, and the index
+then runs off its end. The undefined-behaviour sanitizer names the line. The
+other crashes are likely the same pattern elsewhere in the loader, but each
+should be confirmed rather than assumed.
+
+The fix is a validation pass after parsing and before anything is built. It
+should check that every referenced task, action, predicate, type, object and
+variable is declared, and that every use has the declared arity. Each failure
+should produce one message naming the construct, the name and the method or
+action it appears in. That turns all ten rows into something a model can be
+told and asked to correct, and self-correction is what an LLM-to-HDDL pipeline
+runs on. The parser's own error text should name the construct it expected
+rather than print a C++ type.
+
+**Depends on:** nothing. **Risk:** low; it rejects only input that crashes or
+misbehaves now. **Payoff:** the difference between a pipeline that can
+self-correct and one that segfaults. Each of the ten rows should become a
+`test_loader` case.
+
+### 9.2 Fix the `sar3` score function, and stop score functions rebuilding the state
+
+Two problems in one function, which is why they go together.
+
+**It is wrong.** It checks `facts.find("rescued_c")` and then counts
+`facts["rescued_r"]` — a copy-paste slip. Regular-victim rescues count only if
+at least one critical victim was also rescued, so a plan rescuing only regular
+victims scores 0 for them. The benchmark cannot see this, because every `sar3`
+rollout rescues everyone and scores 1.0. The function also divides by
+`p_total`, which is zero on a problem with no victims. The result is NaN, and
+a NaN in a node's value corrupts UCT's comparisons.
+
+**It is slow.** It is **8.8% of `sar3`'s entire runtime**. It runs on every
+finished rollout and calls `kb.get_facts()`, which rebuilds every fact in the
+state as a string into hash sets, only to count four predicates.
+`delivery_chain`, written in §8.7, has the same cost for the same reason. The
+id-based store of §8.11 can count a predicate's facts as a buffer length
+divided by its arity. A small `count_facts(head)` and a `holds(fact)` on
+`KnowledgeBase` would let score functions ask for what they need.
+
+**Depends on:** nothing. **Risk:** low, but fixing the bug changes `sar3`'s
+scores wherever not everyone is rescued. **Payoff:** a correct scorer and 8.8%
+off `sar3`.
+
+### 9.3 Bring the benchmark harness up to date
+
+Three settings in `scripts/benchmark` rest on costs from before §8.4:
+
+* **Transport is excluded from the deterministic tree-search check** because
+  "even two fixed iterations take nine minutes there". Measured now: 0.2–0.4 s.
+  So the most important domain has had no tree-search regression coverage in
+  the default run, for a reason about 2 700× out of date.
+* **Transport gets 5 rollouts**, because a rollout "costs seconds"; it now
+  costs about 3 ms. A median over five samples is what produced the false
+  "39% slower" reading in §8.13.
+* **`--full` gives transport 20 000 ms per decision**, twenty times what the
+  README says it needs. Transport makes about 29 decisions, so that is roughly
+  ten minutes of the "about 20 minutes" the README quotes for `--full`. The
+  script's own "~17 minutes" message is stale too.
+
+**Depends on:** nothing. **Risk:** none. It changes only what the harness
+runs, and its baseline is taken fresh anyway. **Payoff:** coverage where it was
+missing, and trustworthy timing for transport.
+
+### 9.4 Make the planner linkable from more than one source file
+
+The library is header-only, and its free functions are not `inline`. Every
+executable here is one `.cpp`, so nothing has tripped over it. But two
+translation units that both include `cppMCTShop.h` and `loader.h` fail to link
+with **37 duplicate symbols**, among them `cppMCTShop`, `expansion`, `backprop`,
+`load`, `loadDomain` and `createDomainDef`. That was measured, not inferred. The
+planner therefore cannot be embedded in a larger program with more than one
+source file, which an RTL-generation pipeline is likely to be. The fix is
+`inline` on those functions in `util.h`, `loader.h`, `grapher.h` and
+`cppMCTShop.h`.
+
+**Depends on:** nothing. **Risk:** none; behaviour-preserving by construction.
+**Payoff:** the planner can be used as a library.
+
+### 9.5 Cleanup
+
+Each item is small; together they remove traps.
+
+* `createDomainDef` declares `name` for the domain, then redeclares it in the
+  actions loop and again in the methods loop. It resolves correctly today,
+  since the constructor after the loops sees the outer one. It is the same
+  hazard as the RNG shadow removed with §4.1 note 18.
+* `grapher.h` guards the edge to child `m` with `m != NULL` and then uses `m`
+  unguarded in the loop below. `generate_graph` looks up `action_map[plan[i]]`
+  with `operator[]`, so a missing entry silently draws a node named `""`.
+* `util.h` carries unused code: `type_name`, `trim`/`ltrim`/`rtrim`, and two
+  `select_randomly` overloads. One of those seeds a `static` generator, the
+  same process-wide seeding flaw §4.1 note 14 fixed elsewhere. It is unused,
+  but it is a trap left lying around.
+* `in(element, container)` takes its container by value, copying it on every
+  call. Neither caller is hot; it is still the wrong signature.
+* `get_subtasks` repeats one parameter-extraction block four times. A fix
+  applied to three of the four copies is how bugs survive. It also takes
+  `ttypes`, a whole map, by value.
+* About 15 unused variables, mostly `for (auto const& p : ...)` loops that only
+  count; `.size()` says the same thing.
+
+**Depends on:** nothing. **Risk:** none.
+
+### 9.6 What is left of performance
+
+After §8.11–§8.15, time splits across three shapes of domain as follows.
+The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding
+10–19%, and applying effects 3–8.5%. What remains is spread out:
+
+* **Applying effects.** `ActionDef::apply_binding` copies each effect's `forall`
+  map and predicate on every application (`auto faparams = e.forall;`,
+  `auto pred = e.pred;`), forall or not. It then builds each fact as a string,
+  which `tell` parses straight back apart and re-interns. Worth 3–8.5%, most
+  on `sar3`.
+* **The evaluator**, in pieces of 1.5–4% each: predicate and object names
+  hashed back to ids on every atom, when the ids could be cached on the
+  expression at load; bindings de-duplicated through string keys built per
+  binding; and binding vectors grown one entry at a time.
+
+None of these is large. Expect diminishing returns, and measure each.
+
+**Depends on:** §9.2 for the scorer share. **Risk:** low. **Payoff:** tens of
+percent at most, together.
 
 ---
 
