@@ -108,11 +108,13 @@ BOOST_AUTO_TEST_CASE(test_method_precondition_modes) {
     std::vector<int> seeds = {2022, 7, 99};
 
     //The premise first: the fixture must still exhibit the violation, or the
-    //assertions below would pass without testing anything.
+    //assertions below would pass without testing anything. Compiled is set
+    //explicitly -- it is no longer the default.
     int compiled_redundant = 0;
     for (int seed : seeds) {
         auto [domain,problem] = load("../../domains/transport_mutex_left.hddl",
                                      "../../domains/transport_chain_b.hddl");
+        domain.precondition_mode = PreconditionMode::Compiled;
         auto results = cppMCTShop(domain,problem,scorers["delivery_chain"],1000,1,sqrt(2.0),seed,6);
         if (count_set_mutex(results) > 2) {
             compiled_redundant++;

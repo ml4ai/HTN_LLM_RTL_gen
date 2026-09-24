@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
   int seed = 2022;
   int max_depth = kDefaultMaxRolloutDepth;
   int max_decisions = kDefaultMaxDecisions;
-  std::string precondition_mode = "compiled";
+  std::string precondition_mode = "at_start";
   std::string dom_file = "../domains/transport_domain.hddl";
   std::string prob_file = "../domains/transport_problem.hddl";
   std::string score_fun = "delivery_one";
@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
       ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search decision (int), default = 1000. MCTS always spends the whole budget, so lower it for small domains")
       ("simulations,r", po::value<int>(), "Number of simulations per MCTS cycle (int), default = 5")
       ("exp_param,c",po::value<double>(),"The exploration parameter for the planner (double), default = sqrt(2)")
-      ("precondition_mode",po::value<std::string>(),"How method preconditions are read (string): compiled (HDDL semantics, default), at_start (must also hold at the method's first real action), or protected (must hold throughout from the check to that action)")
+      ("precondition_mode",po::value<std::string>(),"How method preconditions are read (string): at_start (default; must also hold at the method's first real action), protected (must hold throughout from the check to that action), or compiled (HDDL's own semantics, for conformance; accepts plans that break a precondition before the method starts)")
       ("max_decisions",po::value<int>(),"Backstop on the number of committed decisions before the planner gives up (int), default = 1000. It exists so that a search with no useful signal reports instead of running forever")
       ("max_depth",po::value<int>(),"Depth bound for a single rollout (int), default = 1000. Rollouts are a depth-first search, so a domain whose decomposition can cycle needs this to terminate; raise it if the planner reports rollouts stopping at the bound")
       ("dom_file,D", po::value<std::string>(),"domain file (string), default = transport_domain.hddl")

@@ -52,14 +52,18 @@ using ID = std::string;
 //means, why the reading 7.4 originally proposed is not among them, and what
 //each was measured to do.
 //
-//  Compiled  HDDL's semantics, and the default. The precondition is compiled
-//            into a synthesised action ordered before the method's subtasks
-//            and checked when that action is scheduled -- which in a partially
-//            ordered domain can be long before the subtasks run.
-//  AtStart   The condition must also hold immediately before the first real
-//            action arising from the method. This is the tighter reading the
-//            HDDL authors leave to "future extensions" because it cannot be
-//            compiled.
+//  Compiled  HDDL's semantics. The precondition is compiled into a
+//            synthesised action ordered before the method's subtasks and
+//            checked when that action is scheduled -- which in a partially
+//            ordered domain can be long before the subtasks run. Opt-in:
+//            --precondition_mode compiled, for HDDL conformance.
+//  AtStart   The default. The condition must also hold immediately before
+//            the first real action arising from the method. This is the
+//            tighter reading the HDDL authors leave to "future extensions"
+//            because it cannot be compiled. It is the default because on the
+//            mutex encoding of transport, 45% of the plans Compiled returned
+//            broke a method precondition at the method's start (8.16.1), and
+//            on no shipped domain did AtStart cost a solution or a score.
 //  Protected A causal link: the early check is the producer and the method's
 //            first real action is the consumer. The condition must hold
 //            throughout that window, so an action that does NOT arise from the
@@ -84,6 +88,7 @@ struct PendingCheck {
   Args args;                 //the method's binding, as that action's arguments
   bool established = false;  //the early check has passed
   bool consumed = false;     //the method's first real action has run
+  int established_at = -1;   //TaskGraph::step when the early check passed
 };
 
 struct Grounded_Task {
@@ -125,6 +130,12 @@ struct TaskGraph {
   //or consumed is a fact about this branch of the search. Every successor gets
   //its own copy along with the rest of the network.
   std::vector<PendingCheck> checks;
+  //Real actions applied on this branch so far. Only a real action changes the
+  //state -- a synthesised check has no effects and a decomposition touches only
+  //the network -- so two points on a branch with the same step see the same
+  //state. That lets a check skip re-evaluation when nothing has run since it
+  //last passed.
+  int step = 0;
 
   //Which checks each task carries, kept here rather than in Grounded_Task.
   //Every task in every network is copied constantly, and fields on
@@ -852,8 +863,9 @@ struct DomainDef {
   MethodDefs methods;
   Objects constants;
   Scorer scorer;
-  //How method preconditions are read; HDDL's compiled semantics by default.
-  PreconditionMode precondition_mode = PreconditionMode::Compiled;
+  //How method preconditions are read. AtStart by default, which is stricter
+  //than HDDL: it rejects plans HDDL's compiled semantics accepts. See 8.16.
+  PreconditionMode precondition_mode = PreconditionMode::AtStart;
   DomainDef(std::string head,
             TypeTree typetree,
             Predicates predicates,

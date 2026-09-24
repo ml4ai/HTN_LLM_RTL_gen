@@ -106,7 +106,7 @@ int main(int argc, char* argv[]) {
   int max_decisions = kDefaultMaxDecisions;
   int restrict_rollouts = 0;
   int algorithm = 2;
-  std::string precondition_mode = "compiled";
+  std::string precondition_mode = "at_start";
   double c = sqrt(2.0);
   bool do_plan = false, show_state = false;
 
@@ -126,7 +126,7 @@ int main(int argc, char* argv[]) {
       ("exp_param,c", po::value<double>(&c), "exploration parameter, default = sqrt(2)")
       ("max_depth", po::value<int>(&max_depth), "depth bound for a rollout; default = 1000")
       ("max_decisions", po::value<int>(&max_decisions), "backstop on committed decisions; default = 1000")
-      ("precondition_mode", po::value<std::string>(&precondition_mode), "how method preconditions are read: compiled (HDDL, default), at_start, or protected")
+      ("precondition_mode", po::value<std::string>(&precondition_mode), "how method preconditions are read: at_start (default), protected, or compiled (HDDL's own semantics)")
       ("algorithm", po::value<int>(&algorithm), "progression algorithm for expansion: 2 (default) branches over all unconstrained primitives plus one compound; 3 progresses no action while any compound task is unconstrained")
       ("restrict_rollouts", po::value<int>(&restrict_rollouts), "rollout candidate set: 0 = every unconstrained task (default), 1 = Algorithm 2 with expansion's lowest-id pick, 2 = Algorithm 2 with a random pick")
       ("show_state", po::bool_switch(&show_state), "also print the sorted final state")

@@ -50,7 +50,7 @@ state and plan rather than minimizing cost.
 | Types, conditional/`forall` effects | `kb.h` 202–219; `typedefs.h` 286–435 | PDDL typing (McDermott et al. 1998); ADL (Pednault 1989) | Standard |
 | State queries, variable binding | `kb.h` 145–178, 234–455, 490–516 | Z3 (de Moura & Bjørner 2008); CWA / Clark completion (Reiter 1978; Clark 1978); SMT in planning (Gregory et al. 2012) | Engineering choice. I found no HTN planner that evaluates preconditions this way |
 | Search space | `cppMCTShop.h` (`expansion`); `typedefs.h` | SHOP2 (Nau et al. 2003); HTN progression (Alford et al. 2012; Höller et al. 2020b, Alg. 2) | Höller et al.'s Alg. 2: all unconstrained primitive tasks, one unconstrained compound task (§2.3.2). **Not** SHOP2's sub(m) restriction |
-| Method preconditions | `loader.h` (method loop); `typedefs.h` | HDDL compiled semantics (Höller et al. 2020a) vs. SHOP (Nau et al. 2003) | HDDL-style: compiled into a primitive action ahead of the subtasks (§2.3) |
+| Method preconditions | `loader.h` (method loop); `typedefs.h`; `cppMCTShop.h` (`mprec`) | HDDL compiled semantics (Höller et al. 2020a) vs. SHOP (Nau et al. 2003) | Compiled into a primitive action ahead of the subtasks, as HDDL does (§2.3) — **and by default also re-checked at the method's first real action**, the tighter reading HDDL defers (§8.16). Stricter than HDDL; `--precondition_mode compiled` restores conformance |
 | Tree policy | `cppMCTShop.h` 17–64 | UCB1 (Auer et al. 2002); UCT (Kocsis & Szepesvári 2006) | Standard UCT, c = √2, random tie-breaking |
 | Expansion | `cppMCTShop.h` 151–229, 267–312 | Coulom 2006; Browne et al. 2012 | Rollout on first visit, full child generation on second |
 | Rollouts | `cppMCTShop.h` 82–149 | Wichlacz et al. 2020 (DFS roll-outs with backtracking) | Same idea; theirs is totally ordered, this one partial-order |
@@ -167,7 +167,13 @@ This is **progression search** over partially ordered HTN networks:
   * The README's warning about "infinite recursive/looping tasks" matches
     Alford et al.'s (2012) observation that progression need not terminate on
     recursive domains without extra checks.
-* **Method preconditions follow HDDL semantics.** HDDL the *language* does
+* **Method preconditions follow HDDL semantics — and, by default, go one step
+  further.** The compilation described here is still how every precondition is
+  first checked. Since §8.16 the planner *also* re-checks it immediately before
+  the first real action arising from the method, which is the tighter reading
+  the HDDL authors leave to future extensions. That makes the default stricter
+  than HDDL; `--precondition_mode compiled` gives exactly the behaviour this
+  bullet describes. HDDL the *language* does
   allow `:precondition` on a method — its grammar has `[:precondition <gd>]` in
   the method definition — and defines what it means by compilation: a fresh
   primitive task holding the precondition is "added to the method and placed
@@ -2393,8 +2399,8 @@ coherent is a causal link ending at the method's *first* action:
 
 | `--precondition_mode` | the condition must hold… |
 |---|---|
-| `compiled` (default) | when the synthesised check is scheduled — HDDL's semantics |
-| `at_start` | also immediately before the first real action arising from the method — the reading HDDL defers |
+| `compiled` | when the synthesised check is scheduled — HDDL's semantics |
+| `at_start` (**default**, §8.16.2) | also immediately before the first real action arising from the method — the reading HDDL defers |
 | `protected` | throughout, from the check to that first action: an action not arising from the method may not falsify it in between |
 
 `protected` is strictly stronger than `at_start`. The two differ only on a
@@ -2452,32 +2458,82 @@ or lowers a score** on any shipped domain: the search always finds another
 interleaving. On `transport`, deterministic plans are identical across all three
 modes on all five seeds.
 
-**The cost is rollout time where the modes bite**, from the extra checks and the
-backtracking the rejections force: roughly 2× on the chain instances and 1.4× on
-`transport`, and nothing elsewhere. `protected` is somewhat cheaper than
-`at_start` where both bite (`chain_b` 7.8 against 9.5 ms). It prunes at the
-foreign action that breaks a link, before the search dives further. Part of
-`compiled`'s speed is that it accepts the wrong plans.
+**The cost, as first reported here, was understated.** This paragraph said
+"roughly 2× on the chain instances and 1.4× on `transport`, and nothing
+elsewhere", and the recommendation below was made on that basis. Both parts were
+wrong, and §8.16.2 has the corrected figures. The "2×" was a *median* rollout;
+rollouts on the chain instances are heavy-tailed under `at_start`, and total time
+is 10× — the trap §8.14 had already recorded. The "nothing elsewhere" dismissed
+sar3's 0.06 → 0.08 ms as rounding. It was a real 29%.
 
-#### 8.16.2 Recommendation, not a decision
+#### 8.16.2 Decision: `at_start` is the default
 
-This changes what the planner answers, so the default stays `compiled`, and
-HDDL-conformant. The evidence points one way, though. On every shipped domain
-the stricter readings cost no solutions and no score, and on the encoding this
-document recommends writing they remove wrong plans half the time. For domains
-generated by a model, where nobody will hand-check every decomposition, the
-recommendation is **`at_start` as the default** — or `protected`, which gives
-the same plans here and prunes earlier. Switching the default is one line, and
-it is left for the person whose research this is.
+Made by the person whose research this is, on the recommendation above, after
+the first version of this section. The planner is therefore **stricter than
+HDDL by default**: it rejects plans that HDDL's compiled semantics accepts.
+`--precondition_mode compiled` restores HDDL conformance.
+
+**What changed in behaviour.** The benchmark moved on exactly one domain.
+`chain_mutex`'s plan went from 16 actions to 14, dropping the violating plan
+for the correct one. Every other shipped domain is byte-identical, because on
+`transport`, `sar3`, `simple_travel`, both `d18` problems, `forall_test` and
+`atom_test` the default reading changes nothing.
+
+That includes `transport`, despite `at_start` rejecting 16% of first-action
+checks there during search. Those rejections are redundant with the actions'
+own preconditions: `m_drive_to` requires `(at ?v ?l1)`, and its first action,
+`drive`, requires the same, so `compiled` mode was already refusing those
+actions. The mutex encoding differs because `m_goto`'s `(not (at ?v ?l))` is
+repeated by no action, and there the method precondition is the only thing
+enforcing it.
+
+**What it costs, measured properly.** Total time over hundreds to thousands of
+rollouts, interleaved against the `compiled` default, five repetitions:
+
+| domain | `at_start` | with the shortcut below | behaviour |
+|---|---|---|---|
+| `chain_b` / `mutex_left` | 10.1× | 9.6× | corrected plans |
+| `transport` | 1.41× | 1.37× | identical |
+| `sar3` | 1.30× | 1.14× | identical |
+| `d18_p18` / `d18_gather` | 1.21× / 1.19× | 1.12× / 1.12× | identical |
+| `simple_travel` | 1.18× | 1.09× | identical |
+| `forall_test`, `atom_test` | 1.00× | — | identical |
+
+Where it changes nothing, the default costs 9–37% in pure overhead. Where it
+matters, the cost is an order of magnitude, all of it in the tail. On `chain_b`
+the *mean* rollout under `at_start` is 72 ms against a median of 8.6 ms, with a
+worst case of 447 ms.
+
+**The shortcut.** Profiling `sar3`, where `at_start` changes nothing, put 12% of
+runtime in evaluating checks whose answer was already known. Only a real action
+changes the state, so a check can skip re-evaluation if no real action has run
+since it last passed. Each branch counts its real actions; each check is stamped
+with the count when it is established. This is byte-identical to `at_start`
+without it, and recovers roughly half the overhead on the domains where nothing
+interleaves. It does little for `transport`, whose tasks interleave, and nothing
+for `chain_b`'s tail. That tail belongs to the semantics: `at_start` can reject
+only at the method's first action, after the search has dived beneath a doomed
+decomposition, and it cannot soundly prune earlier, because it allows a condition
+to be broken and restored before then.
+
+**`protected` is the cheaper strict reading, and it is the open alternative.**
+It rejects at the foreign action that breaks a link, which is earlier. On
+`chain_b` its mean rollout is 38.8 ms against `at_start`'s 71.8 ms, and its
+worst case is 224 ms against 447 ms — half the tail. It returns the same plans
+on every shipped domain. It is semantically stricter, rejecting a condition
+broken and restored before the method starts, which no shipped domain does. If
+the tail matters more than that distinction, switching is one line.
 
 `test_MCTS_planner` now asserts that both modes return no redundant lock sequence
 on `chain_b` across three seeds. It first checks its own premise: that
 `compiled` still produces one on those seeds, so it cannot pass vacuously. With
 the modes disabled it fails six assertions. It adds about 18 s to the suite.
 
-**Depends on:** §8.1, §8.7. **Risk:** none to the default — byte-identical,
-0.0–0.8%. **Payoff:** plans that mean what the domain says, at up to 2× rollout
-time on partially ordered domains.
+**Depends on:** §8.1, §8.7. **Risk:** the default now changes results by
+design; measured to move only `chain_mutex`, and in the right direction.
+**Payoff:** plans that mean what the domain says. **Cost:** 9–37% where the
+reading changes nothing, and up to 10× in total rollout time where it does,
+concentrated in the tail.
 
 ---
 
@@ -2485,9 +2541,9 @@ time on partially ordered domains.
 
 **Every substantive item is done.** §8.7–§8.10 dealt with the size of the search
 space, §8.11–§8.15 with the cost of each node, and §8.16 with what a method
-precondition means. One decision from that work is open, and it belongs to the
-person whose research this is, not to this list: whether to make `at_start` the
-default (§8.16.2).
+precondition means. `at_start` is now the default (§8.16.2); whether
+`protected` would serve better, trading one semantic distinction for half the
+tail, is recorded there as the open alternative.
 
 What is left is hygiene.
 
