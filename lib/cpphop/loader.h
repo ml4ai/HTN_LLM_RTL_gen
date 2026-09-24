@@ -4,6 +4,8 @@
 #include <iostream>
 #include <string>
 #include <queue>
+#include <map>
+#include <algorithm>
 #include "parsing/api.hpp"
 #include "parsing/ast.hpp"
 #include "parsing/ast_adapted.hpp"
@@ -24,6 +26,92 @@ using boost::get;
 using std::string, std::vector, std::unordered_set;
 using Ptypes = std::unordered_map<std::string,std::vector<std::string>>;
 using Tasktypes = std::unordered_map<std::string,std::vector<std::string>>;
+
+//Every (either ...) type used in a parameter or quantifier list, collected so
+//each can be added to the type tree before anything refers to it.
+using EitherTypes = std::map<std::string,std::vector<std::string>>;
+
+inline void either_types_in(ast::TypedList<ast::Variable> const& tl, EitherTypes& out) {
+  for (auto const& e : tl.explicitly_typed_lists) {
+    if (e.type.get().which() == 1) {
+      auto const& members = boost::get<EitherType>(e.type);
+      out[type_name_of(e.type)] = std::vector<std::string>(members.begin(),members.end());
+    }
+  }
+}
+
+inline void either_types_in(ast::Sentence const& s, EitherTypes& out) {
+  switch (s.which()) {
+    case 2:
+      for (auto const& c : boost::get<ConnectedSentence>(s).sentences) {
+        either_types_in(c,out);
+      }
+      break;
+    case 3:
+      either_types_in(boost::get<NotSentence>(s).sentence,out);
+      break;
+    case 4:
+      either_types_in(boost::get<ImplySentence>(s).sentence1,out);
+      either_types_in(boost::get<ImplySentence>(s).sentence2,out);
+      break;
+    case 5:
+      either_types_in(boost::get<QuantifiedSentence>(s).variables,out);
+      either_types_in(boost::get<QuantifiedSentence>(s).sentence,out);
+      break;
+  }
+}
+
+inline void either_types_in(ast::Effect const& e, EitherTypes& out);
+
+inline void either_types_in(ast::CEffect const& c, EitherTypes& out) {
+  if (c.which() == 0) {
+    either_types_in(boost::get<ForallCEffect>(c).variables,out);
+    either_types_in(boost::get<ForallCEffect>(c).effect,out);
+  }
+  else if (c.which() == 1) {
+    either_types_in(boost::get<WhenCEffect>(c).gd,out);
+  }
+}
+
+inline void either_types_in(ast::Effect const& e, EitherTypes& out) {
+  if (e.which() == 1) {
+    for (auto const& c : boost::get<AndCEffect>(e).c_effects) {
+      either_types_in(c,out);
+    }
+  }
+  else if (e.which() == 2) {
+    either_types_in(boost::get<CEffect>(e),out);
+  }
+}
+
+inline EitherTypes either_types_in(ast::Domain const& d) {
+  EitherTypes out;
+  for (auto const& p : d.predicates) either_types_in(p.variables,out);
+  for (auto const& t : d.tasks) either_types_in(t.parameters,out);
+  for (auto const& a : d.actions) {
+    either_types_in(a.parameters,out);
+    either_types_in(a.precondition,out);
+    either_types_in(a.effect,out);
+  }
+  for (auto const& m : d.methods) {
+    either_types_in(m.parameters,out);
+    either_types_in(m.precondition,out);
+  }
+  return out;
+}
+
+inline EitherTypes either_types_in(ast::Problem const& p) {
+  EitherTypes out;
+  either_types_in(p.problem_htn.parameters,out);
+  either_types_in(p.goal,out);
+  return out;
+}
+
+inline void add_either_types(TypeTree& typetree, EitherTypes const& eithers) {
+  for (auto const& [name,members] : eithers) {
+    typetree.add_union(name,members,"__Object__");
+  }
+}
 
 void get_orderings(Orderings orderings,std::unordered_map<std::string,std::vector<std::string>>& og) {
   if (which_orderings(orderings) == 0) {
@@ -172,7 +260,7 @@ std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
       return "__NONE__";
     }
     for (auto const& t : s.variables.explicitly_typed_lists) {
-      std::string type = boost::get<PrimitiveType>(t.type);
+      std::string type = type_name_of(t.type);
       for (auto const& e : t.entries) {
         qs += "("+e.name+" __Object__) ";
         t_imply += " ("+type+" "+e.name+")";
@@ -293,7 +381,7 @@ expr::Ptr sentence_to_expr(Sentence sentence, Ptypes& ptypes) {
     }
     std::vector<expr::Bound> bound;
     for (auto const& t : s.variables.explicitly_typed_lists) {
-      std::string type = boost::get<PrimitiveType>(t.type);
+      std::string type = type_name_of(t.type);
       for (auto const& e : t.entries) {
         bound.push_back({e.name,{type}});
       }
@@ -376,10 +464,19 @@ Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
     auto e = boost::get<ForallCEffect>(ceffect);
     auto faeffects = decompose_effects(e.effect,ptypes);
     for (int i = 0; i < faeffects.size(); i++) {
-      for (auto const& v : e.variables) {
-        if (faeffects[i].forall.find(v.name) == faeffects[i].forall.end()) {
-          auto types = type_inference(faeffects[i],ptypes,v.name);
-          faeffects[i].forall[v.name] = types;
+      //An inner forall binding the same name has already set it.
+      for (auto const& t : e.variables.explicitly_typed_lists) {
+        std::string type = type_name_of(t.type);
+        for (auto const& v : t.entries) {
+          if (!faeffects[i].forall.contains(v.name)) {
+            faeffects[i].forall[v.name] = {"__Object__",type};
+          }
+        }
+      }
+      //Untyped: the types of the predicate positions the variable fills.
+      for (auto const& v : e.variables.implicitly_typed_list) {
+        if (!faeffects[i].forall.contains(v.name)) {
+          faeffects[i].forall[v.name] = type_inference(faeffects[i],ptypes,v.name);
         }
       }
     }
@@ -718,7 +815,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
   TypeTree typetree;
   typetree.add_root("__Object__");
   for (auto const& t : dom.types.explicitly_typed_lists) {
-    std::string type = boost::get<PrimitiveType>(t.type); 
+    std::string type = type_name_of(t.type); 
     if (typetree.find_type(type) == -1) {
       typetree.add_child(type,"__Object__");  
     }
@@ -736,6 +833,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
       typetree.add_child(it,"__Object__");
     }
   }
+  add_either_types(typetree,either_types_in(dom));
 
   Predicates predicates;
   Ptypes ptypes;
@@ -744,7 +842,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     pred.first = p.predicate;
     Params params;
     for (auto const& t : p.variables.explicitly_typed_lists) {
-      std::string type = boost::get<PrimitiveType>(t.type);
+      std::string type = type_name_of(t.type);
       for (auto const& e : t.entries) {
         params.push_back(std::make_pair(e.name,type));
         ptypes[p.predicate].push_back(type);
@@ -760,7 +858,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
   
   Objects constants;
   for (auto const& c : dom.constants.explicitly_typed_lists) {
-    std::string type = boost::get<PrimitiveType>(c.type);
+    std::string type = type_name_of(c.type);
     for (auto const& e : c.entries) {
       constants[e] = type;
     }
@@ -772,7 +870,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
   Tasktypes ttypes;
   for (auto const& t : dom.tasks) {
     for (auto const& p : t.parameters.explicitly_typed_lists) {
-      std::string type = boost::get<PrimitiveType>(p.type);
+      std::string type = type_name_of(p.type);
       for (auto const& e : p.entries) {
         ttypes[t.name].push_back(type); 
       }
@@ -787,7 +885,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     std::string name = a.name;
     Params params;
     for (auto const& p : a.parameters.explicitly_typed_lists) {
-      std::string type = boost::get<PrimitiveType>(p.type);
+      std::string type = type_name_of(p.type);
       for (auto const& e : p.entries) {
         params.push_back(std::make_pair(e.name,type));
         ttypes[a.name].push_back(type);
@@ -812,7 +910,7 @@ std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
     Params params;
     Params tparams;
     for (auto const& p : m.parameters.explicitly_typed_lists) {
-      std::string type = boost::get<PrimitiveType>(p.type);
+      std::string type = type_name_of(p.type);
       for (auto const& e : p.entries) {
         params.push_back(std::make_pair(e.name,type));
       }
@@ -944,7 +1042,7 @@ ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes) {
 
   Objects objects;
   for (auto const& o : prob.objects.explicitly_typed_lists) {
-    std::string type = boost::get<PrimitiveType>(o.type);
+    std::string type = type_name_of(o.type);
     for (auto const& e : o.entries) {
       objects[e] = type;
     }
@@ -966,7 +1064,7 @@ ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes) {
     task.first = head;
     task.second = {};
     for (auto const& p : prob.problem_htn.parameters.explicitly_typed_lists) {
-      std::string type = boost::get<PrimitiveType>(p.type);
+      std::string type = type_name_of(p.type);
       for (auto const& e : p.entries) {
         params.push_back(std::make_pair(e.name,type));
       }
@@ -1050,6 +1148,7 @@ std::pair<DomainDef, ProblemDef> load_hddl(std::string const& dom_text,
 
   auto [domDef,types] = createDomainDef(dom);
   auto probDef = createProblemDef(prob,types.first,types.second);
+  add_either_types(domDef.typetree,either_types_in(prob));
   domDef.methods[probDef.initM.get_task().first].push_back(probDef.initM);
   probDef.objects.merge(domDef.constants);
   return std::make_pair(domDef,probDef);

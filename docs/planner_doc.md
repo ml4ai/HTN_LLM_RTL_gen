@@ -2579,14 +2579,13 @@ lists them, one message each:
 
 ```
 error: 2 problems in the HDDL input:
-  domain.hddl:35: in method m_deliver_ordering_0: condition (at ?p ?l9) uses ?l9, which is not a parameter here or bound by a quantifier (did you mean ?l1?)
+  domain.hddl:39: in method m_deliver_ordering_0: condition (at ?p ?l9) uses ?l9, which is not a parameter here or bound by a quantifier (did you mean ?l1?)
   domain.hddl:42: in method m_deliver_ordering_0: subtask task0, (get_too ?v ?l1): get_too is not a declared task or action (did you mean get_to?)
 ```
 
-The line is exact for a subtask, an ordering or a declaration. A condition or
-effect gets the line of the action or method it is in, because the parser does
-not tag atoms with positions. `:init` and `:goal` get no line, but name the fact.
-The "did you mean" suggestion is the nearest declared name close enough to be a
+The line is the construct's own: a declaration, a subtask, an ordering, or the
+single atom of a condition, an effect, an `:init` fact or the goal (§8.17.1
+made atoms carry positions). The "did you mean" suggestion is the nearest declared name close enough to be a
 slip: one edit for a name of up to five letters, two up to eight, and so on,
 counting a swap of neighbouring letters as one edit.
 
@@ -2604,7 +2603,7 @@ The ten malformed cases of the re-scan, each a one-line corruption of
 | an undeclared object in `:init` | every rollout fails | `uses truck_1, which is not a declared object or constant (did you mean truck_0?)` |
 | an undeclared type in a parameter list | accepted | `has type locaton, which is not declared in :types (did you mean location?)` |
 | an undeclared variable in a precondition | accepted | `uses ?l9, which is not a parameter here or bound by a quantifier (did you mean ?l1?)` |
-| an unbalanced parenthesis | an error naming a mangled C++ type | the file, line and caret, and `Expecting: ')'` |
+| an unbalanced parenthesis | an error naming a mangled C++ type | the file, line and caret, and `Expecting: ')'` (§8.17.1) |
 
 **Two rules keep it from rejecting legal domains.** A type is compatible with
 a parameter's type when either is an ancestor of the other. Passing a method's
@@ -2617,11 +2616,9 @@ type `robot`, and `forall_test` relies on it.
 **Parse errors.** The report the grammar produces (file, line, the source line
 and a caret) used to go to stderr, while the exception said only "Parsing
 error!". It is now the message of a `ParseError`, so a caller that catches it
-has all of it. Where x3 names what it expected by the C++ type of an anonymous
-sub-parser (hundreds of characters of Boost.Spirit template), the message now
-says a parenthesis is probably missing or extra before the caret. The problem
-grammar had no error handler, so an expectation failure there escaped as a bare
-`expectation_failure`; it now has the domain grammar's.
+has all of it. The problem grammar had no error handler, so an expectation
+failure there escaped as a bare `expectation_failure`; it now has the domain
+grammar's. §8.17.1 made the messages themselves precise.
 
 **Loading from text.** `load_hddl(domain_text, problem_text, domain_name,
 problem_name)` does what `load` does without files: a pipeline asking a model for
@@ -2669,18 +2666,88 @@ method decomposing an action, a problem for another domain, several problems at
 once and their order, and the two legal patterns above); and every shipped
 domain and problem pairing, which must validate.
 
-**What it does not check.** `:requirements` are not compared against the
-features used. A task that no method decomposes and no problem mentions is not
-reported, and neither is a method that can never apply. Typed variables in a
-`forall` *effect*, `(forall (?x - package) …)`, are legal HDDL, but this
-grammar accepts only untyped ones. Such an effect is a parse error, and the
-parenthesis hint is then misleading. That is a gap in the parser, not in
-validation. The planner still grounds an unbound variable to its own name.
-Validation now keeps one from reaching it, but a domain built in code rather
-than loaded is not protected.
+#### 8.17.1 The parser and planner gaps validation exposed, closed
+
+The first version of this section listed what validation could not see, and
+most of it was a gap in the parser or the planner rather than a limit of
+validation. Those were fixed, together with the further gaps a read of the
+grammar turned up while fixing them.
+
+**Legal HDDL the grammar rejected, or the loader crashed on:**
+
+| input | before | now |
+|---|---|---|
+| typed `forall` effect variables, `(forall (?x - package) …)` | parse error, with a misleading parenthesis hint | parsed; the declared type is the variable's range |
+| `(either a b)` types | parsed, then the loader threw `bad_get` | a parameter or quantified variable ranges over both types' objects |
+| no `:requirements` section | parse error; the grammar required one | optional, as HDDL and PDDL say |
+| `:order` for `:ordering` | parse error | HDDL spells it `:order[ing]`; both parse |
+| a task, method or action with no `:parameters` | parse error | optional when there are none, as PDDL allows for an action |
+| tasks, methods and actions interleaved | a bare `Expecting: ')'` | any order; each list keeps source order |
+| a `;` comment on the last line, no newline after it | parse error | a comment ends at end of line or end of file |
+
+A typed `forall` variable takes its declared type, where an untyped one still
+has its type inferred from the predicates it fills. `test_typed_forall_effects`
+shows the declared type narrowing the range. Over a predicate that takes any
+object, the typed `forall` reaches the three rooms, and the untyped one reaches
+all four objects, the robot included.
+
+`(either a b)` becomes one synthesised type, `__either_a__or__b__`, which
+`TypeTree::add_union` writes into the lineage of both members and all their
+subtypes. The type facts `KnowledgeBase::initialize` derives from lineage then
+hold for exactly those objects, and grounding, quantifier ranges and type
+checks treat it like any other type. `add_ancestor` could not be reused: it
+re-parents a type, so a second member would have lost its own parent.
+`either` is allowed where a variable is typed and rejected for an object, a
+constant or a type, which each have exactly one type. `test_either_types`
+checks that across eight seeds a `(either cat dog)` parameter binds both a cat
+and a dog, and never the bird, and that a `(either cat dog)` `forall` reaches
+exactly the two of them.
+
+**Errors are now reported where they are.** Atoms (`fol::Literal`) are
+position-tagged, so a condition, effect, `:init` fact or goal atom is reported
+at its own line. Two causes of misleading parse errors are removed:
+
+* **The grammar's precedence.** In C++ `>>` binds tighter than `>`, so the
+  domain and problem rules, written `… > ')' >> -requirements >> -types … > ')'`,
+  grouped their optional sections into one anonymous parser. A `)` missing
+  after the problem's domain name was reported as "expecting the rest of a
+  requirements". Those rules now expect each part in turn, and the same mistake
+  reads `Expecting: ')'` at the right place.
+* **Anonymous sub-parsers.** Where x3 can still only name what it expected by a
+  mangled C++ type, the message now names the grammar rule inside that type,
+  the construct being read. It adds that a required keyword or part is missing,
+  or a parenthesis is missing or extra: `Expecting: the rest of a task (…)`.
+
+**The planner refuses an unbound name itself.** `cppMCTShop` checks, once and
+before search, that every name a method passes to a subtask is a parameter or
+an object, and that every name an effect writes is a parameter, a `forall`
+variable or an object. Grounding passes any other name through as an object of
+that name, which is how `d18_p18` came to plan with `room`. Validation stops
+that for a loaded file. This check covers a domain built or edited in code,
+which never passes through validation. `test_planner_rejects_unbound_names`
+edits a loaded method in code to show it.
+
+**`:requirements` keys are checked.** A key that is not a PDDL or HDDL
+requirement is reported with a suggestion (`:typeing`, did you mean `:typing`?).
+A real requirement this planner does not implement (`:numeric-fluents`,
+`:durative-actions`, …) is reported as unsupported. What a domain declares is
+not compared with what it uses: every shipped domain uses method preconditions
+without declaring `:method-preconditions`, and the planner has never insisted.
+
+**Checked** against the commit before these changes: no semantic field moved on
+any shipped domain, and a domain with its actions before its methods returns
+the same plan as the original. AddressSanitizer and UndefinedBehaviorSanitizer
+are clean over all four test suites. New tests: `test_grammar_accepts_legal_hddl`
+and `test_validation_checks_requirements` in `test_loader`, and
+`test_typed_forall_effects`, `test_either_types` and
+`test_planner_rejects_unbound_names` in `test_MCTS_planner`.
+
+**Still open, on the list as §9.6 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
+case-insensitive; and a declaration nothing uses is not reported.
 
 **Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
-shipped domains had to be fixed to pass. **Payoff:** a model's HDDL mistakes
+shipped domains had to be fixed to pass. §8.17.1 widened what parses, and changed
+no plan on any shipped domain. **Payoff:** a model's HDDL mistakes
 come back as a list it can be asked to fix, instead of a segfault or a planner
 that fails every rollout without saying why.
 
@@ -2853,7 +2920,28 @@ with it: the graph may now be SVG, and a legend explains it.
 but a person. **Payoff:** a graph that shows how a plan was reached, which
 is what one is for when checking a model-written domain.
 
-### 9.6 What is left of performance
+### 9.6 Finish the parser: case and warnings
+
+Left over from §8.17.1, which closed the rest of the parser's gaps.
+
+* **Case.** PDDL is case-insensitive, and this grammar matches keywords only in
+  lower case, so `(:Action` or `:Parameters` is a parse error. Names are kept
+  exactly as written, so `Truck_0` and `truck_0` are two objects, which
+  validation would then report as an undeclared object. Keywords can be matched
+  with `x3::no_case`. Folding names is a choice to make first, because it
+  changes the case of every name in a printed plan.
+* **Warnings.** Validation reports only errors. A model would also be helped by
+  a warning about what is legal but probably unintended: a task no method
+  decomposes and no problem mentions, a method for a task nothing reaches, a
+  predicate declared and never used, a feature used without its `:requirements`
+  key. That needs a channel beside `HDDLError` that does not stop the load, and
+  the planner printing what comes through it.
+
+**Depends on:** nothing. **Risk:** low; case folding changes printed names, so it
+is opt-in or decided first. **Payoff:** fewer rejections of HDDL a model writes in
+the wrong case, and feedback on mistakes that are not errors.
+
+### 9.7 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding

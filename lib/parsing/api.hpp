@@ -7,7 +7,9 @@
 namespace parser {
     namespace x3 = boost::spirit::x3;
     using x3::space, x3::lexeme, x3::char_, x3::eol, x3::rule;
-    static auto const skipper = space | lexeme[';' >> *(char_ - eol) >> eol];
+    // A comment runs to the end of its line, or of the file: a comment on the
+    // last line with no newline after it used to be a parse error.
+    static auto const skipper = space | lexeme[';' >> *(char_ - eol) >> (eol | x3::eoi)];
     // Set up the skip parser so that it can be used from parser.cpp
     using skipper_type = decltype(skipper);
     using phrase_context_type = x3::phrase_parse_context<skipper_type>::type;

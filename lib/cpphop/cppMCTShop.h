@@ -766,6 +766,53 @@ constexpr int kDefaultMaxRolloutDepth = 1000;
 //of magnitude above the longest plan the shipped domains produce.
 constexpr int kDefaultMaxDecisions = 1000;
 
+//Every name a method passes to a subtask, and every name an effect writes,
+//must be a parameter in scope or an object. Grounding substitutes parameters
+//and passes any other name through unchanged as a constant (return_value's
+//"__CONST__"), so a variable nothing binds became an object named after it:
+//d18's (type_the_victim ?p_1 ?v ?room), with ?room unbound, planned as
+//(type_the_victim player_1 vic1 room). The loader's validation (validate.h)
+//rejects that in a file, but a domain built in code never passes through it,
+//so the planner checks here too. It runs once, before search.
+inline void check_bound_names(DomainDef& domain, ProblemDef& problem) {
+  auto is_object = [&](std::string const& n) {
+    return problem.objects.contains(n) || domain.constants.contains(n);
+  };
+  for (auto& [task,methods] : domain.methods) {
+    for (auto& m : methods) {
+      std::unordered_set<std::string> params;
+      for (auto const& p : m.get_parameters()) {
+        params.insert(p.first);
+      }
+      for (auto const& [id,st] : m.get_subtasks()) {
+        for (auto const& a : st.second) {
+          if (!params.contains(a.first) && !is_object(a.first)) {
+            throw std::invalid_argument(
+              "Method " + m.get_head() + " passes " + a.first + " to subtask " + st.first +
+              ", but it is neither a parameter of the method nor an object; "
+              "grounding would treat it as an object of that name");
+          }
+        }
+      }
+    }
+  }
+  for (auto& [name,action] : domain.actions) {
+    std::unordered_set<std::string> params;
+    for (auto const& p : action.get_parameters()) {
+      params.insert(p.first);
+    }
+    for (auto const& e : action.get_effects()) {
+      for (auto const& a : e.pred.second) {
+        if (!params.contains(a.first) && !e.forall.contains(a.first) && !is_object(a.first)) {
+          throw std::invalid_argument(
+            "Action " + name + " has an effect on " + e.pred.first + " naming " + a.first +
+            ", which is neither a parameter, a forall variable nor an object");
+        }
+      }
+    }
+  }
+}
+
 Results
 cppMCTShop(DomainDef& domain,
            ProblemDef& problem,
@@ -779,6 +826,7 @@ cppMCTShop(DomainDef& domain,
            int max_decisions = kDefaultMaxDecisions,
            int restrict_rollouts = 0,
            int algorithm = 2) {
+    check_bound_names(domain,problem);
     domain.set_scorer(scorer);
     pTree t;
     TaskTree tasktree;

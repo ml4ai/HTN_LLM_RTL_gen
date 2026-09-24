@@ -54,6 +54,26 @@ private:
   }
 };
 
+//The name a type goes by inside the planner. A primitive type is its own name.
+//(either a b) becomes one synthesised type, __either_a__or__b__, whose objects
+//are those of a and of b (TypeTree::add_union); the members are sorted so the
+//same union always gets the same name. Everything downstream -- parameter
+//types, type facts, quantifier ranges -- then treats it like any other type.
+inline std::string type_name_of(ast::Type const& t) {
+  using namespace ast;
+  if (t.get().which() == 0) {
+    return boost::get<PrimitiveType>(t);
+  }
+  auto const& members = boost::get<EitherType>(t);
+  std::vector<std::string> sorted(members.begin(),members.end());
+  std::sort(sorted.begin(),sorted.end());
+  std::string name = "__either";
+  for (size_t i = 0; i < sorted.size(); i++) {
+    name += (i == 0 ? "_" : "__or__") + sorted[i];
+  }
+  return name + "__";
+}
+
 namespace hddl_check {
 
 using namespace ast;
@@ -200,11 +220,37 @@ public:
   }
 
   //The name of a declared type, or "" after reporting why there is none.
-  std::string type_name(ast::Type const& t, Where const& w, std::string const& of) {
+  //(either a b) is allowed where a variable is typed, and every member must
+  //be declared; the union is recorded as a parent of each member, as the
+  //loader's TypeTree::add_union does. An object, constant or type has exactly
+  //one type, so there it is not allowed.
+  std::string type_name(ast::Type const& t, Where const& w, std::string const& of,
+                        bool allow_either = true) {
     if (t.get().which() != 0) {
-      report(w, of + " has an (either ...) type, which this planner does not support; "
-                "declare a common supertype instead");
-      return "";
+      if (!allow_either) {
+        report(w, of + " has an (either ...) type; objects and constants have "
+                  "exactly one type");
+        return "";
+      }
+      bool ok = true;
+      for (auto const& m : boost::get<EitherType>(t)) {
+        if (!parents.contains(m)) {
+          report(w, of + " has type (either ...) naming " + m +
+                    ", which is not declared in :types" + suggest(m,parents));
+          ok = false;
+        }
+      }
+      if (!ok) {
+        return "";
+      }
+      std::string name = type_name_of(t);
+      if (!parents.contains(name)) {
+        parents[name] = {"object"};
+        for (auto const& m : boost::get<EitherType>(t)) {
+          parents[m].push_back(name);
+        }
+      }
+      return name;
     }
     auto const& name = boost::get<PrimitiveType>(t);
     if (!parents.contains(name)) {
@@ -339,7 +385,19 @@ public:
     return nullptr;
   }
 
-  void atom(Literal<Term> const& l, Scope const& scope, Where const& w, bool in_effect) {
+  //The source of the construct being checked, for line lookups.
+  SourceLines const* src = nullptr;
+
+  //w, moved to the node's own line when the parser recorded one.
+  Where at(Where w, boost::spirit::x3::position_tagged const& node) const {
+    if (src && src->line(node) > 0) {
+      w.line = src->line(node);
+    }
+    return w;
+  }
+
+  void atom(Literal<Term> const& l, Scope const& scope, Where const& where, bool in_effect) {
+    Where w = at(where,l);
     std::string text = show(l.predicate,l.args);
     std::string in = (in_effect ? "effect " : "condition ") + text;
     Signature const* sig = predicate_signature(l.predicate,l.args.size(),w,in);
@@ -413,9 +471,9 @@ public:
     if (c.which() == 0) {
       auto const& f = boost::get<ForallCEffect>(c);
       Scope inner = scope;
-      //Untyped in this grammar; the loader infers the type from use.
-      for (auto const& v : f.variables) {
-        inner[v.name] = "object";
+      //Untyped ones are `object` here; the loader infers their type from use.
+      for (auto const& [name,type] : parameters(f.variables,at(w,f),"forall variable")) {
+        inner[name] = type;
       }
       effect(f.effect,inner,w);
     }
@@ -618,7 +676,7 @@ public:
     };
     for (auto const& e : tl.explicitly_typed_lists) {
       for (auto const& n : e.entries) {
-        add(n, type_name(e.type,w,kind + " " + n));
+        add(n, type_name(e.type,w,kind + " " + n,false));
       }
     }
     for (auto const& n : tl.implicitly_typed_list) {
@@ -626,9 +684,50 @@ public:
     }
   }
 
+  //Requirement keys this planner implements. Declaring one is optional: the
+  //planner does not insist a domain declare what it uses.
+  static std::set<std::string> const& supported_requirements() {
+    static std::set<std::string> const r = {
+      "strips", "typing", "negative-preconditions", "disjunctive-preconditions",
+      "equality", "existential-preconditions", "universal-preconditions",
+      "quantified-preconditions", "conditional-effects", "adl", "hierarchy",
+      "method-preconditions"};
+    return r;
+  }
+
+  //Real PDDL and HDDL requirements for features this planner does not have.
+  //A domain that declares one presumably relies on it.
+  static std::set<std::string> const& unsupported_requirements() {
+    static std::set<std::string> const r = {
+      "numeric-fluents", "fluents", "object-fluents", "action-costs",
+      "durative-actions", "duration-inequalities", "continuous-effects",
+      "derived-predicates", "timed-initial-literals", "preferences",
+      "constraints"};
+    return r;
+  }
+
+  void requirements(std::vector<std::string> const& rs, Where const& w) {
+    for (auto const& r : rs) {
+      if (supported_requirements().contains(r)) {
+        continue;
+      }
+      if (unsupported_requirements().contains(r)) {
+        report(w, "requirement :" + r + " is a real PDDL requirement, but this planner "
+                  "does not support it");
+        continue;
+      }
+      std::set<std::string> all = supported_requirements();
+      all.insert(unsupported_requirements().begin(),unsupported_requirements().end());
+      report(w, "requirement :" + r + " is not a PDDL or HDDL requirement" +
+                suggest(r,all,":"));
+    }
+  }
+
   void domain(Domain const& d, SourceLines const& lines) {
+    src = &lines;
     Where top{lines.file,0,""};
 
+    requirements(d.requirements,Where{lines.file,0,":requirements"});
     declare_types(d.types,Where{lines.file,0,":types"});
     declare_objects(d.constants,Where{lines.file,0,":constants"},"constant");
 
@@ -689,7 +788,9 @@ public:
   }
 
   void problem(Problem const& p, Domain const& d, SourceLines const& lines) {
+    src = &lines;
     Where top{lines.file,lines.line(p),""};
+    requirements(p.requirements,Where{lines.file,0,":requirements"});
     if (p.domain_name != d.name) {
       report(top, "the problem is for domain " + p.domain_name +
                   ", but the domain loaded is " + d.name);
@@ -706,8 +807,8 @@ public:
       task_network(p.problem_htn.task_network,scope,w,lines);
     }
 
-    Where iw{lines.file,0,":init"};
     for (auto const& f : p.init) {
+      Where iw = at(Where{lines.file,0,":init"},f);
       std::string text = show(f.predicate,f.args);
       if (f.is_negative) {
         report(iw, "fact (not " + text + "): :init lists only the facts that are true");

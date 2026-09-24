@@ -104,6 +104,39 @@ struct TypeTree {
     } 
   }
 
+  //A type whose objects are exactly those of any of `members`: what
+  //(either a b) means in a parameter list. It is added under the root and
+  //written into the lineage of every member and every member's subtypes, so
+  //the type facts KnowledgeBase::initialize derives from lineage hold for all
+  //of their objects. It is deliberately not recorded as a parent in
+  //`children`: add_ancestor and propogate_new_lineage rebuild lineage from
+  //children as a single chain, and would drop a member's own parent.
+  void add_union(std::string const& type, std::vector<std::string> const& members,
+                 std::string const& root) {
+    if (this->find_type(type) != -1) {
+      return;
+    }
+    this->add_child(type,root);
+    int u = this->find_type(type);
+    std::vector<int> todo;
+    for (auto const& m : members) {
+      int i = this->find_type(m);
+      if (i != -1) {
+        todo.push_back(i);
+      }
+    }
+    while (!todo.empty()) {
+      int i = todo.back();
+      todo.pop_back();
+      if (i == u || !this->types[i].lineage.insert(u).second) {
+        continue;
+      }
+      for (auto c : this->types[i].children) {
+        todo.push_back(c);
+      }
+    }
+  }
+
   //Returns index of Type struct with name type
   int find_type(std::string type) {
     for (auto const &[i,t] : this->types) {

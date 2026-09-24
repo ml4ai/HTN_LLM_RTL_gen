@@ -64,12 +64,18 @@ script for example usage.
   `HDDLError`; text the grammar rejects is a `ParseError` carrying the same
   report the parser prints. `load_hddl` loads a domain and problem from strings
   rather than files. See [docs/planner\_doc.md](docs/planner_doc.md) §8.17
-- The "either" keyword is not currently supported
-- Typed variables in a `forall` effect, `(forall (?x - package) ...)`, are not
-  currently supported; write them untyped
+- `(either ...)` types are supported where a variable is typed; an object,
+  constant or type has exactly one type
+- `:requirements` keys are checked: an unknown key is an error, and so is a
+  real PDDL requirement this planner does not implement (numeric fluents,
+  durative actions, ...). What a domain uses is not compared with what it
+  declares
+- Some things HDDL fixes are accepted more loosely: `:requirements` and an empty
+  `:parameters ()` may be left out, `:order` is accepted for `:ordering`, and
+  tasks, methods and actions may come in any order
+- Keywords must be lower case, although PDDL is case-insensitive
 - Syntax and logic for the handling of external function calls are not
   currently supported
-- Requirement checking for given requirement keys is not currently supported
 
 # MCTS HTN Planner
 This [Monte Carlo Tree Search (MCTS)](https://en.wikipedia.org/wiki/Monte_Carlo_tree_search) 

@@ -402,7 +402,9 @@ BOOST_AUTO_TEST_CASE(test_validation_rejects_the_ten_mistakes) {
         std::string what = e.what();
         BOOST_TEST_INFO(what);
         BOOST_TEST(what.find("N5boost") == std::string::npos);
-        BOOST_TEST(what.find("a parenthesis is probably missing or extra") != std::string::npos);
+        //Named by the construct being read, with what usually breaks one.
+        BOOST_TEST(what.find("Expecting: the rest of a task (a required keyword or part is "
+                             "missing, or a parenthesis is missing or extra") != std::string::npos);
     }
 }
 
@@ -435,9 +437,11 @@ BOOST_AUTO_TEST_CASE(test_validation_further_checks) {
                                      "(task0 (get_to ?v ?l1))", "(task0 (get_too ?v ?l1))"),
                             replaced(P, "(at truck_0 city_loc_2)", "(at truck_1 city_loc_2)"));
     BOOST_TEST_REQUIRE(both.size() == 3u);
-    BOOST_TEST(both[0].rfind("domain:35:", 0) == 0);
+    //Each at its own line: atoms are position-tagged, so a condition is
+    //reported where it is written, not at its method's first line.
+    BOOST_TEST(both[0].rfind("domain:39:", 0) == 0);
     BOOST_TEST(both[1].rfind("domain:42:", 0) == 0);
-    BOOST_TEST(both[2].rfind("problem: in :init:", 0) == 0);
+    BOOST_TEST(both[2].rfind("problem:33: in :init:", 0) == 0);
 
     //Not problems. Every type is also a one-argument predicate true of that
     //type's objects (KnowledgeBase::initialize), so a condition may use one.
@@ -479,4 +483,67 @@ BOOST_AUTO_TEST_CASE(test_shipped_domains_validate) {
         }
     }
     BOOST_TEST(loadDomain(HTN_DOMAINS_DIR "/empty_method_test.hddl").first.head == "empty_method_test");
+}
+
+
+//Grammar gaps closed alongside 9.1 (planner_doc.md 8.17): HDDL the parser used
+//to reject, and a requirement list it used to accept unread.
+BOOST_AUTO_TEST_CASE(test_grammar_accepts_legal_hddl) {
+    auto const& D = transport_dom;
+    auto const& P = transport_prob;
+    //:requirements is optional, as in PDDL. It was mandatory.
+    BOOST_TEST(problems_of(replaced(D, "(:requirements :negative-preconditions :typing :hierarchy)", ""), P).empty());
+    //HDDL spells the ordering keyword :order[ing]. Only :ordering parsed.
+    auto order = replaced(D, ":ordering (and\n\t\t\t(< task0 task1)", ":order (and\n\t\t\t(< task0 task1)");
+    BOOST_TEST(problems_of(order, P).empty());
+    auto [dom,prob] = load_hddl(order, P);
+    for (auto& m : dom.methods["deliver"]) {
+        if (m.get_head() == "m_deliver_ordering_0") {
+            BOOST_TEST(m.get_orderings()["task0"].size() == 1u);
+        }
+    }
+    //Tasks, methods and actions in any order. HDDL lists them in that order,
+    //and the grammar used to reject anything else with a bare "Expecting ')'".
+    {
+        auto i = D.find("\t(:action drive");
+        auto j = D.find("\t(:method m_deliver_ordering_0");
+        auto k = D.rfind(')');
+        BOOST_REQUIRE(i != std::string::npos && j != std::string::npos && j < i);
+        std::string actions_first = D.substr(0,j) + D.substr(i,k-i) + D.substr(j,i-j) + ")";
+        auto [a,ap] = load_hddl(actions_first, P);
+        auto [b,bp] = load_hddl(D, P);
+        BOOST_TEST(a.actions.size() == b.actions.size());
+        BOOST_TEST(a.methods.size() == b.methods.size());
+        for (auto& [task,ms] : b.methods) {
+            BOOST_TEST_CONTEXT(task) {
+                BOOST_TEST_REQUIRE(a.methods[task].size() == ms.size());
+                for (size_t n = 0; n < ms.size(); n++) {
+                    BOOST_TEST(a.methods[task][n].get_head() == ms[n].get_head());
+                }
+            }
+        }
+    }
+    //The :parameters of a task, method or action may be left out when there
+    //are none, as PDDL allows for an action.
+    BOOST_TEST(problems_of(replaced(D, "(:action noop", "(:task idle)\n\t(:action rest :effect ())\n\t(:method m_idle :task (idle) :subtasks (rest))\n\t(:action noop"), P).empty());
+    //A comment on the last line, with no newline after it, was a parse error.
+    BOOST_TEST(problems_of(D + "; trailing comment", P + "; trailing comment").empty());
+    //Typed forall effect variables are legal HDDL; only untyped ones parsed.
+    BOOST_TEST(problems_of(replaced(D, "(at ?v ?l2)\n\t\t\t)",
+                                       "(at ?v ?l2)\n\t\t\t\t(forall (?x - package) (not (in ?x ?v)))\n\t\t\t)"),
+                           P).empty());
+    //And a typed forall variable is checked like any other declaration.
+    expect_one(replaced(D, "(at ?v ?l2)\n\t\t\t)",
+                           "(at ?v ?l2)\n\t\t\t\t(forall (?x - pakage) (not (in ?x ?v)))\n\t\t\t)"),
+               P, "forall variable ?x has type pakage, which is not declared in :types (did you mean package?)");
+}
+
+BOOST_AUTO_TEST_CASE(test_validation_checks_requirements) {
+    auto const& D = transport_dom;
+    auto const& P = transport_prob;
+    expect_one(replaced(D, ":typing", ":typeing"), P,
+               "requirement :typeing is not a PDDL or HDDL requirement (did you mean :typing?)");
+    expect_one(replaced(D, ":typing", ":typing :numeric-fluents"), P,
+               "requirement :numeric-fluents is a real PDDL requirement, but this planner does not support it");
+    BOOST_TEST(problems_of(replaced(D, ":typing", ":typing :method-preconditions :equality"), P).empty());
 }

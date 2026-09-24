@@ -48,9 +48,7 @@ BOOST_FUSION_ADAPT_STRUCT(ast::Domain,
                           types,
                           constants,
                           predicates,
-                          tasks,
-                          methods,
-                          actions)
+                          elements)
 BOOST_FUSION_ADAPT_STRUCT(ast::ProblemHTN,
                           problem_class,
                           parameters,

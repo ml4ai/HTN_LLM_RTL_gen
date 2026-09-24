@@ -262,9 +262,11 @@ namespace ast {
     };
 
     // ForallCEffect EBNF Definition: requires conditional-effects
-        // <c-effect> ::= (forall (<variable>*) <effect>)
+        // <c-effect> ::= (forall (<typed list (variable)>) <effect>)
+    // PDDL types the variables like any other; untyped ones are still
+    // accepted, and the loader infers their types from use.
     struct ForallCEffect : x3::position_tagged {
-        std::vector<Variable> variables;
+        TypedList<Variable> variables;
         Effect effect;
     };
 
@@ -286,6 +288,12 @@ namespace ast {
         Effect effect;
     };
 
+    // A task, method or action definition, as the domain body lists them.
+    struct DomainElement : x3::variant<Task, Method, Action> {
+        using base_type::base_type;
+        using base_type::operator=;
+    };
+
     // Domain EBNF Definition:
         //  <domain> ::= (define (domain <name>)
         //      [<require-def>]
@@ -304,6 +312,24 @@ namespace ast {
         std::vector<Task> tasks;
         std::vector<Method> methods;
         std::vector<Action> actions;
+
+        // HDDL lists tasks, then methods, then actions. The grammar accepts
+        // them in any order -- a model writing HDDL does not always keep to
+        // it, and nothing depends on it -- parsing them into `elements`, which
+        // split_elements() then sorts into the three lists above, each in
+        // source order.
+        std::vector<DomainElement> elements;
+
+        void split_elements() {
+            for (auto& e : elements) {
+                switch (e.get().which()) {
+                    case 0: tasks.push_back(std::move(boost::get<Task>(e))); break;
+                    case 1: methods.push_back(std::move(boost::get<Method>(e))); break;
+                    case 2: actions.push_back(std::move(boost::get<Action>(e))); break;
+                }
+            }
+            elements.clear();
+        }
     };
 
     // ProblemHTN EBNF Definition:

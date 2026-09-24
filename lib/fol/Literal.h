@@ -2,10 +2,14 @@
 
 #include "Predicate.h"
 #include <vector>
+#include <boost/spirit/home/x3/support/ast/position_tagged.hpp>
 
 // update away from functions and to predicates
 namespace fol {
-    template <class T> struct Literal {
+    //Position-tagged so the parser records where each atom came from, and a
+    //problem found after parsing (an undeclared predicate, a wrong arity) can
+    //be reported at the atom's own line rather than its action's.
+    template <class T> struct Literal : boost::spirit::x3::position_tagged {
         Predicate predicate;
         std::vector<T> args;
         bool is_negative = false;

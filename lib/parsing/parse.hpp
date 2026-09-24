@@ -94,6 +94,9 @@ T parse(std::string const& storage, std::string const& file = "",
         }
         BOOST_THROW_EXCEPTION(ParseError(text));
     }
+    if constexpr (std::is_same<T, ast::Domain>::value) {
+        object.split_elements();
+    }
     if (lines) {
         lines->file = file;
         lines->line_of_id.clear();

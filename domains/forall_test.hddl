@@ -2,8 +2,9 @@
 ; condition. No other shipped domain uses `forall`, so this is what covers the
 ; quantified-effect path in ActionDef::apply_binding.
 ;
-; The grammar takes an UNTYPED variable list here -- (forall (?l) ...) -- and the
-; loader infers ?l's type from the effect predicate's declaration.
+; The variable lists here are untyped -- (forall (?l) ...) -- so the loader
+; infers ?l's type from the effect predicate's declaration. Typed ones,
+; (forall (?l - room) ...), are covered by test_typed_forall_effects.
 ;
 ; alarm has a plain forall effect: every room becomes alerted.
 ; sweep has a forall + when effect: only rooms that are dirty become clean.

@@ -5,6 +5,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <istream>
+#include <set>
+#include <fstream>
 #include "cpphop/loader.h"
 #include "cpphop/cppMCTShop.h"
 #include "test_paths.h"
@@ -61,6 +63,112 @@ BOOST_AUTO_TEST_CASE(test_forall_effects) {
     BOOST_TEST(!clean.contains("(clean room_c)"));
 
 }// end of testing quantified effects
+
+//(either a b) types (planner_doc.md 8.17). The loader used to throw bad_get on
+//one. A parameter or quantified variable of type (either cat dog) must range
+//over the objects of both types and nothing else: never the bird.
+BOOST_AUTO_TEST_CASE(test_either_types) {
+    std::string dom = R"(
+(define (domain pets)
+  (:requirements :typing :hierarchy)
+  (:types cat dog bird - object)
+  (:predicates (fed ?p - (either cat dog)) (counted ?p) (done))
+  (:task feed_one)
+  (:method m_feed
+    :parameters (?p - (either cat dog))
+    :task (feed_one)
+    :subtasks (and (task0 (feed ?p)) (task1 (count_all))))
+  (:action feed
+    :parameters (?p - (either dog cat))
+    :precondition (not (fed ?p))
+    :effect (fed ?p))
+  (:action count_all
+    :parameters ()
+    :effect (and (forall (?q - (either cat dog)) (counted ?q)) (done))))
+)";
+    std::string prob = R"(
+(define (problem pets_1)
+  (:domain pets)
+  (:objects tom - cat rex - dog tweety - bird)
+  (:htn :subtasks (feed_one))
+  (:init))
+)";
+    std::set<std::string> fed_seen;
+    for (int seed : {1, 2, 3, 4, 5, 6, 7, 8}) {
+        auto [domain,problem] = load_hddl(dom, prob);
+        auto results = cppMCTShop(domain,problem,scorers["simple"],20,1,sqrt(2.0),seed);
+        auto& end_state = results.t[results.end].state;
+        auto fed = end_state.get_facts("fed");
+        BOOST_TEST_REQUIRE(fed.size() == 1u);
+        fed_seen.insert(*fed.begin());
+        //The quantified range: both member types, not the bird.
+        auto counted = end_state.get_facts("counted");
+        BOOST_TEST(counted.size() == 2u);
+        BOOST_TEST(counted.contains("(counted tom)"));
+        BOOST_TEST(counted.contains("(counted rex)"));
+    }
+    //The parameter: some seed picks each member, and none picks the bird.
+    BOOST_TEST(fed_seen.contains("(fed tom)"));
+    BOOST_TEST(fed_seen.contains("(fed rex)"));
+    BOOST_TEST(!fed_seen.contains("(fed tweety)"));
+}
+
+//A domain built or edited in code skips the loader's validation. The planner
+//must still refuse a subtask argument nothing binds, rather than ground it to
+//an object named after the variable (planner_doc.md 8.17).
+BOOST_AUTO_TEST_CASE(test_planner_rejects_unbound_names) {
+    auto [domain,problem] = load(HTN_DOMAINS_DIR "/simple_travel.hddl",
+                                 HTN_DOMAINS_DIR "/simple_travel_problem.hddl");
+    auto& [task,methods] = *domain.methods.begin();
+    auto m = methods.front();
+    auto subtasks = m.get_subtasks();
+    BOOST_REQUIRE(!subtasks.empty());
+    auto& first = subtasks.begin()->second;
+    BOOST_REQUIRE(!first.second.empty());
+    first.second[0].first = "unbound_variable";
+    methods.front() = MethodDef(m.get_head(), m.get_task(), m.get_parameters(),
+                                m.get_preconditions(), subtasks, m.get_orderings(),
+                                m.get_precondition_ast());
+    try {
+        cppMCTShop(domain,problem,scorers["travel_one"],50,1,sqrt(2.0),2022);
+        BOOST_FAIL("an unbound subtask argument was planned with");
+    }
+    catch (std::invalid_argument const& e) {
+        std::string what = e.what();
+        BOOST_TEST_INFO(what);
+        BOOST_TEST(what.find("passes unbound_variable to subtask") != std::string::npos);
+    }
+}
+
+//Typed variables in a forall effect (planner_doc.md 8.17). The grammar used to
+//accept only untyped ones. The declared type must narrow the range: over a
+//predicate that takes any object, a typed forall reaches only that type's
+//objects, while an untyped one reaches every object -- the robot included.
+BOOST_AUTO_TEST_CASE(test_typed_forall_effects) {
+    std::ifstream fd(HTN_DOMAINS_DIR "/forall_test.hddl");
+    std::string dom((std::istreambuf_iterator<char>(fd)), std::istreambuf_iterator<char>());
+    std::ifstream fp(HTN_DOMAINS_DIR "/forall_test_problem.hddl");
+    std::string prob((std::istreambuf_iterator<char>(fp)), std::istreambuf_iterator<char>());
+    auto sub = [](std::string s, std::string const& from, std::string const& to) {
+        auto at = s.find(from);
+        BOOST_REQUIRE(at != std::string::npos);
+        return s.replace(at, from.size(), to);
+    };
+    dom = sub(dom, "(alerted ?l - room)", "(alerted ?l - room)\n\t\t(seen_typed ?o)\n\t\t(seen_any ?o)");
+    dom = sub(dom, "(forall (?l) (alerted ?l))",
+              "(forall (?l) (alerted ?l))\n\t\t\t(forall (?x - room) (seen_typed ?x))\n\t\t\t(forall (?y) (seen_any ?y))");
+
+    auto [domain,problem] = load_hddl(dom, prob);
+    auto results = cppMCTShop(domain,problem,scorers["simple"],300,1,sqrt(2.0),2022);
+    auto& end_state = results.t[results.end].state;
+
+    auto typed = end_state.get_facts("seen_typed");
+    BOOST_TEST(typed.size() == 3u);
+    BOOST_TEST(!typed.contains("(seen_typed bot)"));
+    auto any = end_state.get_facts("seen_any");
+    BOOST_TEST(any.size() == 4u);
+    BOOST_TEST(any.contains("(seen_any bot)"));
+}
 
 //Zero-arity predicates (propositional atoms) and an empty "(and)" precondition.
 //Atoms become plain Bool constants in SMT rather than nullary applications, and

@@ -291,7 +291,7 @@ namespace parser {
     rule<class TCEffect, CEffect> const c_effect = "c_effect";
 
     rule<class TForallCEffect, ForallCEffect> const forall_c_effect = "forall_c_effect";
-    auto const forall_c_effect_def = ('(' >> lit("forall")) > '(' >> *variable >> ')' >> effect > ')';
+    auto const forall_c_effect_def = ('(' >> lit("forall")) > '(' >> typed_list_variables >> ')' >> effect > ')';
     BOOST_SPIRIT_DEFINE(forall_c_effect);
     struct TForallCEffect: x3::annotate_on_success {};
 
@@ -353,8 +353,13 @@ namespace parser {
     BOOST_SPIRIT_DEFINE(parameters);
     struct TParameters: x3::annotate_on_success {};
 
+    // A task, action or method with no parameters may leave out
+    // ":parameters ()" -- optional in PDDL's action definition, and what a
+    // writer of HDDL reasonably expects of a task or method too.
+    auto const parameters_or_none = parameters | x3::attr(TypedList<Variable>{});
+
     rule<class TTask, Task> const task = "task";
-    auto const task_def = name >> parameters;
+    auto const task_def = name >> parameters_or_none;
     BOOST_SPIRIT_DEFINE(task);
     struct TTask: x3::annotate_on_success {};
 
@@ -406,7 +411,10 @@ namespace parser {
     struct TOrderings: x3::annotate_on_success {};
 
     rule<class TTaskNetworkOrderings, Orderings> const task_network_orderings = "task_network_orderings";
-    auto const task_network_orderings_def = lit(":ordering") > orderings;
+    // HDDL spells the keyword :order[ing]. The short form must not match the
+    // start of a longer keyword.
+    auto const task_network_orderings_def =
+        (lit(":ordering") | (lit(":order") >> !(alnum | char_("-_")))) > orderings;
     BOOST_SPIRIT_DEFINE(task_network_orderings);
     struct TTaskNetworkOrderings: x3::annotate_on_success {};
 
@@ -448,7 +456,7 @@ namespace parser {
     rule<class TMethod, Method> const method = "method";
     auto const method_def = ('(' >> lit(":method"))
                                 > name
-                                > parameters
+                                > parameters_or_none
                                 > mtask // one task
                                 >> -precondition
                                 > task_network
@@ -465,7 +473,7 @@ namespace parser {
     rule<class TAction, Action> const action = "action";
     auto const action_def = ('(' >> lit(":action"))
                                > name
-                               > parameters
+                               > parameters_or_none
                                >> -precondition
                                >> -(lit(":effect") >> effect)
                                > ')';
@@ -474,16 +482,19 @@ namespace parser {
 
     // Domain definition
     rule<class TDomain, Domain> const domain = "domain";
-    auto const domain_def = ('(' >> lit("define")) > '('
-                               >> lit("domain")
+    // Every step is an expectation (>) rather than a sequence (>>). In C++ >>
+    // binds tighter than >, so "a > b >> c >> d > e" groups b, c and d into
+    // one anonymous parser, and a failure anywhere in it was reported against
+    // that parser's C++ type -- a missing ')' after the domain name came out
+    // as "expecting the rest of a requirements". The optional and repeated
+    // parts cannot fail, so expecting them changes nothing else.
+    auto const domain_def = ('(' >> lit("define")) > '(' > lit("domain")
                                > name > ')'
-                               > requirements
-                               >> -types
-                               >> -constants
-                               >> -predicates
-                               >> *abstract_task
-                               >> *method
-                               >> *action
+                               > -requirements // optional in HDDL, as in PDDL
+                               > -types
+                               > -constants
+                               > -predicates
+                               > *(abstract_task | method | action)
                                > ')';
     BOOST_SPIRIT_DEFINE(domain);
     struct TDomain : x3::annotate_on_success, ErrorHandlerBase {};
@@ -532,14 +543,15 @@ namespace parser {
     struct TProblemHTN: x3::annotate_on_success {};
 
     rule<class TProblem, Problem> const problem = "problem";
+    // Expectations throughout, for the reason given at domain_def.
     auto const problem_def = ('(' >> lit("define"))
-                               > ('(' >> lit("problem")) > name > ')'
-                               > ('(' >> lit(":domain")) > name > ')'
-                               >> -requirements
-                               >> -objects
-                               >> -problem_htn
+                               > '(' > lit("problem") > name > ')'
+                               > '(' > lit(":domain") > name > ')'
+                               > -requirements
+                               > -objects
+                               > -problem_htn
                                > init
-                               >> -goal
+                               > -goal
                                > ')';
     BOOST_SPIRIT_DEFINE(problem);
     struct TProblem : x3::annotate_on_success, ErrorHandlerBase {};
