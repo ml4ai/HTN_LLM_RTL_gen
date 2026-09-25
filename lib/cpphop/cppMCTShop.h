@@ -116,7 +116,7 @@ inline bool links_intact(TaskGraph const& succ, std::vector<int> const& own,
   }
   std::vector<char> live(succ.checks.size(),0);
   for (auto const& [id,tg] : succ.tags) {
-    for (int k : tg.checks) {
+    for (int k : tg->checks) {
       live[k] = 1;
     }
   }

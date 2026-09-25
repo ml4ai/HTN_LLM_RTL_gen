@@ -168,12 +168,14 @@ struct TaskGraph {
   };
   //Sorted by task id by construction, like GTs: tags are set immediately after
   //add_node hands out an id, and ids only increase.
-  std::vector<std::pair<int,TaskTags>> tags;
+  //A task's tags never change once set, so, like the tasks, they are shared
+  //between copies of the network rather than copied with it (8.24).
+  std::vector<std::pair<int,std::shared_ptr<const TaskTags>>> tags;
 
   TaskTags const* tags_of(int id) const {
     auto it = std::lower_bound(tags.begin(),tags.end(),id,
-                               [](std::pair<int,TaskTags> const& p, int k) { return p.first < k; });
-    return (it != tags.end() && it->first == id) ? &it->second : nullptr;
+                               [](auto const& p, int k) { return p.first < k; });
+    return (it != tags.end() && it->first == id) ? it->second.get() : nullptr;
   }
 
   std::vector<int> const& checks_of(int id) const {
@@ -191,7 +193,7 @@ struct TaskGraph {
     if (t.checks.empty() && t.establishes < 0) {
       return;
     }
-    this->tags.emplace_back(id,std::move(t));
+    this->tags.emplace_back(id,std::make_shared<const TaskTags>(std::move(t)));
   }
 
   TaskPtr const* slot(int i) const {
@@ -270,7 +272,7 @@ struct TaskGraph {
     this->GTs.erase(it);
     if (!this->tags.empty()) {
       auto tt = std::lower_bound(tags.begin(),tags.end(),gt,
-                                 [](std::pair<int,TaskTags> const& p, int k) { return p.first < k; });
+                                 [](auto const& p, int k) { return p.first < k; });
       if (tt != tags.end() && tt->first == gt) {
         this->tags.erase(tt);
       }
