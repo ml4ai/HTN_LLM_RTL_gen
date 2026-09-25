@@ -37,6 +37,7 @@ struct effect {
     this->pred = pred;
     this->forall = forall;
     this->condition_ast = condition_ast;
+    expr::number_variables(this->condition_ast);
   }
 };
 using Effects = std::vector<effect>;
@@ -370,6 +371,7 @@ class ActionDef {
     Params parameters;
     Preconds preconditions;
     expr::Ptr precondition_ast;
+    eval::SlotMap slots;
     Effects effects;
     //True for the effect-free actions the loader synthesises to carry a
     //method's precondition under HDDL timing. They are real search steps, but
@@ -535,6 +537,11 @@ class ActionDef {
       this->effects = effects;
       this->artificial = artificial;
       this->precondition_ast = precondition_ast;
+      expr::number_variables(this->precondition_ast);
+      //Queried with the parameters pinned in their own order.
+      std::vector<std::string> names;
+      for (auto const& p : this->parameters) names.push_back(p.first);
+      this->slots = eval::slot_map(this->precondition_ast,this->parameters,names);
     }
 
     //The structured form of `preconditions`. Nothing evaluates it yet; it is
@@ -552,7 +559,7 @@ class ActionDef {
       for (size_t i = 0; i < args.size(); i++) {
         fixed.push_back({this->parameters[i].first,args[i].second});
       }
-      auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed);
+      auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed,&this->slots);
       if (direct) {
         return *direct;
       }
@@ -630,7 +637,7 @@ class ActionDef {
       //small-string buffer -- so building it was a heap allocation per check,
       //and HDDL timing puts one in front of every method.
       if (this->artificial) {
-        auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed);
+        auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed,&this->slots);
         bool holds;
         if (direct) {
           holds = *direct;
@@ -647,7 +654,8 @@ class ActionDef {
 
       auto bindings = eval::solve_query_lazy(kb,this->precondition_ast,pc_of,
                                              this->parameters,fixed,
-                                             this->head.c_str());
+                                             this->head.c_str(),
+                                             &this->slots);
       if (bindings.empty()) {
         //No successor, so nobody reads the token.
         return std::make_pair(task_token{},new_states);
@@ -672,6 +680,7 @@ class MethodDef {
     Params parameters;
     Preconds preconditions;
     expr::Ptr precondition_ast;
+    eval::SlotMap slots;
     TaskDefs subtasks;
     std::unordered_map<std::string,std::vector<std::string>> orderings;
 
@@ -691,6 +700,11 @@ class MethodDef {
       this->subtasks = subtasks;
       this->orderings = orderings;
       this->precondition_ast = precondition_ast;
+      expr::number_variables(this->precondition_ast);
+      //Queried with the decomposed task's arguments pinned, in its order.
+      std::vector<std::string> names;
+      for (auto const& p : this->task.second) names.push_back(p.first);
+      this->slots = eval::slot_map(this->precondition_ast,this->parameters,names);
     }
 
     //Structured form of `preconditions`, which for a method is its
@@ -824,8 +838,8 @@ class MethodDef {
     //bindings, where N is the floor, since each binding yields a successor
     //network of its own. It also means `args`, which callers pass as a
     //reference *into* this same network, can no longer be invalidated.
-    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args const& args, TaskGraph const& tasks, int i,
-                                                            PreconditionMode mode = PreconditionMode::Compiled) {
+    //The bindings under which this method applies to task `i` with `args`.
+    std::vector<Args> bindings(KnowledgeBase& kb, Args const& args) {
       //args is indexed in lockstep with this->task.second, so a task invoked
       //with the wrong arity would read past the end of the task's parameters.
       if (!args.empty() && args.size() != this->task.second.size()) {
@@ -834,8 +848,7 @@ class MethodDef {
                                std::to_string(this->task.second.size())+" parameters!");
       }
       //As in ActionDef::apply, the SMT text is built only if the Z3 fallback
-      //or the differential build asks for it. (This function also used to
-      //build a "(task args...)" token on every call and never read it.)
+      //or the differential build asks for it.
       auto pc_of = [&]() {
         if (args.empty()) {
           return this->preconditions;
@@ -846,7 +859,6 @@ class MethodDef {
         }
         return pc + (this->preconditions != "__NONE__" ? this->preconditions+")" : ")");
       };
-      std::vector<std::pair<std::vector<int>,TaskGraph>> groundings;
       //As in ActionDef::apply: the `(= param value)` prefix becomes an
       //environment rather than part of the formula.
       Args fixed;
@@ -854,20 +866,34 @@ class MethodDef {
       for (size_t k = 0; k < args.size(); k++) {
         fixed.push_back({this->task.second[k].first,args[k].second});
       }
-      auto bindings = eval::solve_query_lazy(kb,this->precondition_ast,pc_of,
-                                             this->parameters,fixed,
-                                             this->head.c_str());
-      if (bindings.empty()) {
-        return groundings;
-      }
+      return eval::solve_query_lazy(kb,this->precondition_ast,pc_of,
+                                    this->parameters,fixed,this->head.c_str(),
+                                    &this->slots);
+    }
+
+    //The network that decomposing task `i` under one binding produces. Each
+    //starts from its own copy of `tasks`, so building one does not depend on
+    //which others were built: a rollout builds only those it reaches (8.25).
+    std::pair<std::vector<int>,TaskGraph> ground(Args const& binding, TaskGraph const& tasks, int i,
+                                                 PreconditionMode mode = PreconditionMode::Compiled) {
       std::vector<int> out = tasks.at(i).outgoing;
       //The checks the decomposed task carries pass to its subtasks.
       std::vector<int> inherited = tasks.checks_of(i);
-      groundings.reserve(bindings.size());
-      for (auto &b : bindings) {
-        TaskGraph g = tasks;          //the one copy each successor needs
-        g.remove_node(i);
-        groundings.push_back(this->apply_binding(b,std::move(g),out,inherited,mode));
+      TaskGraph g = tasks;
+      g.remove_node(i);
+      return this->apply_binding(binding,std::move(g),out,inherited,mode);
+    }
+
+    //Every binding's network, for the search tree, which keeps them all.
+    //tasks is taken by const reference and never modified, so `args`, which
+    //callers pass as a reference into this same network, stays valid.
+    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args const& args, TaskGraph const& tasks, int i,
+                                                            PreconditionMode mode = PreconditionMode::Compiled) {
+      std::vector<std::pair<std::vector<int>,TaskGraph>> groundings;
+      auto bs = this->bindings(kb,args);
+      groundings.reserve(bs.size());
+      for (auto const& b : bs) {
+        groundings.push_back(this->ground(b,tasks,i,mode));
       }
       return groundings;
     }

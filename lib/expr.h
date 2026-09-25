@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <functional>
 #include <memory>
@@ -45,6 +46,8 @@ enum class Kind {
 struct Term {
   std::string name;
   bool is_variable = false;
+  //A variable's slot in its expression's binding array; see number_variables.
+  mutable int slot = -1;
 };
 
 // A bound variable of a quantifier, together with the type predicates that
@@ -66,7 +69,48 @@ struct Node {
   std::vector<Ptr> children;      // Not(1), And/Or(n), Imply(2), Forall/Exists(1)
   std::vector<Bound> bound;       // Forall/Exists
   std::string quantifier;         // Forall/Exists: "forall" or "exists" as written
+  //On the root only, once numbered: the variables' names in slot order.
+  mutable int nslots = -1;
+  mutable std::vector<std::string> slot_names;
 };
+
+//Numbers the distinct variables of an expression 0, 1, ... in order of first
+//appearance, recording each variable's slot on its terms and the names on the
+//root. The evaluator then binds variables in a flat array indexed by slot,
+//rather than by comparing names (planner_doc.md 8.25).
+//
+//The fields are mutable because expressions are shared as const. Numbering
+//happens where an expression is attached to an action, method or effect --
+//their constructors -- so before any search could run in parallel; an
+//expression built later is numbered by the evaluator on first use, and must
+//not then be shared between threads unnumbered. A subexpression must belong to
+//one root only, as everything the loader builds does.
+inline void number_variables(Ptr const& root) {
+  if (!root || root->nslots >= 0) {
+    return;
+  }
+  std::vector<std::string> names;
+  std::function<void(Node const&)> walk = [&](Node const& n) {
+    for (auto const& t : n.args) {
+      if (!t.is_variable) {
+        continue;
+      }
+      auto it = std::find(names.begin(), names.end(), t.name);
+      t.slot = (int)(it - names.begin());
+      if (it == names.end()) {
+        names.push_back(t.name);
+      }
+    }
+    for (auto const& c : n.children) {
+      if (c) {
+        walk(*c);
+      }
+    }
+  };
+  walk(*root);
+  root->slot_names = std::move(names);
+  root->nslots = (int)root->slot_names.size();
+}
 
 inline Ptr make_atom(std::string predicate, std::vector<Term> args) {
   auto n = std::make_shared<Node>();

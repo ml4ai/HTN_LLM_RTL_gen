@@ -310,14 +310,20 @@ simulation(std::vector<std::string>& plan,
               !mprec::links_intact(gtasks,own,ns,domain)) {
             continue;
           }
-          auto gplan = plan;
           //A synthesised method-precondition check is a search step but not a
           //plan step; keeping it out leaves plan length and the score
           //functions that read it meaning what they did before.
-          if (!adef.is_artificial()) {
-            gplan.push_back(act.first+"_"+std::to_string(cTask));
+          //Appended in place and removed on the way back, on every path out:
+          //copying the plan at every step made a rollout's cost grow with
+          //the square of its length (8.25).
+          bool const step = !adef.is_artificial();
+          if (step) {
+            plan.push_back(act.first+"_"+std::to_string(cTask));
           }
-          auto rs = simulation(gplan,ns,gtasks,domain,g,depth_budget-1,restrict_compound);
+          auto rs = simulation(plan,ns,gtasks,domain,g,depth_budget-1,restrict_compound);
+          if (step) {
+            plan.pop_back();
+          }
           if (rs.status == RolloutStatus::Solved) {
             return rs;
           }
@@ -336,10 +342,19 @@ simulation(std::vector<std::string>& plan,
       std::shuffle(order.begin(),order.end(),g);
       for (auto const& mi : order) {
         auto& m = task_methods[mi];
-        auto all_gts = m.apply(state,tasks[cTask].args,tasks,cTask,domain.precondition_mode);
-        if (!all_gts.empty()) {
-          std::shuffle(all_gts.begin(),all_gts.end(),g);
-          for (auto &gts : all_gts) {
+        //The bindings, and each one's network only when the rollout gets to
+        //it: a rollout usually takes the first, and building every one was a
+        //copy of the network per binding (8.25). Shuffling an index list of
+        //the same length applies the same permutation, with the same draws,
+        //as shuffling the networks did, and each network is built from its own
+        //copy of `tasks`, so what the rollout sees is unchanged.
+        auto bindings = m.bindings(state,tasks[cTask].args);
+        if (!bindings.empty()) {
+          std::vector<int> pick(bindings.size());
+          std::iota(pick.begin(),pick.end(),0);
+          std::shuffle(pick.begin(),pick.end(),g);
+          for (int bi : pick) {
+            auto gts = m.ground(bindings[bi],tasks,cTask,domain.precondition_mode);
             auto rs = simulation(plan,state,gts.second,domain,g,depth_budget-1,restrict_compound);
             if (rs.status == RolloutStatus::Solved) {
               return rs;

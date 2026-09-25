@@ -3,6 +3,7 @@
 #include "kb.h"
 #include "expr.h"
 #include <algorithm>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -32,52 +33,6 @@ namespace eval {
 //Same shape as typedefs.h's Params and Args, spelled out here because this
 //header sits below typedefs.h: it cannot include it without a cycle.
 using Binding = std::vector<std::pair<std::string,std::string>>;
-
-//Variable -> the object bound to it, for the bindings fixed so far.
-//
-//Objects are held by id, and variables by a pointer to their name. The names
-//belong to the query's own expression and parameter lists, which outlive it.
-//This held both as strings, so every atom hashed each bound value back to an
-//id to compare it with the fact index, and every copy of an Env -- one per
-//candidate binding -- copied every name and value (planner_doc.md 8.24). Names
-//and ids convert once, at the start and end of a query.
-//
-//A flat vector looked up by linear scan: an Env is copied far more often than
-//it is read, and it holds a handful of entries -- a method's parameters.
-//`text` is set only for a value that names no object (object < 0), which
-//can only be compared as text.
-struct Slot {
-  std::string const* name;
-  int object;
-  std::string const* text = nullptr;
-};
-using Env = std::vector<Slot>;
-
-inline Slot const* env_slot(Env const& env, std::string const& name) {
-  for (auto const& s : env) {
-    if (*s.name == name) {
-      return &s;
-    }
-  }
-  return nullptr;
-}
-
-inline int const* env_find(Env const& env, std::string const& name) {
-  auto const* s = env_slot(env,name);
-  return s ? &s->object : nullptr;
-}
-
-inline void env_set(Env& env, std::string const& name, int object,
-                    std::string const* text = nullptr) {
-  for (auto& s : env) {
-    if (*s.name == name) {
-      s.object = object;
-      s.text = text;
-      return;
-    }
-  }
-  env.push_back({&name,object,text});
-}
 
 //Can this expression be evaluated directly? Checked once up front so the
 //caller can decide which engine to use before doing any work.
@@ -111,92 +66,109 @@ inline bool supported(expr::Ptr const& e) {
 
 namespace detail {
 
-//What a term denotes under env, as an object id; kUnbound for a variable not
-//yet bound, kNoObject for a constant that names no object. A constant that
-//names no object can never match a fact, as before, when it was compared as a
-//string that no fact's argument equalled.
+//A search is a depth-first walk over the expression with one binding array,
+//indexed by the slots expr::number_variables gave the variables. A variable is
+//set when an atom or equality binds it, the rest of the expression is searched
+//through a continuation, and the variable is unset on the way back. Nothing is
+//allocated per candidate binding.
+//
+//This replaced a breadth-first form that built, for every subexpression, the
+//vector of every binding extending the incoming one, and copied a binding per
+//candidate (planner_doc.md 8.25). The two produce the same bindings in the
+//same order -- the breadth-first fold over a conjunction, taken level by
+//level, lists its results in exactly the order a depth-first walk reaches
+//them -- and the order matters: it becomes the order of successors, and so
+//the random stream.
 constexpr int kUnbound = -1;
-constexpr int kNoObject = -2;
+constexpr int kNoObject = -2;   //a value that names no object; see Search::text
 
-inline int value_of(KnowledgeBase& kb, expr::Term const& t, Env const& env) {
+struct Search {
+  KnowledgeBase& kb;
+  std::vector<int> val;                   //per slot: an object id, or the above
+  std::vector<std::string const*> text;   //per slot, for a kNoObject value: its text
+  //The expression turned out not to be evaluable here -- a negation or a
+  //disequality reached before its variables were bound. The query goes to Z3.
+  bool abort = false;
+  //An existence check (a negation's, or ask_any's) has its witness: unwind.
+  bool halt = false;
+
+  bool stop() const { return abort || halt; }
+};
+
+//A continuation: what to do with each binding found. A non-owning reference
+//to a callable, so that nested continuations do not nest types -- a template
+//parameter would, once per level of the expression, without bound.
+class Cont {
+public:
+  template <class F>
+  Cont(F& f) : obj_(&f), call_([](void* o) { (*static_cast<F*>(o))(); }) {}
+  void operator()() const { call_(obj_); }
+private:
+  void* obj_;
+  void (*call_)(void*);
+};
+
+inline int value_of(Search& s, expr::Term const& t) {
   if (!t.is_variable) {
-    int oid = kb.object_id(t.name);
+    int oid = s.kb.object_id(t.name);
     return oid < 0 ? kNoObject : oid;
   }
-  auto const* v = env_find(env,t.name);
-  return v ? *v : kUnbound;
+  return s.val[t.slot];
 }
 
 //The text of a bound term that names no object, for comparing two such.
-inline std::string const* text_of(expr::Term const& t, Env const& env) {
-  if (!t.is_variable) {
-    return &t.name;
-  }
-  auto const* s = env_slot(env,t.name);
-  return s ? s->text : nullptr;
+inline std::string const* text_of(Search& s, expr::Term const& t) {
+  return t.is_variable ? s.text[t.slot] : &t.name;
 }
 
-inline bool ground(expr::Ptr const& e, Env const& env) {
-  if (!e) {
-    return true;
-  }
-  for (auto const& a : e->args) {
-    if (a.is_variable && !env_find(env,a.name)) {
+inline bool ground(Search& s, expr::Node const& e) {
+  for (auto const& a : e.args) {
+    if (a.is_variable && s.val[a.slot] == kUnbound) {
       return false;
     }
   }
-  for (auto const& c : e->children) {
-    if (!ground(c,env)) {
+  for (auto const& c : e.children) {
+    if (c && !ground(s, *c)) {
       return false;
     }
   }
   return true;
 }
 
-//Every way of extending env so that e holds. An empty result means the
-//expression is false under every extension; a result containing env unchanged
-//means it holds and bound nothing new.
-//
-//Returns nullopt if the expression turned out not to be evaluable here -- a
-//negation still containing free variables, for instance, which `supported`
-//cannot rule out up front because it depends on the binding order.
-inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
-                                             expr::Ptr const& e,
-                                             Env const& env);
+inline void solve(Search& s, expr::Node const& e, Cont const& k);
 
-inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
-                                                  expr::Ptr const& e,
-                                                  Env const& env) {
-  std::vector<Env> out;
-  int pid = kb.predicate_id(e->predicate);
+inline void solve_atom(Search& s, expr::Node const& e, Cont const& k) {
+  int pid = s.kb.predicate_id(e.predicate);
+  auto const& rel = s.kb.relation_of(pid);
   //A zero-arity predicate is a propositional atom: it holds if its relation is
   //non-empty.
-  if (e->args.empty()) {
-    if (pid >= 0 && !kb.relation_of(pid).empty()) {
-      out.push_back(env);
+  if (e.args.empty()) {
+    if (pid >= 0 && !rel.empty()) {
+      k();
     }
-    return out;
+    return;
   }
-  if (pid < 0 || kb.arity_of(pid) != e->args.size()) {
-    return out;
+  size_t ar = e.args.size();
+  if (pid < 0 || s.kb.arity_of(pid) != ar) {
+    return;
   }
-  size_t ar = e->args.size();
-  auto const& rel = kb.relation_of(pid);
-
-  //Resolve each argument against the incoming env once rather than per tuple.
-  //A negative entry means the position is free and this atom will bind it.
-  std::vector<int> want(ar,kUnbound);
+  //Each argument resolved once rather than per tuple; kUnbound marks a
+  //position this atom will bind.
+  int want_small[8];
+  std::vector<int> want_large;
+  int* want = want_small;
+  if (ar > 8) {
+    want_large.resize(ar);
+    want = want_large.data();
+  }
   for (size_t i = 0; i < ar; i++) {
-    want[i] = value_of(kb,e->args[i],env);
+    want[i] = value_of(s, e.args[i]);
     if (want[i] == kNoObject) {
-      return out;   //a constant no object matches: nothing can hold
+      return;   //a value naming no object matches no fact
     }
   }
-
   for (size_t off = 0; off + ar <= rel.size(); off += ar) {
     bool ok = true;
-    //Two passes, so that `env` is copied only for a tuple that actually
-    //matches. Most candidates do not.
     for (size_t i = 0; i < ar && ok; i++) {
       if (want[i] >= 0) {
         ok = (rel[off+i] == want[i]);
@@ -205,8 +177,7 @@ inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
         //A variable repeated inside one atom -- (road ?l ?l) -- must agree
         //with its own earlier position.
         for (size_t j = 0; j < i; j++) {
-          if (want[j] < 0 && e->args[j].name == e->args[i].name &&
-              rel[off+j] != rel[off+i]) {
+          if (want[j] < 0 && e.args[j].slot == e.args[i].slot && rel[off+j] != rel[off+i]) {
             ok = false;
           }
         }
@@ -215,134 +186,134 @@ inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
     if (!ok) {
       continue;
     }
-    Env next;
-    next.reserve(env.size() + ar);
-    next = env;
     for (size_t i = 0; i < ar; i++) {
       if (want[i] < 0) {
-        env_set(next,e->args[i].name,rel[off+i]);
+        s.val[e.args[i].slot] = rel[off+i];
       }
     }
-    out.push_back(std::move(next));
+    k();
+    for (size_t i = 0; i < ar; i++) {
+      if (want[i] < 0) {
+        s.val[e.args[i].slot] = kUnbound;
+      }
+    }
+    if (s.stop()) {
+      return;
+    }
   }
-  return out;
 }
 
-inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
-                                             expr::Ptr const& e,
-                                             Env const& env) {
-  if (!e) {
-    return std::vector<Env>{env};
+inline void solve_compare(Search& s, expr::Node const& e, Cont const& k) {
+  bool equals = (e.kind == expr::Kind::Equals);
+  int l = value_of(s, e.args[0]);
+  int r = value_of(s, e.args[1]);
+  if (l != kUnbound && r != kUnbound) {
+    //Two values naming no object compare by their text.
+    bool same;
+    if (l == kNoObject || r == kNoObject) {
+      auto const* lt = text_of(s, e.args[0]);
+      auto const* rt = text_of(s, e.args[1]);
+      same = (l == r) && lt && rt && *lt == *rt;
+    }
+    else {
+      same = (l == r);
+    }
+    if (same == equals) {
+      k();
+    }
+    return;
   }
-  switch (e->kind) {
-    case expr::Kind::Atom:
-      return solve_atom(kb,e,env);
+  if (equals && (l != kUnbound || r != kUnbound)) {
+    //One side unbound: an equality binds it.
+    bool left = (l != kUnbound);
+    expr::Term const& from = left ? e.args[0] : e.args[1];
+    int slot = (left ? e.args[1] : e.args[0]).slot;
+    s.val[slot] = left ? l : r;
+    s.text[slot] = (s.val[slot] == kNoObject) ? text_of(s, from) : nullptr;
+    k();
+    s.val[slot] = kUnbound;
+    s.text[slot] = nullptr;
+    return;
+  }
+  //A disequality with an unbound side constrains nothing yet, and an equality
+  //between two unbound variables would need a domain to range over.
+  s.abort = true;
+}
 
+inline void solve_not(Search& s, expr::Node const& e, Cont const& k) {
+  if (!e.children[0] || !ground(s, *e.children[0])) {
+    //Negation as failure only makes sense once everything is bound.
+    s.abort = true;
+    return;
+  }
+  bool found = false;
+  auto witness = [&] { found = true; s.halt = true; };
+  Cont w(witness);
+  solve(s, *e.children[0], w);
+  s.halt = false;
+  if (!s.abort && !found) {
+    k();
+  }
+}
+
+//Positive atoms and equalities are taken first, so that they bind variables
+//before a negation or disequality needs them: `pos` runs over the children
+//twice, taking in the first pass the ones that bind and in the second the
+//rest, each pass in written order.
+inline bool binds(expr::Ptr const& c) {
+  return c && (c->kind == expr::Kind::Atom || c->kind == expr::Kind::Equals);
+}
+
+inline void solve_and(Search& s, expr::Node const& e, size_t pos, Cont const& k) {
+  size_t n = e.children.size();
+  while (pos < 2 * n && binds(e.children[pos % n]) != (pos < n)) {
+    pos++;
+  }
+  if (pos == 2 * n) {
+    k();
+    return;
+  }
+  auto rest = [&] { solve_and(s, e, pos + 1, k); };
+  Cont r(rest);
+  auto const& c = e.children[pos % n];
+  if (!c) {
+    rest();
+    return;
+  }
+  solve(s, *c, r);
+}
+
+inline void solve(Search& s, expr::Node const& e, Cont const& k) {
+  switch (e.kind) {
+    case expr::Kind::Atom:
+      solve_atom(s, e, k);
+      return;
     case expr::Kind::Equals:
-    case expr::Kind::NotEquals: {
-      int l = value_of(kb,e->args[0],env);
-      int r = value_of(kb,e->args[1],env);
-      if (l != kUnbound && r != kUnbound) {
-        //Two constants naming no object compare by name, as they did when
-        //everything was a string.
-        bool same;
-        if (l == kNoObject || r == kNoObject) {
-          auto const* lt = text_of(e->args[0],env);
-          auto const* rt = text_of(e->args[1],env);
-          same = (l == r) && lt && rt && *lt == *rt;
+    case expr::Kind::NotEquals:
+      solve_compare(s, e, k);
+      return;
+    case expr::Kind::Not:
+      solve_not(s, e, k);
+      return;
+    case expr::Kind::And:
+      solve_and(s, e, 0, k);
+      return;
+    case expr::Kind::Or:
+      for (auto const& c : e.children) {
+        if (c) {
+          solve(s, *c, k);
         }
         else {
-          same = (l == r);
+          k();
         }
-        bool want = (e->kind == expr::Kind::Equals);
-        if (same == want) {
-          return std::vector<Env>{env};
-        }
-        return std::vector<Env>{};
-      }
-      if (e->kind == expr::Kind::Equals && (l != kUnbound || r != kUnbound)) {
-        //One side unbound: an equality binds it -- unless the bound side names
-        //no object, which no variable can take.
-        bool left = (l != kUnbound);
-        int v = left ? l : r;
-        std::string const* text = (v == kNoObject)
-                                ? text_of(left ? e->args[0] : e->args[1],env) : nullptr;
-        Env next = env;
-        env_set(next,left ? e->args[1].name : e->args[0].name,v,text);
-        return std::vector<Env>{next};
-      }
-      //A disequality between unbound variables constrains nothing yet, and
-      //both sides unbound in an equality would need a domain to range over.
-      return std::nullopt;
-    }
-
-    case expr::Kind::Not: {
-      if (!ground(e->children[0],env)) {
-        //Negation as failure only makes sense once everything is bound.
-        return std::nullopt;
-      }
-      auto inner = solve(kb,e->children[0],env);
-      if (!inner) {
-        return std::nullopt;
-      }
-      if (inner->empty()) {
-        return std::vector<Env>{env};
-      }
-      return std::vector<Env>{};
-    }
-
-    case expr::Kind::And: {
-      //Fold left to right: each conjunct is solved under the bindings the ones
-      //before it produced, which is what makes this a join rather than a
-      //filtered cross product. Positive atoms are taken first so that they
-      //bind variables before a negation or disequality needs them. Two passes
-      //over the children in place; within each pass they keep their written
-      //order.
-      auto binds = [](expr::Ptr const& c) {
-        return c && (c->kind == expr::Kind::Atom || c->kind == expr::Kind::Equals);
-      };
-      std::vector<Env> envs{env};
-      for (int pass = 0; pass < 2 && !envs.empty(); pass++) {
-        for (auto const& c : e->children) {
-          if (binds(c) != (pass == 0)) {
-            continue;
-          }
-          std::vector<Env> next;
-          for (auto const& cur : envs) {
-            auto got = solve(kb,c,cur);
-            if (!got) {
-              return std::nullopt;
-            }
-            next.insert(next.end(),std::make_move_iterator(got->begin()),
-                                   std::make_move_iterator(got->end()));
-          }
-          envs = std::move(next);
-          //Stop at the first conjunct nothing satisfies. This matters for more
-          //than speed: a later negation with free variables would make solve()
-          //return nullopt and send a query that is already false to Z3.
-          if (envs.empty()) {
-            break;
-          }
+        if (s.stop()) {
+          return;
         }
       }
-      return envs;
-    }
-
-    case expr::Kind::Or: {
-      std::vector<Env> out;
-      for (auto const& c : e->children) {
-        auto got = solve(kb,c,env);
-        if (!got) {
-          return std::nullopt;
-        }
-        out.insert(out.end(),std::make_move_iterator(got->begin()),
-                             std::make_move_iterator(got->end()));
-      }
-      return out;
-    }
-
+      return;
     default:
-      return std::nullopt;
+      s.abort = true;
+      return;
   }
 }
 
@@ -356,6 +327,90 @@ inline std::string key_of(Binding const& b) {
     k += ';';
   }
   return k;
+}
+
+} // namespace detail
+
+//Which slot each parameter and each pinned argument occupies: the
+//expression's own slot for a variable it mentions, a new one after them for a
+//parameter it does not, and -1 for a pinned name it neither mentions nor asks
+//about. An action or method computes this once, since its expression and
+//parameter lists are fixed; working it out per query was a string comparison
+//per parameter per slot (planner_doc.md 8.25).
+struct SlotMap {
+  std::vector<int> param_slot;
+  std::vector<int> fixed_slot;
+  int total = 0;
+};
+
+inline SlotMap slot_map(expr::Ptr const& e, Binding const& params,
+                        std::vector<std::string> const& fixed_names) {
+  expr::number_variables(e);
+  int n = e ? e->nslots : 0;
+  SlotMap m;
+  std::vector<std::string const*> extra;
+  auto slot_of = [&](std::string const& name) -> int {
+    if (e) {
+      for (int i = 0; i < n; i++) {
+        if (e->slot_names[i] == name) return i;
+      }
+    }
+    for (size_t i = 0; i < extra.size(); i++) {
+      if (*extra[i] == name) return n + (int)i;
+    }
+    return -1;
+  };
+  for (auto const& [name,type] : params) {
+    int slot = slot_of(name);
+    if (slot < 0) {
+      slot = n + (int)extra.size();
+      extra.push_back(&name);
+    }
+    m.param_slot.push_back(slot);
+  }
+  for (auto const& name : fixed_names) {
+    m.fixed_slot.push_back(slot_of(name));
+  }
+  m.total = n + (int)extra.size();
+  return m;
+}
+
+namespace detail {
+
+//Sets up a search: sizes the binding array and binds what `fixed` pins, using
+//`map` if the caller has one that fits, and computing one otherwise.
+inline SlotMap const& prepare(Search& s, expr::Ptr const& e, Binding const& params,
+                              Binding const& fixed, SlotMap const* map, SlotMap& scratch) {
+  if (!map || map->param_slot.size() != params.size() ||
+      map->fixed_slot.size() != fixed.size()) {
+    std::vector<std::string> names;
+    names.reserve(fixed.size());
+    for (auto const& f : fixed) names.push_back(f.first);
+    scratch = slot_map(e,params,names);
+    map = &scratch;
+  }
+  s.val.assign(map->total, kUnbound);
+  s.text.assign(map->total, nullptr);
+  for (size_t i = 0; i < fixed.size(); i++) {
+    auto const& [name,value] = fixed[i];
+    //A parameter "pinned" to its own name is not pinned at all. When a
+    //method's subtask mentions a parameter the method does not bind,
+    //MethodDef::apply_binding falls back to using the parameter's *name* as
+    //its value, so the grounded task carries `room` where an object should
+    //be. The string path then emits `(= room room)`, which Z3 reads as a
+    //tautology and ignores, leaving the variable free to be enumerated.
+    //Reproduce Z3's reading. (planner_doc.md 4.2 has the rest.)
+    int slot = map->fixed_slot[i];
+    if (slot < 0 || name == value) {
+      continue;
+    }
+    //A value that names no object keeps its text: every atom then fails on
+    //it, and an equality compares it by name.
+    int oid = s.kb.object_id(value);
+    s.val[slot] = oid < 0 ? kNoObject : oid;
+    s.text[slot] = oid < 0 ? &value : nullptr;
+  }
+  return *map;
 }
 
 } // namespace detail
@@ -375,113 +430,80 @@ inline std::string key_of(Binding const& b) {
 inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
                                                expr::Ptr const& e,
                                                Binding const& params,
-                                               Binding const& fixed) {
+                                               Binding const& fixed,
+                                               SlotMap const* map = nullptr) {
   if (!supported(e)) {
     return std::nullopt;
   }
-  Env env;
-  env.reserve(params.size() + fixed.size());
-  for (auto const& [name,value] : fixed) {
-    //A parameter "pinned" to its own name is not pinned at all. When a
-    //method's subtask mentions a parameter the method does not bind,
-    //MethodDef::apply_binding falls back to using the parameter's *name* as
-    //its value (the "__CONST__" case), so the grounded task carries
-    //`room` where an object should be. The string path then emits
-    //`(= room room)`, which Z3 reads as a tautology and ignores, leaving the
-    //variable free to be enumerated. Binding it to the literal "room" instead
-    //would silently find nothing. Reproduce Z3's reading.
-    //
-    //This also means neither engine can tell that case apart from a parameter
-    //legitimately bound to an object of the same name -- see the note in
-    //planner_doc.md 4.2.
-    if (name == value) {
-      continue;
-    }
-    //A value that names no object is kept as text: every atom then fails on
-    //it, and an equality compares it by name, as when everything was a string.
-    int oid = kb.object_id(value);
-    if (oid < 0) {
-      env_set(env,name,detail::kNoObject,&value);
-    }
-    else {
-      env_set(env,name,oid);
-    }
-  }
+  detail::Search s{kb, {}, {}};
+  SlotMap scratch;
+  auto const& prep = detail::prepare(s, e, params, fixed, map, scratch);
 
-  auto solved = detail::solve(kb,e,env);
-  if (!solved) {
-    return std::nullopt;
-  }
-
-  std::vector<Binding> out;
-  //Duplicates dropped, first occurrence kept: the order of the result feeds
-  //the order of successors and so the random stream. The set holds indices
-  //into `ids`, hashed and compared by value.
-  //Each value as its object id, with its text for one that names no object.
+  //Each result as its values' object ids, with the text of one that names no
+  //object. Duplicates are dropped and the first occurrence kept, in place:
+  //the order of the result feeds the order of successors and so the random
+  //stream. The set holds indices into `found`, hashed and compared by value.
   using Value = std::pair<int,std::string const*>;
-  std::vector<std::vector<Value>> ids;
-  auto hash_of = [&ids](size_t i) {
+  std::vector<std::vector<Value>> found;
+  auto hash_of = [&found](size_t i) {
     size_t h = 0;
-    for (auto const& [v,text] : ids[i]) {
+    for (auto const& [v,text] : found[i]) {
       h = h * 1000003u ^ std::hash<int>{}(v);
     }
     return h;
   };
-  auto same = [&ids](size_t a, size_t b) {
-    if (ids[a].size() != ids[b].size()) return false;
-    for (size_t k = 0; k < ids[a].size(); k++) {
-      auto const& [va,ta] = ids[a][k];
-      auto const& [vb,tb] = ids[b][k];
+  auto same = [&found](size_t a, size_t b) {
+    if (found[a].size() != found[b].size()) return false;
+    for (size_t k = 0; k < found[a].size(); k++) {
+      auto const& [va,ta] = found[a][k];
+      auto const& [vb,tb] = found[b][k];
       if (va != vb || (va < 0 && !(ta && tb && *ta == *tb))) return false;
     }
     return true;
   };
   std::unordered_set<size_t,decltype(hash_of),decltype(same)> seen(8,hash_of,same);
-  for (auto const& base : *solved) {
-    //Any parameter the expression left unbound ranges over its whole type.
-    std::vector<Env> envs{base};
-    for (auto const& [name,type] : params) {
-      if (envs.empty()) {
-        break;
-      }
-      if (env_find(base,name)) {
-        continue;
-      }
-      std::vector<Env> widened;
-      for (auto const& cur : envs) {
-        if (env_find(cur,name)) {
-          widened.push_back(cur);
-          continue;
-        }
-        for (int oid : kb.type_extension(type)) {
-          Env next = cur;
-          next.push_back({&name,oid});
-          widened.push_back(std::move(next));
-        }
-      }
-      envs = std::move(widened);
-    }
-    for (auto const& full : envs) {
+
+  //Each solution of the expression, then every way of giving the parameters
+  //it left unbound an object of their type, the first parameter outermost.
+  std::function<void(size_t)> widen = [&](size_t i) {
+    if (i == params.size()) {
       std::vector<Value> b;
       b.reserve(params.size());
-      for (auto const& [name,type] : params) {
-        auto const* v = env_slot(full,name);
-        if (!v) {
-          //Should not happen once the widening above has run, but a partial
-          //binding would be silently wrong rather than loudly wrong, so drop
-          //the whole query to the fallback instead of guessing.
-          return std::nullopt;
-        }
-        b.push_back({v->object,v->text});
+      for (int slot : prep.param_slot) {
+        b.push_back({s.val[slot], s.text[slot]});
       }
-      ids.push_back(std::move(b));
-      if (!seen.insert(ids.size() - 1).second) {
-        ids.pop_back();
+      found.push_back(std::move(b));
+      if (!seen.insert(found.size() - 1).second) {
+        found.pop_back();
       }
+      return;
     }
+    int slot = prep.param_slot[i];
+    if (s.val[slot] != detail::kUnbound) {
+      widen(i + 1);
+      return;
+    }
+    for (int oid : kb.type_extension(params[i].second)) {
+      s.val[slot] = oid;
+      widen(i + 1);
+    }
+    s.val[slot] = detail::kUnbound;
+  };
+  auto each = [&] { widen(0); };
+  detail::Cont k(each);
+  if (e) {
+    detail::solve(s, *e, k);
   }
-  out.reserve(ids.size());
-  for (auto const& b : ids) {
+  else {
+    each();
+  }
+  if (s.abort) {
+    return std::nullopt;
+  }
+
+  std::vector<Binding> out;
+  out.reserve(found.size());
+  for (auto const& b : found) {
     Binding named;
     named.reserve(params.size());
     for (size_t i = 0; i < params.size(); i++) {
@@ -493,16 +515,44 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
   return out;
 }
 
-// Boolean form, mirroring `ask_any`: is there any such binding?
+// Boolean form, mirroring `ask_any`: is there any such binding? Stops at the
+// first. A solution leaves some parameters unbound, and there is a binding
+// exactly when each of those has an object of its type.
 inline std::optional<bool> ask_any(KnowledgeBase& kb,
                                    expr::Ptr const& e,
                                    Binding const& params,
-                                   Binding const& fixed) {
-  auto got = ask(kb,e,params,fixed);
-  if (!got) {
+                                   Binding const& fixed,
+                                   SlotMap const* map = nullptr) {
+  if (!supported(e)) {
     return std::nullopt;
   }
-  return !got->empty();
+  detail::Search s{kb, {}, {}};
+  SlotMap scratch;
+  auto const& prep = detail::prepare(s, e, params, fixed, map, scratch);
+  bool any = false;
+  auto each = [&] {
+    for (size_t i = 0; i < params.size(); i++) {
+      if (s.val[prep.param_slot[i]] == detail::kUnbound &&
+          kb.type_extension(params[i].second).empty()) {
+        return;
+      }
+    }
+    any = true;
+    s.halt = true;
+  };
+  detail::Cont k(each);
+  if (e) {
+    detail::solve(s, *e, k);
+  }
+  else {
+    each();
+  }
+  //A witness found before the search would have given up is still a witness:
+  //the query holds.
+  if (s.abort && !any) {
+    return std::nullopt;
+  }
+  return any;
 }
 
 } // namespace eval
@@ -549,8 +599,9 @@ inline std::vector<Binding> solve_query_lazy(KnowledgeBase& kb,
                                              SmtFn&& smt_of,
                                              Binding const& params,
                                              Binding const& fixed,
-                                             char const* what) {
-  auto direct = ask(kb,ast,params,fixed);
+                                             char const* what,
+                                             SlotMap const* map = nullptr) {
+  auto direct = ask(kb,ast,params,fixed,map);
 
 #ifdef HTN_DIFFERENTIAL_EVAL
   if (direct) {
