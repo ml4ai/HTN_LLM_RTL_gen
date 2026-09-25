@@ -217,12 +217,12 @@ simulation(std::vector<std::string>& plan,
   //could lose solutions.
   std::vector<int> u;
   std::vector<int> compound;
-  for (auto &[i,gt] : tasks.GTs) {
-    if (gt.incoming.empty()) {
-      if (domain.actions.contains(tasks[i].head)) {
+  for (auto const& [i,gt] : tasks.GTs) {
+    if (gt->incoming.empty()) {
+      if (domain.actions.contains(gt->head)) {
         u.push_back(i);
       }
-      else if (domain.methods.contains(tasks[i].head)) {
+      else if (domain.methods.contains(gt->head)) {
         if (restrict_compound != 0) {
           compound.push_back(i);
         }
@@ -381,11 +381,11 @@ inline int expansion(pTree& t,
     std::vector<int> u;
     std::vector<int> compound;
     for (auto const& [id,gt] : t[n].tasks.GTs) {
-      if (gt.incoming.empty()) {
-        if (domain.actions.contains(t[n].tasks[id].head)) {
+      if (gt->incoming.empty()) {
+        if (domain.actions.contains(gt->head)) {
           u.push_back(id);
         }
-        else if (domain.methods.contains(t[n].tasks[id].head)) {
+        else if (domain.methods.contains(gt->head)) {
           compound.push_back(id);
         }
         else {

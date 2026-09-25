@@ -134,7 +134,15 @@ struct TaskGraph {
   //Sorted by construction, never by sorting: ids come from nextID, which only
   //ever increases, so every insertion is an append, and erasing preserves the
   //order of what is left.
-  std::vector<std::pair<int,Grounded_Task>> GTs;
+  //
+  //Each task is held through a shared pointer and copied only when written
+  //(copy-on-write). A network is copied at every step of every rollout, and
+  //copying every task's head, arguments and edge lists with it was 5-8% of
+  //runtime (planner_doc.md 8.24). Now a copy shares every task, and a write --
+  //adding or removing an edge -- detaches just the task it changes. So reads go
+  //through a const reference, and writes through mut().
+  using TaskPtr = std::shared_ptr<Grounded_Task>;
+  std::vector<std::pair<int,TaskPtr>> GTs;
   //Keeps track of next newly usable ID
   int nextID = 0;
   //Per network, not per domain, because whether a check has been established
@@ -186,25 +194,22 @@ struct TaskGraph {
     this->tags.emplace_back(id,std::move(t));
   }
 
-  Grounded_Task* find(int i) {
+  TaskPtr const* slot(int i) const {
     auto it = std::lower_bound(GTs.begin(),GTs.end(),i,
-                               [](std::pair<int,Grounded_Task> const& p, int k) { return p.first < k; });
+                               [](std::pair<int,TaskPtr> const& p, int k) { return p.first < k; });
     return (it != GTs.end() && it->first == i) ? &it->second : nullptr;
   }
 
   Grounded_Task const* find(int i) const {
-    return const_cast<TaskGraph*>(this)->find(i);
+    auto const* s = this->slot(i);
+    return s ? s->get() : nullptr;
   }
 
   //Throws on an id that is not in the graph. The map's operator[] silently
   //inserted an empty task instead, which only failed later, and less clearly,
   //as "Invalid task" on its empty head.
-  Grounded_Task& operator[](int i) {
-    auto* p = this->find(i);
-    if (!p) {
-      throw std::logic_error("TaskGraph has no task with id "+std::to_string(i)+"!");
-    }
-    return *p;
+  Grounded_Task const& operator[](int i) const {
+    return this->at(i);
   }
 
   Grounded_Task const& at(int i) const {
@@ -215,41 +220,53 @@ struct TaskGraph {
     return *p;
   }
 
-  int add_node(Grounded_Task& GT) {
+  //The one way to get a task to write to: detaches it first if another
+  //network shares it, so a write is never seen by a network it was not made in.
+  Grounded_Task& mut(int i) {
+    auto* s = const_cast<TaskPtr*>(this->slot(i));
+    if (!s) {
+      throw std::logic_error("TaskGraph has no task with id "+std::to_string(i)+"!");
+    }
+    if (s->use_count() > 1) {
+      *s = std::make_shared<Grounded_Task>(**s);
+    }
+    return **s;
+  }
+
+  int add_node(Grounded_Task const& GT) {
     int id = this->nextID++;
-    this->GTs.emplace_back(id,GT);
+    this->GTs.emplace_back(id,std::make_shared<Grounded_Task>(GT));
     return id;
   }
 
   //For a task built only to be inserted -- apply_binding builds one per
-  //subtask per binding. The lvalue overload above copies it, head and argument
-  //vector included, and the original is then discarded.
+  //subtask per binding.
   int add_node(Grounded_Task&& GT) {
     int id = this->nextID++;
-    this->GTs.emplace_back(id,std::move(GT));
+    this->GTs.emplace_back(id,std::make_shared<Grounded_Task>(std::move(GT)));
     return id;
   }
 
   // gt1 -> gt2
   void add_edge(int gt1, int gt2) {
-    (*this)[gt1].outgoing.push_back(gt2);
-    (*this)[gt2].incoming.push_back(gt1);
-  } 
+    this->mut(gt1).outgoing.push_back(gt2);
+    this->mut(gt2).incoming.push_back(gt1);
+  }
 
   void remove_node(int gt) {
-    auto const& node = (*this)[gt];
-    for (int og : node.outgoing) {
-      auto& inc = (*this)[og].incoming;
+    //A shared reference keeps the task alive and unchanged while its
+    //neighbours are detached and edited below.
+    TaskPtr node = *this->slot(gt);
+    for (int og : node->outgoing) {
+      auto& inc = this->mut(og).incoming;
       inc.erase(std::remove(inc.begin(),inc.end(),gt),inc.end());
     }
-    for (int ic : node.incoming) {
-      auto& out = (*this)[ic].outgoing;
+    for (int ic : node->incoming) {
+      auto& out = this->mut(ic).outgoing;
       out.erase(std::remove(out.begin(),out.end(),gt),out.end());
     }
-    //Only now erase, so `node` stays valid above: nothing in between inserts,
-    //and the loops touch other elements' edge vectors, never the vector itself.
     auto it = std::lower_bound(GTs.begin(),GTs.end(),gt,
-                               [](std::pair<int,Grounded_Task> const& p, int k) { return p.first < k; });
+                               [](std::pair<int,TaskPtr> const& p, int k) { return p.first < k; });
     this->GTs.erase(it);
     if (!this->tags.empty()) {
       auto tt = std::lower_bound(tags.begin(),tags.end(),gt,
@@ -317,7 +334,7 @@ struct Results{
 };
 
 
-inline std::string return_value(std::string var, Args& args) {
+inline std::string return_value(std::string const& var, Args const& args) {
   for (auto const& a : args) {
     if (var == a.first) {
       return a.second;
@@ -347,7 +364,7 @@ class ActionDef {
     //that looks at it.
     bool artificial = false;
 
-    KnowledgeBase apply_binding(KnowledgeBase& kb, Args& args) {
+    KnowledgeBase apply_binding(KnowledgeBase& kb, Args const& args) {
       KnowledgeBase new_kb = kb;
       for (auto const& e : this->effects) {
         auto faparams = e.forall;
@@ -597,7 +614,7 @@ class ActionDef {
       return this->effects;
     }
 
-    std::pair<task_token,std::vector<KnowledgeBase>> apply(KnowledgeBase& kb, Args& args) {
+    std::pair<task_token,std::vector<KnowledgeBase>> apply(KnowledgeBase& kb, Args const& args) {
       //args is indexed in lockstep with this->parameters, so a task invoking
       //this action with the wrong arity would read past the end of parameters.
       if (!args.empty() && args.size() != this->parameters.size()) {
@@ -738,7 +755,7 @@ class MethodDef {
 
     //tasks arrives by value and is always moved in by apply(), so taking it
     //this way costs nothing; the return moves it back out for the same reason.
-    std::pair<std::vector<int>,TaskGraph> apply_binding(Args& args, TaskGraph tasks, std::vector<int>& out,
+    std::pair<std::vector<int>,TaskGraph> apply_binding(Args const& args, TaskGraph tasks, std::vector<int>& out,
                                                         std::vector<int> const& inherited = {},
                                                         PreconditionMode mode = PreconditionMode::Compiled) {
       std::unordered_map<std::string,int> gts;
@@ -822,7 +839,7 @@ class MethodDef {
     //bindings, where N is the floor, since each binding yields a successor
     //network of its own. It also means `args`, which callers pass as a
     //reference *into* this same network, can no longer be invalidated.
-    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args& args, TaskGraph const& tasks, int i,
+    std::vector<std::pair<std::vector<int>,TaskGraph>> apply(KnowledgeBase& kb, Args const& args, TaskGraph const& tasks, int i,
                                                             PreconditionMode mode = PreconditionMode::Compiled) {
       //args is indexed in lockstep with this->task.second, so a task invoked
       //with the wrong arity would read past the end of the task's parameters.

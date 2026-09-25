@@ -167,8 +167,8 @@ BOOST_AUTO_TEST_CASE(test_apply) {
     std::cout <<"#GROUNDED TASKS FOR DELIVER#" << std::endl; 
     for (auto &gts : deliver_method) {
       for (auto const &[id,gt] : gts.second.GTs) {
-        std::cout << gt.to_string() << "->["; 
-        for (auto &out : gt.outgoing) {
+        std::cout << gt->to_string() << "->["; 
+        for (auto &out : gt->outgoing) {
           std::cout << gts.second[out].to_string() << " ";
         }
         std::cout << "]" << std::endl;
@@ -184,8 +184,8 @@ BOOST_AUTO_TEST_CASE(test_apply) {
     std::cout <<"#GROUNDED TASKS FOR DELIVER#" << std::endl; 
     for (auto &gts : init_method) {
       for (auto const &[id,gt] : gts.second.GTs) {
-        std::cout << gt.to_string() << "->["; 
-        for (auto &out : gt.outgoing) {
+        std::cout << gt->to_string() << "->["; 
+        for (auto &out : gt->outgoing) {
           std::cout << gts.second[out].to_string() << " ";
         }
         std::cout << "]" << std::endl;
