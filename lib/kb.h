@@ -521,6 +521,32 @@ class KnowledgeBase {
           }
           tup.push_back(it->second);
         }
+        return this->set_tuple(pid,tup,remove,update_state);
+      }
+
+      //What tell does once the text is parsed, for a caller that has the
+      //predicate and argument names already. Applying an action's effects used
+      //to build each fact as text for tell to parse straight back apart
+      //(planner_doc.md 8.24).
+      bool set_fact(std::string const& head, std::vector<std::string const*> const& args,
+                    bool remove, bool update_state = true) {
+        int pid = this->predicate_id(head);
+        if (pid < 0 || this->schema->arity[pid] != args.size()) {
+          return false;
+        }
+        std::vector<int> tup;
+        tup.reserve(args.size());
+        for (auto const* a : args) {
+          int oid = this->object_id(*a);
+          if (oid < 0) {
+            return false;
+          }
+          tup.push_back(oid);
+        }
+        return this->set_tuple(pid,tup,remove,update_state);
+      }
+
+      bool set_tuple(int pid, std::vector<int> const& tup, bool remove, bool update_state) {
         size_t a = this->schema->arity[pid];
         //Look before writing: relation_mut detaches a shared buffer, and adding
         //a fact that already holds or removing one that does not should not

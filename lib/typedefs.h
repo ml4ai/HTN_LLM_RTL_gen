@@ -380,69 +380,63 @@ class ActionDef {
 
     KnowledgeBase apply_binding(KnowledgeBase& kb, Args const& args) {
       KnowledgeBase new_kb = kb;
+      //An effect atom's arguments: each variable's value from the first
+      //binding that has it, and a constant as itself. Pointers, not copies,
+      //handed to set_fact, which looks the ids up directly. This used to build
+      //the fact as text for tell to parse back apart (8.24).
+      std::vector<std::string const*> vals;
+      auto fact_of = [&vals](Pred const& pred, Args const& first, Args const* second) {
+        vals.clear();
+        for (auto const& p : pred.second) {
+          auto const* v = bound_value(p.first,first);
+          if (!v && second) {
+            v = bound_value(p.first,*second);
+          }
+          vals.push_back(v ? v : &p.first);
+        }
+        return vals;
+      };
       for (auto const& e : this->effects) {
-        auto faparams = e.forall;
-        if (faparams.empty()) {
+        if (e.forall.empty()) {
           if (e.condition == "__NONE__") {
-            auto pred = e.pred;
-            std::string et = "("+pred.first;
-            for (auto const& p : pred.second) {
-              auto val = return_value(p.first,args);
-              if (val == "__CONST__") {
-                et += " "+p.first;
-              }
-              else {
-                et += " "+val;
-              }
-            }
-            new_kb.tell(et+")",e.remove,false);
+            new_kb.set_fact(e.pred.first,fact_of(e.pred,args,nullptr),e.remove,false);
           }
           else {
-            std::string wc;
-            if (!args.empty()) {
-              wc = "(and ";
-              for (size_t i = 0; i < args.size(); i++) {
-                wc += "(= "+this->parameters[i].first+" "+args[i].second+") ";
-              }
-              wc += e.condition + ")";
-            }
-            else {
-              wc = e.condition;
-            }
             Args wc_fixed;
             wc_fixed.reserve(args.size());
             for (size_t i = 0; i < args.size(); i++) {
               wc_fixed.push_back({this->parameters[i].first,args[i].second});
             }
-            auto pass = eval::solve_query(new_kb,e.condition_ast,wc,
-                                          this->parameters,wc_fixed,
-                                          "conditional effect");
-            if (!pass.empty()) {
-              auto pred = e.pred;
-              std::string et = "("+pred.first;
-              for (auto const& p : pred.second) {
-                auto val = return_value(p.first,args);
-                if (val == "__CONST__") {
-                  et += " "+p.first;
-                }
-                else {
-                  et += " "+val;
-                }
+            //The SMT text only if the evaluator declines and Z3 is asked.
+            auto wc = [&]() {
+              if (args.empty()) {
+                return e.condition;
               }
-              new_kb.tell(et+")",e.remove,false);
+              std::string w = "(and ";
+              for (size_t i = 0; i < args.size(); i++) {
+                w += "(= "+this->parameters[i].first+" "+args[i].second+") ";
+              }
+              return w + e.condition + ")";
+            };
+            auto pass = eval::solve_query_lazy(new_kb,e.condition_ast,wc,
+                                               this->parameters,wc_fixed,
+                                               "conditional effect");
+            if (!pass.empty()) {
+              new_kb.set_fact(e.pred.first,fact_of(e.pred,args,nullptr),e.remove,false);
             }
           }
         }
         else {
+          //Copied as before: the range is built by iterating this copy, and
+          //the order it iterates in decides the order facts are added, which
+          //later enumeration -- and so the random stream -- depends on.
+          auto faparams = e.forall;
           if (e.condition == "__NONE__") {
             Params params;
             std::string vt = "(and";
             std::vector<expr::Ptr> vt_parts;
             for (auto const& [var,types] : faparams) {
-              std::pair<std::string,std::string> arg;
-              arg.first = var;
-              arg.second = "__Object__";
-              params.push_back(arg);
+              params.push_back({var,"__Object__"});
               for (auto const& t : types) {
                 vt += " ("+t+" "+var+")";
                 vt_parts.push_back(expr::make_atom(t,{{var,true}}));
@@ -453,25 +447,8 @@ class ActionDef {
                                            : expr::make_connective(expr::Kind::And,vt_parts);
             auto bindings = eval::solve_query(new_kb,vt_ast,vt,params,Args{},
                                               "forall range");
-            for (auto &b : bindings) {
-              auto pred = e.pred;
-              std::string et = "("+pred.first;
-              for (auto const& p : pred.second) {
-                auto bval = return_value(p.first,b);
-                if (bval == "__CONST__") {
-                  auto val = return_value(p.first,args); 
-                  if (val == "__CONST__") {
-                    et += " "+p.first;
-                  }
-                  else {
-                    et += " "+val;
-                  }
-                }
-                else {
-                  et += " "+bval;
-                }
-              }
-              new_kb.tell(et+")",e.remove,false);
+            for (auto const& b : bindings) {
+              new_kb.set_fact(e.pred.first,fact_of(e.pred,b,&args),e.remove,false);
             }
           }
           else {
@@ -479,10 +456,7 @@ class ActionDef {
             std::string vt = "(and";
             std::vector<expr::Ptr> vt_parts;
             for (auto const& [var,types] : faparams) {
-              std::pair<std::string,std::string> arg;
-              arg.first = var;
-              arg.second = "__Object__";
-              params.push_back(arg);
+              params.push_back({var,"__Object__"});
               for (auto const& t : types) {
                 vt += " ("+t+" "+var+")";
                 vt_parts.push_back(expr::make_atom(t,{{var,true}}));
@@ -518,7 +492,7 @@ class ActionDef {
 
             auto bindings = eval::solve_query(new_kb,vt_ast,vt,params,Args{},
                                               "forall range");
-            for (auto &b : bindings) {
+            for (auto const& b : bindings) {
               //Rebuilt per binding. Appending each binding onto a shared list
               //left the previous binding's equalities in place, so from the
               //second object on the condition was self-contradictory.
@@ -526,38 +500,20 @@ class ActionDef {
               for (auto const& b_arg : b) {
                 b_args.push_back(b_arg);
               }
-              std::string wc;
-              if (!b_args.empty()) {
-                wc = "(and ";
+              auto wc = [&]() {
+                if (b_args.empty()) {
+                  return e.condition;
+                }
+                std::string w = "(and ";
                 for (auto const& a : b_args) {
-                  wc += "(= "+a.first+" "+a.second+") ";
+                  w += "(= "+a.first+" "+a.second+") ";
                 }
-                wc += e.condition + ")";
-              }
-              else {
-                wc = e.condition;
-              }
-              auto pass = eval::solve_query(new_kb,e.condition_ast,wc,condP,b_args,
-                                            "forall conditional effect");
+                return w + e.condition + ")";
+              };
+              auto pass = eval::solve_query_lazy(new_kb,e.condition_ast,wc,condP,b_args,
+                                                 "forall conditional effect");
               if (!pass.empty()) {
-                auto pred = e.pred;
-                std::string et = "("+pred.first;
-                for (auto const& p : pred.second) {
-                  auto bval = return_value(p.first,b);
-                  if (bval == "__CONST__") {
-                    auto val = return_value(p.first,b_args);
-                    if (val == "__CONST__") {
-                      et += " "+p.first;
-                    }
-                    else {
-                      et += " "+val;
-                    }
-                  }
-                  else {
-                    et += " "+bval;
-                  }
-                }
-                new_kb.tell(et+")",e.remove,false);
+                new_kb.set_fact(e.pred.first,fact_of(e.pred,b,&b_args),e.remove,false);
               }
             }
           }
