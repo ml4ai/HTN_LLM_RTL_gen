@@ -33,41 +33,50 @@ namespace eval {
 //header sits below typedefs.h: it cannot include it without a cycle.
 using Binding = std::vector<std::pair<std::string,std::string>>;
 
-//Variable name -> value, for the bindings fixed so far.
+//Variable -> the object bound to it, for the bindings fixed so far.
 //
-//A flat vector rather than a hash map, and looked up by linear scan. An Env is
-//*copied* far more often than it is read -- once per candidate binding, and
-//the search generates a great many of those -- so what matters is the cost of
-//copying one, not the asymptotics of a lookup. A hash map copy allocates a
-//bucket array plus a node per entry; this copies as a single allocation and a
-//memcpy, because every variable and object name in these domains fits in
-//libc++'s small-string buffer (the longest measured is 17 characters against a
-//threshold of 22), so the strings carry no separate storage of their own.
+//Objects are held by id, and variables by a pointer to their name. The names
+//belong to the query's own expression and parameter lists, which outlive it.
+//This held both as strings, so every atom hashed each bound value back to an
+//id to compare it with the fact index, and every copy of an Env -- one per
+//candidate binding -- copied every name and value (planner_doc.md 8.24). Names
+//and ids convert once, at the start and end of a query.
 //
-//The scan is over a handful of entries -- a method's parameter list -- which
-//is well inside the range where a linear scan beats hashing anyway.
-using Env = std::vector<std::pair<std::string,std::string>>;
+//A flat vector looked up by linear scan: an Env is copied far more often than
+//it is read, and it holds a handful of entries -- a method's parameters.
+//`text` is set only for a value that names no object (object < 0), which
+//can only be compared as text.
+struct Slot {
+  std::string const* name;
+  int object;
+  std::string const* text = nullptr;
+};
+using Env = std::vector<Slot>;
 
-//The value bound to `name`, or nullptr. Returns a pointer into the Env rather
-//than a copy: value_of is called per argument per atom, and a returned
-//std::string would be a copy each time.
-inline std::string const* env_find(Env const& env, std::string const& name) {
-  for (auto const& [n,v] : env) {
-    if (n == name) {
-      return &v;
+inline Slot const* env_slot(Env const& env, std::string const& name) {
+  for (auto const& s : env) {
+    if (*s.name == name) {
+      return &s;
     }
   }
   return nullptr;
 }
 
-inline void env_set(Env& env, std::string const& name, std::string const& value) {
-  for (auto& [n,v] : env) {
-    if (n == name) {
-      v = value;
+inline int const* env_find(Env const& env, std::string const& name) {
+  auto const* s = env_slot(env,name);
+  return s ? &s->object : nullptr;
+}
+
+inline void env_set(Env& env, std::string const& name, int object,
+                    std::string const* text = nullptr) {
+  for (auto& s : env) {
+    if (*s.name == name) {
+      s.object = object;
+      s.text = text;
       return;
     }
   }
-  env.emplace_back(name,value);
+  env.push_back({&name,object,text});
 }
 
 //Can this expression be evaluated directly? Checked once up front so the
@@ -102,15 +111,29 @@ inline bool supported(expr::Ptr const& e) {
 
 namespace detail {
 
-//The value a term denotes under env, or nullopt when it is a variable that is
-//still unbound. Constants denote themselves.
-//Constants denote themselves, so the pointer is into the term. Nullptr means a
-//variable that is still unbound.
-inline std::string const* value_of(expr::Term const& t, Env const& env) {
+//What a term denotes under env, as an object id; kUnbound for a variable not
+//yet bound, kNoObject for a constant that names no object. A constant that
+//names no object can never match a fact, as before, when it was compared as a
+//string that no fact's argument equalled.
+constexpr int kUnbound = -1;
+constexpr int kNoObject = -2;
+
+inline int value_of(KnowledgeBase& kb, expr::Term const& t, Env const& env) {
+  if (!t.is_variable) {
+    int oid = kb.object_id(t.name);
+    return oid < 0 ? kNoObject : oid;
+  }
+  auto const* v = env_find(env,t.name);
+  return v ? *v : kUnbound;
+}
+
+//The text of a bound term that names no object, for comparing two such.
+inline std::string const* text_of(expr::Term const& t, Env const& env) {
   if (!t.is_variable) {
     return &t.name;
   }
-  return env_find(env,t.name);
+  auto const* s = env_slot(env,t.name);
+  return s ? s->text : nullptr;
 }
 
 inline bool ground(expr::Ptr const& e, Env const& env) {
@@ -118,7 +141,7 @@ inline bool ground(expr::Ptr const& e, Env const& env) {
     return true;
   }
   for (auto const& a : e->args) {
-    if (!value_of(a,env)) {
+    if (a.is_variable && !env_find(env,a.name)) {
       return false;
     }
   }
@@ -160,25 +183,20 @@ inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
   size_t ar = e->args.size();
   auto const& rel = kb.relation_of(pid);
 
-  //Resolve each argument against the incoming env ONCE rather than per tuple.
+  //Resolve each argument against the incoming env once rather than per tuple.
   //A negative entry means the position is free and this atom will bind it.
-  //Everything below then compares integers.
-  std::vector<int> want(ar,-1);
+  std::vector<int> want(ar,kUnbound);
   for (size_t i = 0; i < ar; i++) {
-    auto const* v = value_of(e->args[i],env);
-    if (v) {
-      want[i] = kb.object_id(*v);
-      if (want[i] < 0) {
-        return out;   //a constant no object matches: nothing can hold
-      }
+    want[i] = value_of(kb,e->args[i],env);
+    if (want[i] == kNoObject) {
+      return out;   //a constant no object matches: nothing can hold
     }
   }
 
   for (size_t off = 0; off + ar <= rel.size(); off += ar) {
     bool ok = true;
     //Two passes, so that `env` is copied only for a tuple that actually
-    //matches. Copying it per candidate tuple was itself a per-tuple
-    //allocation, and most candidates do not match.
+    //matches. Most candidates do not.
     for (size_t i = 0; i < ar && ok; i++) {
       if (want[i] >= 0) {
         ok = (rel[off+i] == want[i]);
@@ -197,10 +215,12 @@ inline std::optional<std::vector<Env>> solve_atom(KnowledgeBase& kb,
     if (!ok) {
       continue;
     }
-    Env next = env;
+    Env next;
+    next.reserve(env.size() + ar);
+    next = env;
     for (size_t i = 0; i < ar; i++) {
       if (want[i] < 0) {
-        env_set(next,e->args[i].name,kb.object_name(rel[off+i]));
+        env_set(next,e->args[i].name,rel[off+i]);
       }
     }
     out.push_back(std::move(next));
@@ -220,25 +240,35 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
 
     case expr::Kind::Equals:
     case expr::Kind::NotEquals: {
-      auto const* l = value_of(e->args[0],env);
-      auto const* r = value_of(e->args[1],env);
-      if (l && r) {
-        bool same = (*l == *r);
+      int l = value_of(kb,e->args[0],env);
+      int r = value_of(kb,e->args[1],env);
+      if (l != kUnbound && r != kUnbound) {
+        //Two constants naming no object compare by name, as they did when
+        //everything was a string.
+        bool same;
+        if (l == kNoObject || r == kNoObject) {
+          auto const* lt = text_of(e->args[0],env);
+          auto const* rt = text_of(e->args[1],env);
+          same = (l == r) && lt && rt && *lt == *rt;
+        }
+        else {
+          same = (l == r);
+        }
         bool want = (e->kind == expr::Kind::Equals);
         if (same == want) {
           return std::vector<Env>{env};
         }
         return std::vector<Env>{};
       }
-      if (e->kind == expr::Kind::Equals && (l || r)) {
-        //One side unbound: an equality binds it.
+      if (e->kind == expr::Kind::Equals && (l != kUnbound || r != kUnbound)) {
+        //One side unbound: an equality binds it -- unless the bound side names
+        //no object, which no variable can take.
+        bool left = (l != kUnbound);
+        int v = left ? l : r;
+        std::string const* text = (v == kNoObject)
+                                ? text_of(left ? e->args[0] : e->args[1],env) : nullptr;
         Env next = env;
-        if (l) {
-          env_set(next,e->args[1].name,*l);
-        }
-        else {
-          env_set(next,e->args[0].name,*r);
-        }
+        env_set(next,left ? e->args[1].name : e->args[0].name,v,text);
         return std::vector<Env>{next};
       }
       //A disequality between unbound variables constrains nothing yet, and
@@ -265,12 +295,9 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
       //Fold left to right: each conjunct is solved under the bindings the ones
       //before it produced, which is what makes this a join rather than a
       //filtered cross product. Positive atoms are taken first so that they
-      //bind variables before a negation or disequality needs them.
-      //Two passes over the children in place rather than a reordered copy of
-      //them: the copy was a vector allocation plus an atomic refcount bump per
-      //child, on every evaluation of every conjunction, to produce an order
-      //that is fixed by the expression anyway. Within each pass the children
-      //keep their written order, exactly as before.
+      //bind variables before a negation or disequality needs them. Two passes
+      //over the children in place; within each pass they keep their written
+      //order.
       auto binds = [](expr::Ptr const& c) {
         return c && (c->kind == expr::Kind::Atom || c->kind == expr::Kind::Equals);
       };
@@ -286,7 +313,6 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
             if (!got) {
               return std::nullopt;
             }
-            //Moved: `got` is ours, and an Env copy is an allocation.
             next.insert(next.end(),std::make_move_iterator(got->begin()),
                                    std::make_move_iterator(got->end()));
           }
@@ -320,7 +346,7 @@ inline std::optional<std::vector<Env>> solve(KnowledgeBase& kb,
   }
 }
 
-//A stable key for deduplication, over the parameters the caller asked about.
+//A stable key for comparing results as sets (the differential build).
 inline std::string key_of(Binding const& b) {
   std::string k;
   for (auto const& [n,v] : b) {
@@ -354,6 +380,7 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
     return std::nullopt;
   }
   Env env;
+  env.reserve(params.size() + fixed.size());
   for (auto const& [name,value] : fixed) {
     //A parameter "pinned" to its own name is not pinned at all. When a
     //method's subtask mentions a parameter the method does not bind,
@@ -370,7 +397,15 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
     if (name == value) {
       continue;
     }
-    env_set(env,name,value);
+    //A value that names no object is kept as text: every atom then fails on
+    //it, and an equality compares it by name, as when everything was a string.
+    int oid = kb.object_id(value);
+    if (oid < 0) {
+      env_set(env,name,detail::kNoObject,&value);
+    }
+    else {
+      env_set(env,name,oid);
+    }
   }
 
   auto solved = detail::solve(kb,e,env);
@@ -381,17 +416,26 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
   std::vector<Binding> out;
   //Duplicates dropped, first occurrence kept: the order of the result feeds
   //the order of successors and so the random stream. The set holds indices
-  //into `out`, hashed and compared by the bindings' values. It used to hold a
-  //"name=value;..." string built per binding, an allocation and a copy of
-  //every name and value each time (8.24).
-  auto hash_of = [&out](size_t i) {
+  //into `ids`, hashed and compared by value.
+  //Each value as its object id, with its text for one that names no object.
+  using Value = std::pair<int,std::string const*>;
+  std::vector<std::vector<Value>> ids;
+  auto hash_of = [&ids](size_t i) {
     size_t h = 0;
-    for (auto const& [n,v] : out[i]) {
-      h = h * 1000003u ^ std::hash<std::string>{}(v);
+    for (auto const& [v,text] : ids[i]) {
+      h = h * 1000003u ^ std::hash<int>{}(v);
     }
     return h;
   };
-  auto same = [&out](size_t a, size_t b) { return out[a] == out[b]; };
+  auto same = [&ids](size_t a, size_t b) {
+    if (ids[a].size() != ids[b].size()) return false;
+    for (size_t k = 0; k < ids[a].size(); k++) {
+      auto const& [va,ta] = ids[a][k];
+      auto const& [vb,tb] = ids[b][k];
+      if (va != vb || (va < 0 && !(ta && tb && *ta == *tb))) return false;
+    }
+    return true;
+  };
   std::unordered_set<size_t,decltype(hash_of),decltype(same)> seen(8,hash_of,same);
   for (auto const& base : *solved) {
     //Any parameter the expression left unbound ranges over its whole type.
@@ -411,35 +455,40 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
         }
         for (int oid : kb.type_extension(type)) {
           Env next = cur;
-          next.emplace_back(name,kb.object_name(oid));
+          next.push_back({&name,oid});
           widened.push_back(std::move(next));
         }
       }
       envs = std::move(widened);
     }
     for (auto const& full : envs) {
-      Binding b;
+      std::vector<Value> b;
       b.reserve(params.size());
-      bool complete = true;
       for (auto const& [name,type] : params) {
-        auto const* v = env_find(full,name);
+        auto const* v = env_slot(full,name);
         if (!v) {
-          complete = false;
-          break;
+          //Should not happen once the widening above has run, but a partial
+          //binding would be silently wrong rather than loudly wrong, so drop
+          //the whole query to the fallback instead of guessing.
+          return std::nullopt;
         }
-        b.push_back({name,*v});
+        b.push_back({v->object,v->text});
       }
-      if (!complete) {
-        //Should not happen once the widening above has run, but a partial
-        //binding would be silently wrong rather than loudly wrong, so drop the
-        //whole query to the fallback instead of guessing.
-        return std::nullopt;
-      }
-      out.push_back(std::move(b));
-      if (!seen.insert(out.size() - 1).second) {
-        out.pop_back();
+      ids.push_back(std::move(b));
+      if (!seen.insert(ids.size() - 1).second) {
+        ids.pop_back();
       }
     }
+  }
+  out.reserve(ids.size());
+  for (auto const& b : ids) {
+    Binding named;
+    named.reserve(params.size());
+    for (size_t i = 0; i < params.size(); i++) {
+      auto const& [v,text] = b[i];
+      named.push_back({params[i].first, v >= 0 ? kb.object_name(v) : *text});
+    }
+    out.push_back(std::move(named));
   }
   return out;
 }
