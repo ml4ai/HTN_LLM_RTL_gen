@@ -220,7 +220,17 @@ the real time-limited planner and takes about 3 minutes. A baseline must come
 from the same harness version, seed and mode, and `--compare` says so up front
 if it does not. See [docs/planner\_doc.md](docs/planner_doc.md) §6.5 and §8.19.
 
-Passing the `--graph` (or `-g`) flag saves a visual representation of the task
-hierarchy behind the returned plan as a png. By default it is written to the
-current working directory and named after the problem definition; use
-`--graph_file` (or `-f`) to choose a different path.
+Passing the `--graph` (or `-g`) flag draws the task hierarchy behind the
+returned plan. Compound tasks are rounded boxes, each showing the method that
+decomposed it; actions are square boxes along the bottom, numbered in plan
+order and joined by red arrows; dashed blue arrows are the ordering
+constraints the plan had to respect; and a caption names the run and explains each mark. The
+method-precondition checks the planner adds internally are not drawn. By default
+it is written to the current working directory and named after the problem;
+`--graph_file` (or `-f`) chooses the path, and its extension the format:
+`.png`, `.svg` (with a tooltip on each node), `.pdf`, or `.dot`.
+`--graph_colour` colours nodes by the top-level task they serve (the default),
+by the object of a given type they involve (`--graph_colour player`), or not at
+all (`none`).
+
+![The task hierarchy of a transport plan](docs/images/transport_graph.png)

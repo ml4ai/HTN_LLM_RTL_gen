@@ -2743,7 +2743,7 @@ and `test_validation_checks_requirements` in `test_loader`, and
 `test_typed_forall_effects`, `test_either_types` and
 `test_planner_rejects_unbound_names` in `test_MCTS_planner`.
 
-**Still open, on the list as §9.2 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
+**Still open, on the list as §9.1 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
 case-insensitive; and a declaration nothing uses is not reported.
 
 **Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
@@ -2990,6 +2990,73 @@ UndefinedBehaviorSanitizer are clean over all five.
 **Depends on:** nothing. **Risk:** none. **Payoff:** a warning is news again, and
 the loader has one copy of each piece of logic.
 
+### 8.22 The task-hierarchy graph, redrawn — **done**
+
+`--graph` drew the synthesised precondition checks as ordinary actions, did not
+say which method decomposed a task, and laid the tree out by every edge at once,
+so a node's height had nothing to do with its depth. The design was prototyped
+on real output and approved as a list of eight changes. All eight are in
+`grapher.h`, built with the cgraph API it already used:
+
+1. **The chosen method is shown; the checks are not.** `TaskNode` has a `method`
+   field. `expansion` records the method on each decomposition node, the commit
+   loop copies it onto the task tree, and a backtrack clears it. So every
+   compound task shows "by m_…", including those whose method has no
+   precondition, which the prototype could not show because it read the method
+   off the check's name. The checks are left out, and an ordering through one is
+   joined up from its predecessors to its successors.
+2. **Only decomposition edges decide the layout**: ordering and plan edges are
+   `constraint=false`.
+3. **Every action is on one bottom row** (a `rank=sink` subgraph), numbered by
+   plan step.
+4. **The red plan-order arrows are kept**, as short hops along that row.
+5. **Ordering edges are transitively reduced**, and drawn dashed.
+6. **Colour is selectable** with `--graph_colour`: `top` (the default, by
+   top-level task), `none`, or a type name. With a type name, a node takes the
+   colour of the first object of that type (or a subtype) among its arguments.
+   `--graph_colour player` shows `sar3`'s plan by player; the prototype could
+   only suggest it.
+7. **Labels, legend and caption.** Task name in bold with its arguments below;
+   rounded boxes for compound tasks, square for actions; the root shows the
+   problem's name rather than the planner's internal `__delivery__`. The caption
+   names the problem, domain, score function and final score, precondition mode,
+   seed and time limit, counts the actions and compound tasks, and says what
+   each shape, colour and edge style means.
+8. **The format is chosen by the file's extension**: `.png`, `.svg` with a
+   tooltip per node (the full task, its method, and its plan step), `.pdf`, or
+   `.dot`. Any other extension is rejected before planning starts, not after.
+
+**The Graphviz trap noted in the prototype**, `ordering=out` mirroring every
+sibling row, is avoided as planned. Children are written in plan order, by the
+earliest plan step beneath each, and Graphviz keeps that input order. Two
+further details came up in the C++. First, through the API an HTML-like label
+is passed without the `< >` that delimit one in DOT source; with them, every
+label rendered blank. Second, PNGs are drawn at 110 dpi, where the default 72
+made the text too small to read.
+
+`test_grapher` plans `transport` with a fixed iteration count, so the run is
+reproducible, and checks what the design promises:
+* every compound task in the committed tree has its method, and no action has
+  one;
+* no check is drawn, and the methods are;
+* every plan step is numbered, and the red arrows number one fewer than the
+  steps;
+* no dashed ordering edge is implied by the others;
+* the SVG carries the tooltips;
+* colouring by a type works;
+* an unknown type or file extension is rejected.
+
+**Checked.** `scripts/benchmark --compare` against the previous commit: no
+semantic differences, and no timing change above noise from recording the
+method on each decomposition node. All six test suites pass;
+AddressSanitizer and UndefinedBehaviorSanitizer are clean over `test_grapher`
+and `test_MCTS_planner`. The README describes the new graph and shows one
+(`docs/images/transport_graph.png`).
+
+**Depends on:** §8.21. **Risk:** none to planning. **Payoff:** the graph shows
+which methods were chosen and when each action runs, which is what checking a
+model-written domain needs.
+
 ---
 
 ## 9. Remaining work
@@ -3009,74 +3076,14 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
-The first five items of that list are done: validating a domain at load time
+The first six items of that list are done: validating a domain at load time
 (§8.17), the `sar3` score function (§8.18), the benchmark harness (§8.19),
-making the planner usable as a library (§8.20), and the cleanup (§8.21).
+making the planner usable as a library (§8.20), the cleanup (§8.21), and the
+task-hierarchy graph (§8.22).
 
 ---
 
-### 9.1 Revamp the task-hierarchy graph
-
-The graph `--graph` draws is hard to read. It also leaves out what a reader
-most wants from it: which method decomposed each task, and when each action runs.
-A throwaway prototype redrew real `transport` and `sar3` output in the proposed
-style. It took the current grapher's DOT, the plan the planner prints, and
-rendered with Graphviz 14.1.2. All of the changes below were approved:
-
-1. **Hide the synthesised precondition checks and show the chosen method.** The
-   `__mprec_` actions of §8.16 are drawn as ordinary actions: 10 of the 29
-   nodes in `transport`, with the longest labels in the graph. Remove them, and
-   print the method under its task ("by m\_deliver\_ordering\_0"). That brings
-   `transport` down to 19 nodes. Ordering edges through a hidden check must
-   be joined up (predecessors to successors), not dropped. **`TaskNode` does
-   not record the method.** The prototype read it off the check's name, which
-   exists only for methods with a precondition. Add a `method` field to
-   `TaskNode`, set in `seek_planMCTS`'s commit loop where the tree is built.
-2. **Let only decomposition edges decide the layout.** Graphviz ranks on every
-   edge, so a node's height has nothing to do with its depth. In `sar3`,
-   `wake_triage_critical`, a direct child of the top task, is drawn three
-   levels down. Setting `constraint=false` on the ordering and plan edges fixes
-   this. `transport` goes from 2447×2171 to 2644×481.
-3. **Put every action on one bottom rank, numbered by plan step.** The plan then
-   reads along the bottom of the graph.
-4. **Keep the red plan-order arrows**, drawn between consecutive actions on
-   that bottom rank, so they become short hops instead of a chain zig-zagging
-   across the image. They still cross where the plan switches between top-level
-   tasks, which is information, not clutter.
-5. **Transitively reduce the ordering edges.** The grapher draws every ordering
-   pair, with the precondition checks tied to every sibling: 28 blue edges in
-   `transport` and 20 in `sar3`. The reduced graphs have 12 and 9. Draw them
-   dashed.
-6. **Colour by top-level task.** In `transport` this shows at a glance that the
-   plan interleaves the two deliveries: package\_1's first two actions, then all
-   of package\_0, then the rest of package\_1. `sar3` has one top-level task, so
-   everything is one colour. Colouring by agent (the player argument) would be
-   more useful there, so make the colouring selectable.
-7. **Readable labels, a legend and a caption.** Task name in bold with its
-   arguments on the line below; rounded boxes for compound tasks, square boxes
-   for actions. The caption names the problem, score function, precondition mode
-   and seed, gives the plan length and final score, and says what each shape,
-   colour and edge style means.
-8. **SVG output, chosen by the graph file's extension**, with a tooltip on each
-   node giving the full task. The tooltips are where the graph can become more
-   informative later: the state change each action made, or the visit count
-   and value behind each committed decision.
-
-**A Graphviz trap found while prototyping.** Setting `ordering=out` alongside
-the `constraint=false` ordering edges mirrors every row of siblings, so the
-earliest action ends up rightmost. Leave `ordering=out` off, and write the
-children in plan order instead (each child sorted by the first plan step under
-it). Graphviz uses the input order as its starting layout, and that is enough.
-
-The implementation stays in `grapher.h`, using the cgraph API it already uses.
-The labels need `agstrdup_html`. The README's description of `--graph` changes
-with it: the graph may now be SVG, and a legend explains it.
-
-**Depends on:** nothing; §8.21 fixed the two `grapher.h` faults. **Risk:** low; nothing reads the graph
-but a person. **Payoff:** a graph that shows how a plan was reached, which
-is what one is for when checking a model-written domain.
-
-### 9.2 Finish the parser: case and warnings
+### 9.1 Finish the parser: case and warnings
 
 Left over from §8.17.1, which closed the rest of the parser's gaps.
 
@@ -3097,7 +3104,7 @@ Left over from §8.17.1, which closed the rest of the parser's gaps.
 is opt-in or decided first. **Payoff:** fewer rejections of HDDL a model writes in
 the wrong case, and feedback on mistakes that are not errors.
 
-### 9.3 What is left of performance
+### 9.2 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding

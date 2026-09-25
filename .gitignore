@@ -144,3 +144,5 @@ cmake-build-debug
 *.json
 *.rdb
 *.png
+# ...except images the documentation shows
+!docs/images/*.png

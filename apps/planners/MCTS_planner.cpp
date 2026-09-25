@@ -7,6 +7,7 @@
 #include "cpphop/cppMCTShop.h"
 #include "cpphop/grapher.h"
 #include <chrono>
+#include <sstream>
 namespace po = boost::program_options;
 
 //"compiled" | "at_start" | "protected"; see PreconditionMode in typedefs.h.
@@ -37,6 +38,7 @@ int main(int argc, char* argv[]) {
   std::string score_fun = "delivery_one";
   bool graph = false;
   std::string graph_file = "";
+  std::string graph_colour = "top";
   try {
     po::options_description desc("Allowed options");
     desc.add_options()
@@ -51,8 +53,9 @@ int main(int argc, char* argv[]) {
       ("prob_file,P",po::value<std::string>(),"problem file (string), default = transport_problem.hddl")
       ("score_fun,F",po::value<std::string>(),"name of score function (string), default = delivery_one")
       ("seed,s", po::value<int>(),"Random Seed (int)")
-      ("graph,g",po::bool_switch()->default_value(false),"Creates a task tree graph of the returned plan and saves it as a png, default = false")
-      ("graph_file,f",po::value<std::string>(), "File name for created graph (string), default = name of problem definition")
+      ("graph,g",po::bool_switch()->default_value(false),"Draws the task hierarchy behind the returned plan, default = false")
+      ("graph_file,f",po::value<std::string>(), "File for the graph (string); its extension picks the format: .png, .svg (with a tooltip per node), .pdf, or .dot. Default = <problem name>.png")
+      ("graph_colour",po::value<std::string>(), "How the graph colours its nodes (string): top (default; by the top-level task each serves), none, or a type name, to colour by the object of that type a task involves (e.g. player)")
     ;
 
     po::variables_map vm;        
@@ -110,6 +113,9 @@ int main(int argc, char* argv[]) {
     if (vm.count("graph_file")) {
       graph_file = vm["graph_file"].as<std::string>();
     }
+    if (vm.count("graph_colour")) {
+      graph_colour = vm["graph_colour"].as<std::string>();
+    }
   }
   catch(std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
@@ -150,17 +156,31 @@ int main(int argc, char* argv[]) {
       if (graph_file == "") {
         graph_file = problem.head + ".png";
       }
+      //Checked before planning, so a bad file name fails at once rather than
+      //after the whole search.
+      task_graph::format_of(graph_file);
       auto start = std::chrono::high_resolution_clock::now();
       auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions);
       auto stop = std::chrono::high_resolution_clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
       cout << "Time taken by planner: "
           << duration.count() << " microseconds" << endl;
-      generate_graph(results.t[results.end].plan,
-                     results.t[results.end].treeRoots,
-                     domain,
-                     results.tasktree,
-                     graph_file);
+      auto& end = results.t[results.end];
+      GraphOptions opts;
+      //problem.head is "__<name>__".
+      std::string name = problem.head.size() > 4 ? problem.head.substr(2, problem.head.size() - 4)
+                                                 : problem.head;
+      opts.title = name + " (domain " + domain.head + ")";
+      std::ostringstream score;
+      score << domain.score(end.state,end.plan);
+      opts.facts = {"score function " + score_fun + " = " + score.str(),
+                    "precondition mode " + precondition_mode,
+                    "seed " + std::to_string(seed),
+                    "-T " + std::to_string(time_limit) + " ms"};
+      opts.colour_by = graph_colour;
+      opts.objects = &problem.objects;
+      generate_graph(end.plan,end.treeRoots,domain,results.tasktree,graph_file,opts);
+      cout << "Graph written to " << graph_file << endl;
     }
     else {
       auto start = std::chrono::high_resolution_clock::now();

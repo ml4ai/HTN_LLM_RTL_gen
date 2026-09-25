@@ -464,6 +464,7 @@ inline int expansion(pTree& t,
             v.plan = t[n].plan;
             v.addedTIDs = grounding.first;
             v.prevTID = tid;
+            v.method = m.get_head();
             v.treeRoots = t[n].treeRoots;
             v.pred = n;
             int w = t.size();
@@ -688,6 +689,7 @@ seek_planMCTS(pTree& t,
       if (!undo_stack.empty()) {
         auto const& undo = undo_stack.back();
         if (undo.parent_TID != -1) {
+          tasktree[undo.parent_TID].method.clear();
           auto& children = tasktree[undo.parent_TID].children;
           children.erase(std::remove_if(children.begin(),
                                         children.end(),
@@ -727,6 +729,9 @@ seek_planMCTS(pTree& t,
     k.treeRoots = m[arg_max].treeRoots;
     CommitUndo undo;
     undo.parent_TID = m[arg_max].prevTID;
+    if (m[arg_max].prevTID != -1) {
+      tasktree[m[arg_max].prevTID].method = m[arg_max].method;
+    }
     for (auto& i : m[arg_max].addedTIDs) {
       TaskNode tasknode;
       tasknode.task = k.tasks[i].head;

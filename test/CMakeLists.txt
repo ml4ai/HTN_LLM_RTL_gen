@@ -53,3 +53,10 @@ target_link_libraries(test_linkage PRIVATE tomcat ${GRAPHVIZ_LIBS} ${Z3_LIBRARIE
 target_include_directories(test_linkage SYSTEM PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ${GRAPHVIZ_INCLUDE_DIRS})
 target_include_directories(test_linkage PRIVATE ../lib)
 add_test(NAME test_linkage COMMAND test_linkage)
+
+# The task-hierarchy graph (planner_doc.md 8.22).
+add_executable(test_grapher test_grapher.cpp)
+target_link_libraries(test_grapher PRIVATE tomcat ${GRAPHVIZ_LIBS} ${Z3_LIBRARIES} ${Boost_LIBRARIES})
+target_include_directories(test_grapher SYSTEM PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ${GRAPHVIZ_INCLUDE_DIRS})
+target_include_directories(test_grapher PRIVATE ../lib)
+add_test(NAME test_grapher COMMAND test_grapher)

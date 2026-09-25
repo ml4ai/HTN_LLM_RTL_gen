@@ -263,6 +263,9 @@ struct TaskGraph {
 struct TaskNode {
   std::string task;
   std::string token;
+  //The method that decomposed this task, for a compound task in the committed
+  //plan; empty for an action. The graph prints it (planner_doc.md 8.22).
+  std::string method;
   std::vector<int> children;
   std::vector<int> outgoing;
 };
@@ -274,6 +277,9 @@ struct pNode {
     TaskGraph tasks;
     int prevTID = -1;
     std::vector<int> addedTIDs;
+    //For a node made by decomposing task prevTID: the method used, recorded on
+    //the task tree when this node is committed.
+    std::string method;
     std::vector<int> treeRoots;
     std::vector<std::string> plan;
     int depth = 0;
