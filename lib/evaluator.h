@@ -379,7 +379,20 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
   }
 
   std::vector<Binding> out;
-  std::unordered_set<std::string> seen;
+  //Duplicates dropped, first occurrence kept: the order of the result feeds
+  //the order of successors and so the random stream. The set holds indices
+  //into `out`, hashed and compared by the bindings' values. It used to hold a
+  //"name=value;..." string built per binding, an allocation and a copy of
+  //every name and value each time (8.24).
+  auto hash_of = [&out](size_t i) {
+    size_t h = 0;
+    for (auto const& [n,v] : out[i]) {
+      h = h * 1000003u ^ std::hash<std::string>{}(v);
+    }
+    return h;
+  };
+  auto same = [&out](size_t a, size_t b) { return out[a] == out[b]; };
+  std::unordered_set<size_t,decltype(hash_of),decltype(same)> seen(8,hash_of,same);
   for (auto const& base : *solved) {
     //Any parameter the expression left unbound ranges over its whole type.
     std::vector<Env> envs{base};
@@ -422,8 +435,9 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
         //whole query to the fallback instead of guessing.
         return std::nullopt;
       }
-      if (seen.insert(detail::key_of(b)).second) {
-        out.push_back(std::move(b));
+      out.push_back(std::move(b));
+      if (!seen.insert(out.size() - 1).second) {
+        out.pop_back();
       }
     }
   }
