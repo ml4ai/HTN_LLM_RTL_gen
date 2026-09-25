@@ -11,12 +11,11 @@ namespace fol {
         }
         friend std::ostream& operator<<(std::ostream& out, const Function& f) {
             out << "(";
+            //"(f a b)". This printed "(fa b )": no space after the name,
+            //and a test of i < size that is always true.
             out << f.name;
-            for (int i = 0; i < f.args.size(); i++) {
-                out << f.args.at(i);
-                if (i < f.args.size()) {
-                    out << " ";
-                }
+            for (auto const& a : f.args) {
+                out << " " << a;
             }
             out << ")";
             return out;

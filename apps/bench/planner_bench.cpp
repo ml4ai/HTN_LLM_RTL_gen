@@ -242,8 +242,8 @@ int main(int argc, char* argv[]) {
       //a timing-sized run is thousands of entries.
       std::string all = scores.str();
       uint64_t h = 1469598103934665603ULL;  //FNV-1a
-      for (unsigned char c : all) {
-        h = (h ^ c) * 1099511628211ULL;
+      for (unsigned char ch : all) {
+        h = (h ^ ch) * 1099511628211ULL;
       }
       std::string head = all;
       size_t cut_at = 0;

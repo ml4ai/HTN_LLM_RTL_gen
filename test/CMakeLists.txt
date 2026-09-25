@@ -16,25 +16,29 @@ find_package(Z3 REQUIRED)
 # Parser testing
 add_executable(test_parser test_parser.cpp)
 target_link_libraries(test_parser tomcat)
-target_include_directories(test_parser PRIVATE ${Boost_INCLUDE_DIR} ../lib)
+target_include_directories(test_parser SYSTEM PRIVATE ${Boost_INCLUDE_DIR})
+target_include_directories(test_parser PRIVATE ../lib)
 
 # KB testing
 add_executable(test_kb test_kb.cpp)
 target_link_libraries(test_kb PRIVATE tomcat)
 target_link_libraries(test_kb PRIVATE ${Z3_LIBRARIES} ${Boost_LIBRARIES})
-target_include_directories(test_kb PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ../lib)
+target_include_directories(test_kb SYSTEM PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS})
+target_include_directories(test_kb PRIVATE ../lib)
 
 # loader testing
 add_executable(test_loader test_loader.cpp)
 target_link_libraries(test_loader PRIVATE tomcat)
 target_link_libraries(test_loader PRIVATE ${Z3_LIBRARIES} ${Boost_LIBRARIES})
-target_include_directories(test_loader PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ../lib)
+target_include_directories(test_loader SYSTEM PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS})
+target_include_directories(test_loader PRIVATE ../lib)
 
 # planner testing
 add_executable(test_MCTS_planner test_MCTS_planner.cpp)
 target_link_libraries(test_MCTS_planner PRIVATE tomcat)
 target_link_libraries(test_MCTS_planner PRIVATE ${Z3_LIBRARIES} ${Boost_LIBRARIES})
-target_include_directories(test_MCTS_planner PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ../lib)
+target_include_directories(test_MCTS_planner SYSTEM PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS})
+target_include_directories(test_MCTS_planner PRIVATE ../lib)
 
 add_test(NAME test_parser COMMAND test_parser)
 add_test(NAME test_kb COMMAND test_kb)
@@ -46,5 +50,6 @@ add_test(NAME test_MCTS_planner COMMAND test_MCTS_planner)
 find_package(Graphviz REQUIRED)
 add_executable(test_linkage test_linkage.cpp test_linkage_other.cpp)
 target_link_libraries(test_linkage PRIVATE tomcat ${GRAPHVIZ_LIBS} ${Z3_LIBRARIES} ${Boost_LIBRARIES})
-target_include_directories(test_linkage PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ${GRAPHVIZ_INCLUDE_DIRS} ../lib)
+target_include_directories(test_linkage SYSTEM PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ${GRAPHVIZ_INCLUDE_DIRS})
+target_include_directories(test_linkage PRIVATE ../lib)
 add_test(NAME test_linkage COMMAND test_linkage)

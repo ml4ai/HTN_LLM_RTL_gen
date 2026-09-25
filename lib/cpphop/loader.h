@@ -33,6 +33,25 @@ using std::string, std::vector, std::unordered_set;
 using Ptypes = std::unordered_map<std::string,std::vector<std::string>>;
 using Tasktypes = std::unordered_map<std::string,std::vector<std::string>>;
 
+//The declared type of argument i of a predicate or task, or __Object__ when
+//there is none on record. operator[] used to insert an empty list and index
+//past its end for a name with no entry: a type used as a one-argument
+//predicate (legal since planner_doc.md 8.17) has none.
+inline std::string const& type_at(std::unordered_map<std::string,std::vector<std::string>> const& types,
+                                  std::string const& name, size_t i) {
+  static std::string const object = "__Object__";
+  auto it = types.find(name);
+  if (it == types.end() || i >= it->second.size()) {
+    return object;
+  }
+  return it->second[i];
+}
+
+//A term's name: a variable's without its '?', or a constant's.
+inline std::string const& term_name(Term const& t) {
+  return t.which() == 1 ? boost::get<Variable>(t).name : boost::get<Constant>(t).name;
+}
+
 //Every (either ...) type used in a parameter or quantifier list, collected so
 //each can be added to the type tree before anything refers to it.
 using EitherTypes = std::map<std::string,std::vector<std::string>>;
@@ -119,7 +138,7 @@ inline void add_either_types(TypeTree& typetree, EitherTypes const& eithers) {
   }
 }
 
-inline void get_orderings(Orderings orderings,std::unordered_map<std::string,std::vector<std::string>>& og) {
+inline void get_orderings(Orderings const& orderings,std::unordered_map<std::string,std::vector<std::string>>& og) {
   if (which_orderings(orderings) == 0) {
     return;
   }
@@ -138,7 +157,7 @@ inline void get_orderings(Orderings orderings,std::unordered_map<std::string,std
   return;
 };
 
-inline std::unordered_set<std::string> type_inference(Sentence sentence, Ptypes& ptypes, std::string var) {
+inline std::unordered_set<std::string> type_inference(Sentence const& sentence, Ptypes const& ptypes, std::string const& var) {
   std::unordered_set<std::string> types;
   types.insert("__Object__");
   if (sentence.which() == 0) {
@@ -146,13 +165,10 @@ inline std::unordered_set<std::string> type_inference(Sentence sentence, Ptypes&
   }
   if (sentence.which() == 1) {
     auto s = boost::get<Literal<Term>>(sentence);
-    for (int i = 0; i < s.args.size(); i++) {
-      if (s.args[i].which() == 1) {
-        std::string arg = boost::get<Variable>(s.args[i]).name;
-        if (arg == var) {
-          types.insert(ptypes[s.predicate][i]);
-        }
-      } 
+    for (size_t i = 0; i < s.args.size(); i++) {
+      if (s.args[i].which() == 1 && boost::get<Variable>(s.args[i]).name == var) {
+        types.insert(type_at(ptypes,s.predicate,i));
+      }
     }
     return types; 
   }
@@ -196,7 +212,7 @@ inline std::unordered_set<std::string> type_inference(Sentence sentence, Ptypes&
   return types;
 }
 
-inline std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
+inline std::string sentence_to_SMT(Sentence const& sentence, Ptypes const& ptypes) {
   if (sentence.which() == 0) {
     return "__NONE__";
   }
@@ -331,7 +347,7 @@ inline std::string sentence_to_SMT(Sentence sentence, Ptypes& ptypes) {
 //string. The two are kept in step by a round-trip assertion in test_loader:
 //every precondition and effect condition in every shipped domain must render
 //back to the string stored beside it.
-inline expr::Ptr sentence_to_expr(Sentence sentence, Ptypes& ptypes) {
+inline expr::Ptr sentence_to_expr(Sentence const& sentence, Ptypes const& ptypes) {
   if (sentence.which() == 0) {
     return nullptr;
   }
@@ -431,20 +447,31 @@ inline expr::Ptr sentence_to_expr(Sentence sentence, Ptypes& ptypes) {
   return nullptr;
 }
 
-inline std::unordered_set<std::string> type_inference(effect e, Ptypes& ptypes, std::string var) {
+inline std::unordered_set<std::string> type_inference(effect const& e, Ptypes const& ptypes, std::string const& var) {
   std::unordered_set<std::string> types = {"__Object__"};
   auto pred = e.pred;
-  for (int i = 0; i < pred.second.size(); i++) {
+  for (size_t i = 0; i < pred.second.size(); i++) {
     if (var == pred.second[i].first) {
-      types.insert(ptypes[pred.first][i]);
-    } 
+      types.insert(type_at(ptypes,pred.first,i));
+    }
   }
   return types;
 }
-//Forward declaration needed for decompose_effects
-inline Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes);
+//An effect's atom as the planner stores it: the predicate, and each argument
+//with the declared type of its position.
+inline Pred pred_of(PEffect const& p, Ptypes const& ptypes) {
+  Pred pd;
+  pd.first = p.predicate;
+  for (size_t i = 0; i < p.args.size(); i++) {
+    pd.second.emplace_back(term_name(p.args[i]),type_at(ptypes,p.predicate,i));
+  }
+  return pd;
+}
 
-inline Effects decompose_effects(Effect effect, Ptypes& ptypes) {
+//Forward declaration needed for decompose_effects
+inline Effects decompose_ceffects(CEffect const& ceffect, Ptypes const& ptypes);
+
+inline Effects decompose_effects(Effect const& effect, Ptypes const& ptypes) {
   Effects effects = {};
   if (effect.which() == 0) {
     return effects;
@@ -452,24 +479,25 @@ inline Effects decompose_effects(Effect effect, Ptypes& ptypes) {
   if (effect.which() == 1) {
     auto e = boost::get<AndCEffect>(effect);
     for (auto const& c : e.c_effects) {
-      effects = merge_vec(effects,decompose_ceffects(c,ptypes));
+      auto more = decompose_ceffects(c,ptypes);
+      effects.insert(effects.end(),more.begin(),more.end());
     }
     return effects;
   }
   if (effect.which() == 2) {
     auto e = boost::get<CEffect>(effect);
-    effects = merge_vec(effects,decompose_ceffects(e,ptypes));
+    effects = decompose_ceffects(e,ptypes);
     return effects;
   }
   return effects;
 }
 
-inline Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
+inline Effects decompose_ceffects(CEffect const& ceffect, Ptypes const& ptypes) {
   Effects effects = {};
   if (ceffect.which() == 0) {
     auto e = boost::get<ForallCEffect>(ceffect);
     auto faeffects = decompose_effects(e.effect,ptypes);
-    for (int i = 0; i < faeffects.size(); i++) {
+    for (size_t i = 0; i < faeffects.size(); i++) {
       //An inner forall binding the same name has already set it.
       for (auto const& t : e.variables.explicitly_typed_lists) {
         std::string type = type_name_of(t.type);
@@ -494,75 +522,21 @@ inline Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
       auto p = boost::get<PEffect>(e.cond_effect);
       auto sentSMT = sentence_to_SMT(e.gd, ptypes);
       auto sentAST = sentence_to_expr(e.gd, ptypes);
-      Pred pd;
-      pd.first = p.predicate;
-      for (int i = 0; i < p.args.size(); i++) {
-        if (p.args[i].which() == 1) {
-          std::string arg_name = boost::get<Variable>(p.args[i]).name;
-          std::pair<std::string,std::string> arg;
-          arg.first = arg_name;
-          arg.second = ptypes[p.predicate][i];
-          pd.second.push_back(arg);
-        } 
-        else {
-          std::pair<std::string,std::string> arg;
-          arg.first = boost::get<Constant>(p.args[i]).name;
-          arg.second = ptypes[p.predicate][i];
-          pd.second.push_back(arg);
-        }
-      }
-      std::unordered_map<std::string,std::unordered_set<std::string>> fa;
-      effects.push_back(effect(sentSMT,p.is_negative,pd,fa,sentAST));
+      effects.push_back(effect(sentSMT,p.is_negative,pred_of(p,ptypes),{},sentAST));
     }
     else {
       auto vp = boost::get<std::vector<PEffect>>(e.cond_effect);
       auto sentSMT = sentence_to_SMT(e.gd, ptypes);
       auto sentAST = sentence_to_expr(e.gd, ptypes);
       for (auto const& p : vp) {
-        Pred pd;
-        pd.first = p.predicate;
-        for (int i = 0; i < p.args.size(); i++) {
-          if (p.args[i].which() == 1) {
-            std::string arg_name = boost::get<Variable>(p.args[i]).name;
-            std::pair<std::string,std::string> arg;
-            arg.first = arg_name;
-            arg.second = ptypes[p.predicate][i];
-            pd.second.push_back(arg);
-          } 
-          else {
-            std::pair<std::string,std::string> arg;
-            arg.first = boost::get<Constant>(p.args[i]).name;
-            arg.second = ptypes[p.predicate][i];
-            pd.second.push_back(arg);
-          }
-        }
-        std::unordered_map<std::string,std::unordered_set<std::string>> fa;
-        effects.push_back(effect(sentSMT,p.is_negative,pd,fa,sentAST));
+        effects.push_back(effect(sentSMT,p.is_negative,pred_of(p,ptypes),{},sentAST));
       }
     }
     return effects;
   }
   if (ceffect.which() == 2) {
     auto p = boost::get<PEffect>(ceffect);
-    Pred pd;
-    pd.first = p.predicate;
-    for (int i = 0; i < p.args.size(); i++) {
-      if (p.args[i].which() == 1) {
-        std::string arg_name = boost::get<Variable>(p.args[i]).name;
-        std::pair<std::string,std::string> arg;
-        arg.first = arg_name;
-        arg.second = ptypes[p.predicate][i];
-        pd.second.push_back(arg);
-      } 
-      else {
-        std::pair<std::string,std::string> arg;
-        arg.first = boost::get<Constant>(p.args[i]).name;
-        arg.second = ptypes[p.predicate][i];
-        pd.second.push_back(arg);
-      }
-    }
-    std::unordered_map<std::string,std::unordered_set<std::string>> fa;
-    effects.push_back(effect("__NONE__",p.is_negative,pd,fa,nullptr));
+    effects.push_back(effect("__NONE__",p.is_negative,pred_of(p,ptypes),{},nullptr));
     return effects;
   }
   return effects;
@@ -570,7 +544,7 @@ inline Effects decompose_ceffects(CEffect ceffect,Ptypes& ptypes) {
 
 
 
-inline std::string decompose_constraint(Constraint constraint) {
+inline std::string decompose_constraint(Constraint const& constraint) {
   if (which_constraint(constraint) == 0) {
     return "__NONE__";
   }
@@ -613,7 +587,7 @@ inline std::string decompose_constraint(Constraint constraint) {
   return "__NONE__";
 }
 
-inline std::string decompose_constraints(Constraints constraints) {
+inline std::string decompose_constraints(Constraints const& constraints) {
   std::string cs = "(and"; 
   if (which_constraints(constraints) == 0) {
     return "__NONE__";
@@ -646,7 +620,7 @@ inline std::string decompose_constraints(Constraints constraints) {
 
 //Mirrors decompose_constraint. :constraints are (in)equalities over variables
 //and constants only, so this is the whole of it.
-inline expr::Ptr constraint_to_expr(Constraint constraint) {
+inline expr::Ptr constraint_to_expr(Constraint const& constraint) {
   int w = which_constraint(constraint);
   if (w != 1 && w != 2) {
     return nullptr;
@@ -672,7 +646,7 @@ inline expr::Ptr constraint_to_expr(Constraint constraint) {
 }
 
 //Mirrors decompose_constraints, which always wraps in an `and`.
-inline expr::Ptr constraints_to_expr(Constraints constraints) {
+inline expr::Ptr constraints_to_expr(Constraints const& constraints) {
   int w = which_constraints(constraints);
   if (w == 1) {
     auto c = constraint_to_expr(boost::get<Constraint>(constraints));
@@ -697,104 +671,69 @@ inline expr::Ptr constraints_to_expr(Constraints constraints) {
   return nullptr;
 }
 
-inline std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks subtasks, Tasktypes ttypes) {
-  std::vector<std::pair<ID,TaskDef>> subs;
-  if (which_subtasks(subtasks) == 0) {
-    return subs;
+//A subtask as the planner stores it: its task, and each argument with the
+//declared type of its position.
+inline TaskDef task_def_of(MTask const& st, Tasktypes const& ttypes) {
+  TaskDef t;
+  t.first = st.name;
+  for (size_t i = 0; i < st.parameters.size(); i++) {
+    t.second.emplace_back(term_name(st.parameters[i]),type_at(ttypes,st.name,i));
   }
+  return t;
+}
+
+//The subtasks of a network, each with its id. One written without an id gets
+//__taskN__, N counting only the unnamed ones, so orderings -- which name ids
+//-- cannot refer to it.
+inline std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks const& subtasks, Tasktypes const& ttypes) {
+  std::vector<SubTask> listed;
   if (which_subtasks(subtasks) == 1) {
-    auto s = boost::get<SubTask>(subtasks);
+    listed.push_back(boost::get<SubTask>(subtasks));
+  }
+  else if (which_subtasks(subtasks) == 2) {
+    listed = boost::get<std::vector<SubTask>>(subtasks);
+  }
+  std::vector<std::pair<ID,TaskDef>> subs;
+  int unnamed = 0;
+  for (auto const& s : listed) {
     if (which_subtask(s) == 0) {
-      auto st = boost::get<MTask>(s);
-      TaskDef t; 
-      t.first = st.name; 
-      for (int i = 0; i < st.parameters.size(); i++) {
-        if (st.parameters[i].which() == 1) {
-          std::pair<std::string,std::string> arg;
-          arg.first = boost::get<Variable>(st.parameters[i]).name; 
-          arg.second = ttypes[st.name][i];
-          t.second.push_back(arg);
-        } 
-        else {
-          std::pair<std::string,std::string> arg;
-          arg.first = boost::get<Constant>(st.parameters[i]).name; 
-          arg.second = ttypes[st.name][i];
-          t.second.push_back(arg);
-        }
-      }
-      subs.push_back(std::make_pair("__task0__",t));
+      subs.emplace_back("__task"+std::to_string(unnamed++)+"__",
+                        task_def_of(boost::get<MTask>(s),ttypes));
     }
     else {
-      auto sbtid = boost::get<SubTaskWithId>(s);
-      auto st = sbtid.subtask;
-      TaskDef t; 
-      t.first = st.name; 
-      for (int i = 0; i < st.parameters.size(); i++) {
-        if (st.parameters[i].which() == 1) {
-          std::pair<std::string,std::string> arg;
-          arg.first = boost::get<Variable>(st.parameters[i]).name; 
-          arg.second = ttypes[st.name][i];
-          t.second.push_back(arg);
-        } 
-        else {
-          std::pair<std::string,std::string> arg;
-          arg.first = boost::get<Constant>(st.parameters[i]).name; 
-          arg.second = ttypes[st.name][i];
-          t.second.push_back(arg);
-        }
-      }
-      subs.push_back(std::make_pair(sbtid.id,t));
-    }
-  }
-  if (which_subtasks(subtasks) == 2) {
-    auto vs = boost::get<std::vector<SubTask>>(subtasks);
-    int j = 0;
-    for (auto const& s : vs) {
-      if (which_subtask(s) == 0) {
-        auto st = boost::get<MTask>(s);
-        TaskDef t; 
-        t.first = st.name; 
-        for (int i = 0; i < st.parameters.size(); i++) {
-          if (st.parameters[i].which() == 1) {
-            std::pair<std::string,std::string> arg;
-            arg.first = boost::get<Variable>(st.parameters[i]).name; 
-            arg.second = ttypes[st.name][i];
-            t.second.push_back(arg);
-          } 
-          else {
-            std::pair<std::string,std::string> arg;
-            arg.first = boost::get<Constant>(st.parameters[i]).name; 
-            arg.second = ttypes[st.name][i];
-            t.second.push_back(arg);
-          }
-        }
-        subs.push_back(std::make_pair("__task"+std::to_string(j)+"__",t));
-        j++;
-      }
-      else {
-        auto sbtid = boost::get<SubTaskWithId>(s);
-        auto st = sbtid.subtask;
-        TaskDef t; 
-        t.first = st.name; 
-        for (int i = 0; i < st.parameters.size(); i++) {
-          if (st.parameters[i].which() == 1) {
-            std::pair<std::string,std::string> arg;
-            arg.first = boost::get<Variable>(st.parameters[i]).name; 
-            arg.second = ttypes[st.name][i];
-            t.second.push_back(arg);
-          } 
-          else {
-            std::pair<std::string,std::string> arg;
-            arg.first = boost::get<Constant>(st.parameters[i]).name; 
-            arg.second = ttypes[st.name][i];
-            t.second.push_back(arg);
-          }
-        }
-        subs.push_back(std::make_pair(sbtid.id,t));
-      }
+      auto const& sbtid = boost::get<SubTaskWithId>(s);
+      subs.emplace_back(sbtid.id,task_def_of(sbtid.subtask,ttypes));
     }
   }
   return subs;
+}
+
+//The subtasks and orderings of a method's or the problem's task network. One
+//function for both: the two used to be separate copies, and when an empty
+//ordered network -- `:ordered-subtasks ()`, legal HDDL -- was found to index
+//past the end of an empty list, the guard went into the method's copy only.
+//A problem whose :htn was empty and ordered still crashed the loader (8.21).
+inline void network_of(TaskNetwork const& tn, Tasktypes const& ttypes, TaskDefs& subtasks,
+                       std::unordered_map<std::string,std::vector<std::string>>& orderings) {
+  if (!tn.subtasks) {
+    return;
+  }
+  auto sts = get_subtasks(tn.subtasks->subtasks,ttypes);
+  for (auto const& st : sts) {
+    subtasks[st.first] = st.second;
+    orderings[st.first] = {};
+  }
+  bool ordered = tn.subtasks->ordering_kw == "ordered-tasks" ||
+                 tn.subtasks->ordering_kw == "ordered-subtasks";
+  if (ordered) {
+    //Each subtask before the next, in the order written.
+    for (size_t i = 1; i < sts.size(); i++) {
+      orderings[sts[i-1].first].push_back(sts[i].first);
+    }
+  }
+  else if (tn.orderings) {
+    get_orderings(*tn.orderings,orderings);
+  }
 }
 
 //The text of an .hddl file, or an exception saying why there is none.
@@ -816,8 +755,47 @@ inline Domain dom_loader(std::string dom_file) {
   return parse<Domain>(read_hddl_file(dom_file),dom_file);
 }
 
-inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain dom) {
-  std::string name = dom.name; 
+//A parameter list as (name, type) pairs in the order written: the explicitly
+//typed groups, then any untyped names, which are __Object__.
+inline Params params_of(TypedList<Variable> const& tl) {
+  Params ps;
+  for (auto const& group : tl.explicitly_typed_lists) {
+    std::string type = type_name_of(group.type);
+    for (auto const& v : group.entries) {
+      ps.emplace_back(v.name,type);
+    }
+  }
+  for (auto const& v : tl.implicitly_typed_list) {
+    ps.emplace_back(v.name,"__Object__");
+  }
+  return ps;
+}
+
+//Parameter types alone, in order.
+inline std::vector<std::string> types_of(Params const& ps) {
+  std::vector<std::string> ts;
+  for (auto const& p : ps) {
+    ts.push_back(p.second);
+  }
+  return ts;
+}
+
+//Declared objects or constants: name -> type.
+inline Objects objects_of(TypedList<Name> const& tl) {
+  Objects os;
+  for (auto const& group : tl.explicitly_typed_lists) {
+    std::string type = type_name_of(group.type);
+    for (auto const& n : group.entries) {
+      os[n] = type;
+    }
+  }
+  for (auto const& n : tl.implicitly_typed_list) {
+    os[n] = "__Object__";
+  }
+  return os;
+}
+
+inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain const& dom) {
   TypeTree typetree;
   typetree.add_root("__Object__");
   for (auto const& t : dom.types.explicitly_typed_lists) {
@@ -844,100 +822,33 @@ inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain d
   Predicates predicates;
   Ptypes ptypes;
   for (auto const& p : dom.predicates) {
-    Pred pred;
-    pred.first = p.predicate;
-    Params params;
-    for (auto const& t : p.variables.explicitly_typed_lists) {
-      std::string type = type_name_of(t.type);
-      for (auto const& e : t.entries) {
-        params.push_back(std::make_pair(e.name,type));
-        ptypes[p.predicate].push_back(type);
-      }
-    }
-    for (auto const& it : p.variables.implicitly_typed_list) {
-      params.push_back(std::make_pair(it.name,"__Object__"));
-      ptypes[p.predicate].push_back("__Object__");
-    }
-    pred.second = params;
-    predicates.push_back(pred);
-  }
-  
-  Objects constants;
-  for (auto const& c : dom.constants.explicitly_typed_lists) {
-    std::string type = type_name_of(c.type);
-    for (auto const& e : c.entries) {
-      constants[e] = type;
-    }
-  }
-  for (auto const& ic : dom.constants.implicitly_typed_list) {
-    constants[ic] = "__Object__";
+    Params params = params_of(p.variables);
+    ptypes[p.predicate] = types_of(params);
+    predicates.emplace_back(p.predicate,std::move(params));
   }
 
+  Objects constants = objects_of(dom.constants);
+
+  //Argument types of every task and action, which a subtask may name.
   Tasktypes ttypes;
   for (auto const& t : dom.tasks) {
-    for (auto const& p : t.parameters.explicitly_typed_lists) {
-      std::string type = type_name_of(p.type);
-      for (auto const& e : p.entries) {
-        ttypes[t.name].push_back(type); 
-      }
-    }
-    for (auto const& pt : t.parameters.implicitly_typed_list) {
-      ttypes[t.name].push_back("__Object__");
-    }
+    ttypes[t.name] = types_of(params_of(t.parameters));
   }
 
   ActionDefs actions;
   for (auto const& a : dom.actions) {
-    std::string name = a.name;
-    Params params;
-    for (auto const& p : a.parameters.explicitly_typed_lists) {
-      std::string type = type_name_of(p.type);
-      for (auto const& e : p.entries) {
-        params.push_back(std::make_pair(e.name,type));
-        ttypes[a.name].push_back(type);
-      }
-    }
-    for (auto const& pt : a.parameters.implicitly_typed_list) {
-      params.push_back(std::make_pair(pt.name,"__Object__"));
-      ttypes[a.name].push_back("__Object__");
-    }
-
-    Preconds preconditions = sentence_to_SMT(a.precondition,ptypes); 
+    Params params = params_of(a.parameters);
+    ttypes[a.name] = types_of(params);
+    Preconds preconditions = sentence_to_SMT(a.precondition,ptypes);
     expr::Ptr precondition_ast = sentence_to_expr(a.precondition,ptypes);
     Effects effects = decompose_effects(a.effect,ptypes);
-    actions.emplace(std::make_pair(name, ActionDef(name,params,preconditions,effects,false,precondition_ast))); 
+    actions.emplace(a.name, ActionDef(a.name,params,preconditions,effects,false,precondition_ast));
   }
-  
+
   MethodDefs methods;
   for (auto const& m : dom.methods) {
-    TaskDef task;
-    std::string name = m.name;
-    task.first = m.task.name;
-    Params params;
-    Params tparams;
-    for (auto const& p : m.parameters.explicitly_typed_lists) {
-      std::string type = type_name_of(p.type);
-      for (auto const& e : p.entries) {
-        params.push_back(std::make_pair(e.name,type));
-      }
-    }
-    for (auto const& pt : m.parameters.implicitly_typed_list) {
-      params.push_back(std::make_pair(pt.name,"__Object__"));
-    }
-
-    for (int i = 0; i < m.task.parameters.size(); i++) {
-      std::pair<std::string,std::string> arg;
-      if (m.task.parameters[i].which() == 1) {
-        arg.first = boost::get<Variable>(m.task.parameters[i]).name;
-        arg.second = ttypes[m.task.name][i];
-      }
-      else {
-        arg.first =  boost::get<Constant>(m.task.parameters[i]).name;
-        arg.second = ttypes[m.task.name][i];
-      }
-      tparams.push_back(arg);
-    }
-    task.second = tparams;
+    Params params = params_of(m.parameters);
+    TaskDef task = task_def_of(m.task,ttypes);
 
     //HDDL timing: a method's state precondition is not checked when the method
     //is decomposed. It is compiled into a fresh effect-free primitive action
@@ -965,47 +876,16 @@ inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain d
      
     TaskDefs subtasks;
     std::unordered_map<std::string,std::vector<std::string>> orderings;
-    if (m.task_network.subtasks) {
-      auto sts = get_subtasks(m.task_network.subtasks->subtasks,ttypes);
-      //An empty subtask network is legal HDDL -- `:subtasks ()`, which a
-      //method that ends a recursion uses -- and leaves sts empty. The chain
-      //below indexes sts[0], so it must not run on one. The else branch
-      //handles the empty case already: every loop in it is over sts.
-      if (!sts.empty() &&
-          (m.task_network.subtasks->ordering_kw == "ordered-tasks" ||
-           m.task_network.subtasks->ordering_kw == "ordered-subtasks")) {
-        subtasks[sts[0].first] = sts[0].second;
-        for (int i = 1; i < sts.size(); i++) {
-          subtasks[sts[i].first] = sts[i].second;
-          orderings[sts[i-1].first].push_back(sts[i].first);
-        }
-        orderings[sts[sts.size()-1].first] = {};
-      }
-      else {
-        if (!m.task_network.orderings) {
-          for (auto const &st : sts) {
-            subtasks[st.first] = st.second;
-            orderings[st.first] = {};
-          }
-        } 
-        else {
-          for (auto const &st : sts) {
-            subtasks[st.first] = st.second;
-            orderings[st.first] = {};
-          }
-          get_orderings(*m.task_network.orderings,orderings); 
-        }
-      }
-    }
+    network_of(m.task_network,ttypes,subtasks,orderings);
 
     if (state_pre != "__NONE__") {
       //One artificial action per method carrying a precondition, taking the
       //method's full parameter list so the binding chosen at decomposition is
       //what the check is evaluated against.
-      std::string pre_action = "__mprec_"+name;
+      std::string pre_action = "__mprec_"+m.name;
       int suffix = 1;
       while (actions.contains(pre_action)) {
-        pre_action = "__mprec_"+name+"_"+std::to_string(suffix);
+        pre_action = "__mprec_"+m.name+"_"+std::to_string(suffix);
         suffix++;
       }
       actions.emplace(std::make_pair(pre_action,
@@ -1023,9 +903,9 @@ inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain d
       orderings[pre_id] = before;
     }
 
-    methods[m.task.name].push_back(MethodDef(name,task,params,preconditions,subtasks,orderings,precondition_ast));
+    methods[m.task.name].push_back(MethodDef(m.name,task,params,preconditions,subtasks,orderings,precondition_ast));
   }
-  auto DD = DomainDef(name,typetree,predicates,constants,actions,methods);
+  auto DD = DomainDef(dom.name,typetree,predicates,constants,actions,methods);
   return std::make_pair(DD,std::make_pair(ptypes,ttypes));
 }
 
@@ -1042,25 +922,17 @@ inline Problem prob_loader(std::string prob_file) {
   return parse<Problem>(read_hddl_file(prob_file),prob_file);
 }
 
-inline ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes) {
+inline ProblemDef createProblemDef(Problem const& prob, Ptypes const& ptypes, Tasktypes const& ttypes) {
   std::string head = "__"+prob.name+"__";
   std::string domain_name = prob.domain_name;
 
-  Objects objects;
-  for (auto const& o : prob.objects.explicitly_typed_lists) {
-    std::string type = type_name_of(o.type);
-    for (auto const& e : o.entries) {
-      objects[e] = type;
-    }
-  }
-  for (auto const& io : prob.objects.implicitly_typed_list) {
-    objects[io] = "__Object__";
-  }
+  Objects objects = objects_of(prob.objects);
   
   std::string m_name = prob.problem_htn.problem_class;
   TaskDef task;
   Params params;
-  Preconds preconditions;
+  Preconds preconditions = "__NONE__";
+  expr::Ptr precondition_ast = nullptr;
   TaskDefs subtasks;
   std::unordered_map<std::string,std::vector<std::string>> orderings;
   if (m_name == "") {
@@ -1069,52 +941,19 @@ inline ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes
   else {
     task.first = head;
     task.second = {};
-    for (auto const& p : prob.problem_htn.parameters.explicitly_typed_lists) {
-      std::string type = type_name_of(p.type);
-      for (auto const& e : p.entries) {
-        params.push_back(std::make_pair(e.name,type));
-      }
-    }
-    for (auto const& pt : prob.problem_htn.parameters.implicitly_typed_list) {
-      params.push_back(std::make_pair(pt.name,"__Object__"));
-    }
+    params = params_of(prob.problem_htn.parameters);
+    //As for a method: the string for Z3, and the structured form the direct
+    //evaluator reads, which this copy used to leave out.
     if (prob.problem_htn.task_network.constraints) {
       std::string cs = decompose_constraints(*prob.problem_htn.task_network.constraints);
-      preconditions = cs;
-    }
-    else {
-      preconditions = "__NONE__";
-    }
-
-    if (prob.problem_htn.task_network.subtasks) {
-      auto sts = get_subtasks(prob.problem_htn.task_network.subtasks->subtasks,ttypes);    
-      if (prob.problem_htn.task_network.subtasks->ordering_kw == "ordered-tasks" || 
-          prob.problem_htn.task_network.subtasks->ordering_kw == "ordered-subtasks") {
-        subtasks[sts[0].first] = sts[0].second;
-        for (int i = 1; i < sts.size(); i++) {
-          subtasks[sts[i].first] = sts[i].second;
-          orderings[sts[i-1].first].push_back(sts[i].first);
-        }
-        orderings[sts[sts.size()-1].first] = {};
-      }
-      else {
-        if (!prob.problem_htn.task_network.orderings) {
-          for (auto const &st : sts) {
-            subtasks[st.first] = st.second;
-            orderings[st.first] = {};
-          }
-        } 
-        else {
-          for (auto const &st : sts) {
-            subtasks[st.first] = st.second;
-            orderings[st.first] = {};
-          }
-          get_orderings(*prob.problem_htn.task_network.orderings, orderings); 
-        }
+      if (cs != "__NONE__") {
+        preconditions = cs;
+        precondition_ast = constraints_to_expr(*prob.problem_htn.task_network.constraints);
       }
     }
+    network_of(prob.problem_htn.task_network,ttypes,subtasks,orderings);
   }
-  MethodDef initM = MethodDef(m_name,task,params,preconditions,subtasks,orderings);
+  MethodDef initM = MethodDef(m_name,task,params,preconditions,subtasks,orderings,precondition_ast);
 
   std::vector<std::string> initF;
   for (auto const& i : prob.init) {
@@ -1133,7 +972,7 @@ inline ProblemDef createProblemDef(Problem prob, Ptypes ptypes, Tasktypes ttypes
   return ProblemDef(head,domain_name,objects,initM,initF,goal);
 }
 
-inline ProblemDef loadProblem(std::string prob_file, Ptypes ptypes, Tasktypes ttypes) {
+inline ProblemDef loadProblem(std::string const& prob_file, Ptypes const& ptypes, Tasktypes const& ttypes) {
   Problem prob = prob_loader(prob_file);
   return createProblemDef(prob,ptypes,ttypes);
 }

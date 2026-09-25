@@ -23,7 +23,7 @@ namespace fol {
                                         const Literal<T>& lit) {
             out << "Literal(";
             out << "Predicate(" << lit.predicate << ") ";
-            for (int i=0; i < lit.args.size(); i++) {
+            for (size_t i=0; i < lit.args.size(); i++) {
                 out << lit.args.at(i);
                 if (i < lit.args.size() - 1) {
                     out << " ";

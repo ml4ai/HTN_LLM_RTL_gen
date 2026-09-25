@@ -233,15 +233,15 @@ BOOST_AUTO_TEST_CASE(test_empty_subtask_network) {
     //vector. Before the guard this exited 139 (SIGSEGV).
     auto fixture = loadDomain(HTN_DOMAINS_DIR "/empty_method_test.hddl").first;
     for (auto const& task : {"settle", "settle_ordered"}) {
-        int empty = 0;
+        int empties = 0;
         for (auto& m : fixture.methods[task]) {
             if (m.get_subtasks().empty()) {
-                empty++;
+                empties++;
                 BOOST_TEST(m.get_orderings().empty());
             }
         }
         BOOST_TEST_CONTEXT(task) {
-            BOOST_TEST(empty == 1);
+            BOOST_TEST(empties == 1);
         }
     }
 }
@@ -546,4 +546,33 @@ BOOST_AUTO_TEST_CASE(test_validation_checks_requirements) {
     expect_one(replaced(D, ":typing", ":typing :numeric-fluents"), P,
                "requirement :numeric-fluents is a real PDDL requirement, but this planner does not support it");
     BOOST_TEST(problems_of(replaced(D, ":typing", ":typing :method-preconditions :equality"), P).empty());
+}
+
+//Two faults found while removing the loader's copy-pasted code (8.21).
+BOOST_AUTO_TEST_CASE(test_loader_copies_unified) {
+    //The problem's copy of the task-network code lacked the guard the
+    //method's copy got for an empty ordered network, so this crashed the
+    //loader (exit 139). It is now one function for both.
+    std::string P = transport_prob;
+    auto i = P.find(":subtasks (and");
+    auto j = P.find("(:init");
+    BOOST_REQUIRE(i != std::string::npos && j != std::string::npos);
+    P = P.substr(0,i) + ":ordered-subtasks ()\n\t)\n\t" + P.substr(j);
+    auto [domain,problem] = load_hddl(transport_dom, P);
+    BOOST_TEST(problem.initM.get_subtasks().empty());
+
+    //A type used as a one-argument predicate in an effect has no entry among
+    //the predicates' argument types. The loader indexed that missing entry
+    //and read past the end of an empty list; it now falls back to __Object__.
+    auto D = replaced(transport_dom, "(at ?v ?l2)\n\t\t\t)", "(at ?v ?l2)\n\t\t\t\t(vehicle ?v)\n\t\t\t)");
+    auto [d2,p2] = load_hddl(D, transport_prob);
+    bool found = false;
+    for (auto const& e : d2.actions.at("drive").get_effects()) {
+        if (e.pred.first == "vehicle") {
+            found = true;
+            BOOST_TEST(e.pred.second.size() == 1u);
+            BOOST_TEST(e.pred.second[0].second == "__Object__");
+        }
+    }
+    BOOST_TEST(found);
 }

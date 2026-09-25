@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <sstream>
 
 #include "parsing/api.hpp"
 #include "parsing/ast.hpp"
@@ -291,4 +292,20 @@ BOOST_AUTO_TEST_CASE(test_problem_parsing) {
     std::vector<Term> htn_sub_para = htn_id.subtask.parameters;
     BOOST_TEST(name(htn_sub_para[0]) == "package_0");
 
+}
+
+//planner_doc.md 8.21: the function printer wrote "(fa b )" -- no space after
+//the name, and one after the last argument from a test that was always true.
+BOOST_AUTO_TEST_CASE(test_function_printing) {
+    fol::Function f;
+    f.name = "f";
+    f.args = {Constant{"a"}, Variable{"b"}};
+    std::ostringstream out;
+    out << f;
+    BOOST_TEST(out.str() == "(f Constant(a) Variable(b))");
+    fol::Function g;
+    g.name = "g";
+    std::ostringstream out2;
+    out2 << g;
+    BOOST_TEST(out2.str() == "(g)");
 }

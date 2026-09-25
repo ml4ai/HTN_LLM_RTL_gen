@@ -148,10 +148,10 @@ struct TypeTree {
   }
 };
 
-inline int find_var(std::vector<std::pair<std::string, std::string>> vars, std::string var) {
-  for (int i = 0; i < vars.size(); i++) {
+inline int find_var(std::vector<std::pair<std::string, std::string>> const& vars, std::string const& var) {
+  for (size_t i = 0; i < vars.size(); i++) {
     if (vars[i].first == var) {
-      return i;
+      return (int)i;
     }
   }
   return -1;
@@ -414,14 +414,11 @@ class KnowledgeBase {
           if (pid >= 0) {
             if (!this->relation_of(pid).empty()) {
               this->smt_state += "(declare-fun "+p.first+" (";
-              std::string pred_assert = "(assert (forall (";
-              int i = 0;
-              std::string var_assert = "";
-              for (auto const& pars : p.second) {
+              std::string pred_assert = "(assert (forall (";              std::string var_assert = "";
+              for (size_t i = 0; i < p.second.size(); i++) {
                 this->smt_state += "__Object__ ";
                 pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
                 var_assert += " x_"+std::to_string(i);
-                i++;
               }
               pred_assert += ") (= ("+p.first+var_assert+") (or ";
               size_t ar = this->schema->arity[pid];
@@ -440,14 +437,11 @@ class KnowledgeBase {
             }
             else {
               this->smt_state += "(declare-fun "+p.first+" (";
-              std::string pred_assert = "(assert (forall (";
-              int i = 0;
-              std::string var_assert = "";
-              for (auto const& vars : p.second) {
+              std::string pred_assert = "(assert (forall (";              std::string var_assert = "";
+              for (size_t i = 0; i < p.second.size(); i++) {
                 this->smt_state += "__Object__ ";
                 pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
                 var_assert += " x_"+std::to_string(i);
-                i++;
               }
               pred_assert += ") (not ("+p.first+var_assert+"))))\n";
               this->smt_state += ") Bool)\n";
@@ -456,14 +450,11 @@ class KnowledgeBase {
           }
           else {
             this->smt_state += "(declare-fun "+p.first+" (";
-            std::string pred_assert = "(assert (forall (";
-            int i = 0;
-            std::string var_assert = "";
-            for (auto const& vars : p.second) {
+            std::string pred_assert = "(assert (forall (";            std::string var_assert = "";
+            for (size_t i = 0; i < p.second.size(); i++) {
               this->smt_state += "__Object__ ";
               pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
               var_assert += " x_"+std::to_string(i);
-              i++;
             }
             pred_assert += ") (not ("+p.first+var_assert+"))))\n";
             this->smt_state += ") Bool)\n";

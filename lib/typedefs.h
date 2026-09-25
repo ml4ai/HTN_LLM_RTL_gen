@@ -354,7 +354,7 @@ class ActionDef {
             std::string wc;
             if (!args.empty()) {
               wc = "(and ";
-              for (int i = 0; i < args.size(); i++) {
+              for (size_t i = 0; i < args.size(); i++) {
                 wc += "(= "+this->parameters[i].first+" "+args[i].second+") ";
               }
               wc += e.condition + ")";
@@ -364,7 +364,7 @@ class ActionDef {
             }
             Args wc_fixed;
             wc_fixed.reserve(args.size());
-            for (int i = 0; i < args.size(); i++) {
+            for (size_t i = 0; i < args.size(); i++) {
               wc_fixed.push_back({this->parameters[i].first,args[i].second});
             }
             auto pass = eval::solve_query(new_kb,e.condition_ast,wc,
@@ -611,7 +611,7 @@ class ActionDef {
       //conjuncts to re-derive.
       Args fixed;
       fixed.reserve(args.size());
-      for (int i = 0; i < args.size(); i++) {
+      for (size_t i = 0; i < args.size(); i++) {
         fixed.push_back({this->parameters[i].first,args[i].second});
       }
 
@@ -885,8 +885,8 @@ struct DomainDef {
     this->actions = actions;
     this->methods = methods;
   }
-  void set_scorer(Scorer scorer) {
-    this->scorer = scorer;
+  void set_scorer(Scorer s) {
+    this->scorer = s;
   }
 
 

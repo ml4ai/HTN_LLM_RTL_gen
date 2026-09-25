@@ -52,11 +52,13 @@ inline void  build_graph(Agraph_t *g,
     build_graph(g,domain,t,t[w].children[i],action_map);
     std::string ctmp = std::to_string(t[w].children[i]);
     Agnode_t *m = add_node(g,ctmp);
-    if (m != NULL) {
-      Agedge_t *e;
-      e = agedge(g,n,m,0,1);
-      set_property(e,"style","dotted");
+    //Everything below draws from m, so a node Graphviz could not make ends
+    //this child: the check used to guard only the next edge (8.21).
+    if (m == NULL) {
+      continue;
     }
+    Agedge_t *e = agedge(g,n,m,0,1);
+    set_property(e,"style","dotted");
     for (auto& o : t[t[w].children[i]].outgoing) {
       Agnode_t *u;
       Agedge_t *p;
@@ -78,13 +80,20 @@ inline void generate_graph(std::vector<std::string>& plan,std::vector<int> roots
   for (auto const& root : roots) {
     build_graph(g,domain,t,root,action_map);
   }
-  for (int i = 1; i < plan.size(); i++) {
-    Agnode_t *v;
-    Agnode_t *w;
-    Agedge_t *e;
-    v = add_node(g,action_map[plan[i-1]]);
-    w = add_node(g,action_map[plan[i]]);
-    e = agedge(g,v,w,0,1);
+  //Every plan step is an action node of the tree. operator[] used to answer a
+  //step with no node by drawing a new one named "" (8.21); that would be a
+  //planner bug, so it is reported as one.
+  auto node_of = [&](std::string const& step) {
+    auto it = action_map.find(step);
+    if (it == action_map.end()) {
+      throw std::logic_error("plan step "+step+" has no node in the task tree");
+    }
+    return it->second;
+  };
+  for (size_t i = 1; i < plan.size(); i++) {
+    Agnode_t *v = add_node(g,node_of(plan[i-1]));
+    Agnode_t *w = add_node(g,node_of(plan[i]));
+    Agedge_t *e = agedge(g,v,w,0,1);
     set_property(e,"color","red");
   }
   gvLayout(gvc,g,"dot");

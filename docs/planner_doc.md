@@ -2743,7 +2743,7 @@ and `test_validation_checks_requirements` in `test_loader`, and
 `test_typed_forall_effects`, `test_either_types` and
 `test_planner_rejects_unbound_names` in `test_MCTS_planner`.
 
-**Still open, on the list as §9.3 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
+**Still open, on the list as §9.2 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
 case-insensitive; and a declaration nothing uses is not reported.
 
 **Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
@@ -2925,12 +2925,70 @@ from a larger program, and they were fixed too:
 semantic differences. All five test suites pass. AddressSanitizer and
 UndefinedBehaviorSanitizer are clean over `test_linkage`, `test_loader` and
 `test_MCTS_planner`, and ThreadSanitizer over `test_linkage`. With `-Wall -Wextra -Wshadow` nothing new is reported;
-what remains is on §9.1's list (Cleanup) and in Boost's own headers.
+what remained was §8.21's cleanup and Boost's own headers.
 
 **Depends on:** nothing. **Risk:** none; `inline` and the namespace change
 nothing a caller sees, and narration defaults to what it was. **Payoff:** the
 planner can be embedded in a program with more than one source file, run
 silently, and run on more than one thread.
+
+### 8.21 Cleanup, to a build with no warnings — **done; three more bugs found**
+
+The list from the re-scan was done item by item, with the compiler as the
+finish line. Built with `-Wall -Wextra -Wshadow`, the project's own code gave
+**96 warnings**: 63 `class`/`struct` tag mismatches on the parser's rule tags,
+22 signed/unsigned loop comparisons, 6 shadowed names and 5 unused variables.
+It now gives **none**, and those flags are on in the normal build, with Boost,
+Z3 and Graphviz included as system headers so that what is reported is ours.
+The whole build compiles without a single warning.
+
+**The list:**
+* `createDomainDef`'s `name`, declared for the domain and redeclared in the
+  action and method loops, is gone. The loops use `a.name` and `m.name`.
+* `grapher.h` null-checked the child node `m` and then used it unchecked two
+  lines on; a missing node now skips that child. A plan step with no node in
+  the tree, which `operator[]` answered by drawing a new node named `""`, now
+  throws, because it would be a planner bug.
+* `util.h` loses `type_name`, `trim`/`ltrim`/`rtrim`, the `std::visit` and
+  `std::variant` printing helpers, and the two `select_randomly` overloads that
+  seeded a `static` generator of their own. `merge_vec`, which copied both
+  vectors to append one to the other, is replaced by an append in place at its
+  two call sites.
+* `in()`, the `which_*` helpers, `find_var` and `fol::name` take their arguments
+  by reference. So do the loader's functions, which took whole syntax trees,
+  type maps and the domain and problem by value.
+* `get_subtasks`' four copies of one block are one function, `task_def_of`.
+  The same pattern was repeated elsewhere in the loader, and those copies are
+  gone too: effect atoms (three copies, now `pred_of`), parameter lists (five,
+  `params_of`), object lists (two, `objects_of`), and a task network's subtasks
+  and orderings (one per method and one for the problem's `:htn`, now
+  `network_of`).
+* The unused variables are gone; the counting loops count by index.
+
+**Three bugs came out of it.** Each is fixed, and each now has a test:
+* **A problem whose `:htn` was an empty ordered network crashed the loader**
+  (exit 139). This is exactly the hazard the list warned about. When §4.1 note
+  19 found that an empty ordered network indexed past the end of an empty
+  list, the guard went into the method's copy of the code and not into the
+  problem's. With one function for both, the case cannot recur. The problem's
+  copy had also never built the structured form of its `:constraints` that the
+  direct evaluator reads; it does now.
+* **A type used as a predicate in an effect made the loader read out of
+  bounds.** The loader looked up argument types with `ptypes[pred][i]`, which
+  inserts an empty list for a name with no entry and then indexes past it. A
+  type used as a one-argument predicate, legal since §8.17, has no entry. The
+  undefined-behaviour sanitizer reported it on the old loader. A lookup that
+  falls back to `__Object__` replaces every such index.
+* **`fol::Function` printed `(fa b )`** for `(f a b)`: no space after the name,
+  and a space after the last argument from a test, `i < size`, that was always
+  true.
+
+**Checked.** `scripts/benchmark --compare` against the previous commit: no
+semantic differences. All five test suites pass, and AddressSanitizer and
+UndefinedBehaviorSanitizer are clean over all five.
+
+**Depends on:** nothing. **Risk:** none. **Payoff:** a warning is news again, and
+the loader has one copy of each piece of logic.
 
 ---
 
@@ -2951,38 +3009,13 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
-The first four items of that list are done: validating a domain at load time
-(§8.17), the `sar3` score function (§8.18), the benchmark harness (§8.19) and
-making the planner usable as a library (§8.20).
+The first five items of that list are done: validating a domain at load time
+(§8.17), the `sar3` score function (§8.18), the benchmark harness (§8.19),
+making the planner usable as a library (§8.20), and the cleanup (§8.21).
 
 ---
 
-### 9.1 Cleanup
-
-Each item is small; together they remove traps.
-
-* `createDomainDef` declares `name` for the domain, then redeclares it in the
-  actions loop and again in the methods loop. It resolves correctly today,
-  since the constructor after the loops sees the outer one. It is the same
-  hazard as the RNG shadow removed with §4.1 note 18.
-* `grapher.h` guards the edge to child `m` with `m != NULL` and then uses `m`
-  unguarded in the loop below. `generate_graph` looks up `action_map[plan[i]]`
-  with `operator[]`, so a missing entry silently draws a node named `""`.
-* `util.h` carries unused code: `type_name`, `trim`/`ltrim`/`rtrim`, and two
-  `select_randomly` overloads. One of those seeds a `static` generator, the
-  same process-wide seeding flaw §4.1 note 14 fixed elsewhere. It is unused,
-  but it is a trap left lying around.
-* `in(element, container)` takes its container by value, copying it on every
-  call. Neither caller is hot; it is still the wrong signature.
-* `get_subtasks` repeats one parameter-extraction block four times. A fix
-  applied to three of the four copies is how bugs survive. It also takes
-  `ttypes`, a whole map, by value.
-* About 15 unused variables, mostly `for (auto const& p : ...)` loops that only
-  count; `.size()` says the same thing.
-
-**Depends on:** nothing. **Risk:** none.
-
-### 9.2 Revamp the task-hierarchy graph
+### 9.1 Revamp the task-hierarchy graph
 
 The graph `--graph` draws is hard to read. It also leaves out what a reader
 most wants from it: which method decomposed each task, and when each action runs.
@@ -3039,11 +3072,11 @@ The implementation stays in `grapher.h`, using the cgraph API it already uses.
 The labels need `agstrdup_html`. The README's description of `--graph` changes
 with it: the graph may now be SVG, and a legend explains it.
 
-**Depends on:** §9.1's two `grapher.h` items, which a rewrite absorbs. **Risk:** low; nothing reads the graph
+**Depends on:** nothing; §8.21 fixed the two `grapher.h` faults. **Risk:** low; nothing reads the graph
 but a person. **Payoff:** a graph that shows how a plan was reached, which
 is what one is for when checking a model-written domain.
 
-### 9.3 Finish the parser: case and warnings
+### 9.2 Finish the parser: case and warnings
 
 Left over from §8.17.1, which closed the rest of the parser's gaps.
 
@@ -3064,7 +3097,7 @@ Left over from §8.17.1, which closed the rest of the parser's gaps.
 is opt-in or decided first. **Payoff:** fewer rejections of HDDL a model writes in
 the wrong case, and feedback on mistakes that are not errors.
 
-### 9.4 What is left of performance
+### 9.3 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding

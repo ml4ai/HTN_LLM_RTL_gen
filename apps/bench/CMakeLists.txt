@@ -8,5 +8,6 @@ find_package(Boost COMPONENTS program_options REQUIRED)
 find_package(Z3 REQUIRED)
 
 add_executable(planner_bench planner_bench.cpp)
-target_include_directories(planner_bench PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS} ../../lib/)
+target_include_directories(planner_bench SYSTEM PRIVATE ${Boost_INCLUDE_DIR} ${Z3_CXX_INCLUDE_DIRS})
+target_include_directories(planner_bench PRIVATE ../../lib/)
 target_link_libraries(planner_bench PRIVATE tomcat ${Boost_LIBRARIES} ${Z3_LIBRARIES})

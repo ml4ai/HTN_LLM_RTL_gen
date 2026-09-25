@@ -6,29 +6,20 @@
 #include <iterator>
 #include <random>
 #include <string>
-#include <variant>
 #include <vector>
 #include <algorithm>
 #include "parsing/ast.hpp"
 
-// Utility method to see if an element is in an associative container
+// Whether an element is in an associative container. By reference: these took
+// the container by value, a copy per call.
 template <class Element, class AssociativeContainer>
-bool in(Element element, AssociativeContainer container) {
+bool in(Element const& element, AssociativeContainer const& container) {
     return container.count(element);
 }
 
-// Utility method to see if an element is in a vector
-template <class Element> bool in(Element element, std::vector<Element> v) {
+// Whether an element is in a vector.
+template <class Element> bool in(Element const& element, std::vector<Element> const& v) {
     return std::find(v.begin(), v.end(), element) != v.end();
-}
-
-// Utility method to merge two vectors (duplicates allowed)
-template <class Element> std::vector<Element> merge_vec(std::vector<Element> v1, std::vector<Element> v2) {
-  std::vector<Element> v1v2;
-  v1v2.reserve(v1.size() + v2.size());
-  v1v2.insert(v1v2.end(),v1.begin(),v1.end());
-  v1v2.insert(v1v2.end(),v2.begin(),v2.end());
-  return v1v2;
 }
 
 // select_randomly taken from
@@ -40,36 +31,19 @@ Iter select_randomly(Iter start, Iter end, RandomGenerator& g) {
     return start;
 }
 
-template <typename Iter> Iter select_randomly(Iter start, Iter end, int seed) {
-    static std::mt19937_64 gen(seed);
-    return select_randomly(start, end, gen);
-}
-
-template <typename Iter> Iter select_randomly(Iter start, Iter end) {
-    static std::random_device rd;
-    static std::mt19937_64 gen(rd());
-    return select_randomly(start, end, gen);
-}
-
-// Helpers for std::visit
-template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
-
-// Support for printing variants
-template <typename T, typename... Ts>
-std::ostream& operator<<(std::ostream& os, const std::variant<T, Ts...>& v) {
-    std::visit([&os](auto&& arg) { os << arg; }, v);
-    return os;
-}
+// Only the overload taking a generator is kept. Two others seeded a static
+// generator of their own -- once per process, from a seed or from
+// random_device -- the same flaw planner_doc.md 4.1 note 14 fixed in the
+// planner, left lying around unused (8.21).
 
 
 // Define support for printing vectors
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const std::vector<T>& v) {
     os << "(";
-    for (int i = 0; i < v.size(); i++) {
+    for (size_t i = 0; i < v.size(); i++) {
         os << v.at(i);
-        if (i < v.size() - 1) {
+        if (i + 1 < v.size()) {
             os << " ";
         }
     }
@@ -77,94 +51,56 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& v) {
     return os;
 }
 
-const std::string WHITESPACE = " \n\r\t\f\v";
- 
-inline std::string ltrim(const std::string &s)
-{
-    size_t start = s.find_first_not_of(WHITESPACE);
-    return (start == std::string::npos) ? "" : s.substr(start);
-}
- 
-inline std::string rtrim(const std::string &s)
-{
-    size_t end = s.find_last_not_of(WHITESPACE);
-    return (end == std::string::npos) ? "" : s.substr(0, end + 1);
-}
- 
-inline std::string trim(const std::string &s) {
-    return rtrim(ltrim(s));
-}
-
 struct constraints_type : public boost::static_visitor<int> {
-  int operator()(const ast::Nil& n) const { return 0; }
-  int operator()(const ast::Constraint& c) const { return 1; }
-  int operator()(const std::vector<ast::Constraint>& vc) const { return 2; }
+  int operator()(const ast::Nil&) const { return 0; }
+  int operator()(const ast::Constraint&) const { return 1; }
+  int operator()(const std::vector<ast::Constraint>&) const { return 2; }
 
 };
 
-inline int which_constraints(ast::Constraints c) {
+inline int which_constraints(ast::Constraints const& c) {
   return boost::apply_visitor(constraints_type(),c);
 }
 
 struct constraint_type : public boost::static_visitor<int> {
-  int operator()(const ast::Nil& n) const { return 0; }
-  int operator()(const ast::EqualsSentence& es) const { return 1; }
-  int operator()(const ast::NotEqualsSentence& nes) const { return 2; }
+  int operator()(const ast::Nil&) const { return 0; }
+  int operator()(const ast::EqualsSentence&) const { return 1; }
+  int operator()(const ast::NotEqualsSentence&) const { return 2; }
 
 };
 
-inline int which_constraint(ast::Constraint c) {
+inline int which_constraint(ast::Constraint const& c) {
   return boost::apply_visitor(constraint_type(),c);
 }
 
 struct subtasks_type : public boost::static_visitor<int> {
-  int operator()(const ast::Nil& n) const { return 0; }
-  int operator()(const ast::SubTask& st) const { return 1; }
-  int operator()(const std::vector<ast::SubTask>& vst) const { return 2; }
+  int operator()(const ast::Nil&) const { return 0; }
+  int operator()(const ast::SubTask&) const { return 1; }
+  int operator()(const std::vector<ast::SubTask>&) const { return 2; }
 
 };
 
-inline int which_subtasks(ast::SubTasks s) {
+inline int which_subtasks(ast::SubTasks const& s) {
   return boost::apply_visitor(subtasks_type(),s);
 }
 
 struct subtask_type : public boost::static_visitor<int> {
-  int operator()(const ast::MTask& m) const { return 0; }
-  int operator()(const ast::SubTaskWithId& stwid) const { return 1; }
+  int operator()(const ast::MTask&) const { return 0; }
+  int operator()(const ast::SubTaskWithId&) const { return 1; }
 
 };
 
-inline int which_subtask(ast::SubTask s) {
+inline int which_subtask(ast::SubTask const& s) {
   return boost::apply_visitor(subtask_type(),s);
 }
 
 struct orderings_type : public boost::static_visitor<int> {
-  int operator()(const ast::Nil& n) const { return 0; }
-  int operator()(const ast::Ordering& o) const { return 1; }
-  int operator()(const std::vector<ast::Ordering>& ov) const { return 2; }
+  int operator()(const ast::Nil&) const { return 0; }
+  int operator()(const ast::Ordering&) const { return 1; }
+  int operator()(const std::vector<ast::Ordering>&) const { return 2; }
 
 };
 
-inline int which_orderings(ast::Orderings os) {
+inline int which_orderings(ast::Orderings const& os) {
   return boost::apply_visitor(orderings_type(),os);
-}
-
-template <typename T> constexpr auto type_name() noexcept {
-    std::string_view name = "Error: unsupported compiler", prefix, suffix;
-#ifdef __clang__
-    name = __PRETTY_FUNCTION__;
-    prefix = "auto type_name() [T = ";
-    suffix = "]";
-#elif defined(__GNUC__)
-    name = __PRETTY_FUNCTION__;
-    prefix = "constexpr auto type_name() [with T = ";
-    suffix = "]";
-#elif defined(_MSC_VER)
-    name = __FUNCSIG__;
-    prefix = "auto __cdecl type_name<";
-    suffix = ">(void) noexcept";
-#endif
-    name.remove_prefix(prefix.size());
-    name.remove_suffix(suffix.size());
-    return name;
 }
