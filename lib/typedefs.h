@@ -7,6 +7,7 @@
 #include <queue>
 #include <map>
 #include <vector>
+#include <memory>
 #include <iterator>
 #include "kb.h"
 #include "expr.h"
@@ -84,9 +85,18 @@ enum class PreconditionMode { Compiled, AtStart, Protected };
 //loader already made for it, with the method's binding as that action's
 //arguments. Only created when the mode is not Compiled, so the default path
 //carries none of this.
-struct PendingCheck {
+//What a pending check tests. Fixed once the method is decomposed, so it is
+//shared by every copy of the task network rather than copied with it: a
+//network is copied at every step of every rollout, and copying the action name
+//and argument strings of every check it had ever recorded was 6% of transport's
+//runtime (planner_doc.md 8.24).
+struct CheckDef {
   std::string action;        //the __mprec_ action holding the precondition
   Args args;                 //the method's binding, as that action's arguments
+};
+
+struct PendingCheck {
+  std::shared_ptr<const CheckDef> def;
   bool established = false;  //the early check has passed
   bool consumed = false;     //the method's first real action has run
   int established_at = -1;   //TaskGraph::step when the early check passed
@@ -742,12 +752,15 @@ class MethodDef {
       if (mode != PreconditionMode::Compiled) {
         auto pre = this->subtasks.find("__mprec__");
         if (pre != this->subtasks.end()) {
-          PendingCheck chk;
-          chk.action = pre->second.first;
+          auto def = std::make_shared<CheckDef>();
+          def->action = pre->second.first;
+          def->args.reserve(pre->second.second.size());
           for (auto const& pt : pre->second.second) {
             std::string val = return_value(pt.first,args);
-            chk.args.emplace_back(pt.first,val == "__CONST__" ? pt.first : std::move(val));
+            def->args.emplace_back(pt.first,val == "__CONST__" ? pt.first : std::move(val));
           }
+          PendingCheck chk;
+          chk.def = std::move(def);
           own_check = (int)tasks.checks.size();
           tasks.checks.push_back(std::move(chk));
         }

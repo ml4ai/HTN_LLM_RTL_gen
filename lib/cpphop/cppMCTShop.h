@@ -99,7 +99,7 @@ inline bool first_action_ok(TaskGraph const& tasks, std::vector<int> const& chec
     if (chk.established && chk.established_at == tasks.step) {
       continue;
     }
-    if (!domain.actions.at(chk.action).holds(state,chk.args)) {
+    if (!domain.actions.at(chk.def->action).holds(state,chk.def->args)) {
       return false;
     }
   }
@@ -128,7 +128,7 @@ inline bool links_intact(TaskGraph const& succ, std::vector<int> const& own,
     if (std::find(own.begin(),own.end(),(int)k) != own.end()) {
       continue;
     }
-    if (!domain.actions.at(chk.action).holds(state,chk.args)) {
+    if (!domain.actions.at(chk.def->action).holds(state,chk.def->args)) {
       return false;
     }
   }
