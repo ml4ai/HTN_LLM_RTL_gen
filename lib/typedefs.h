@@ -336,6 +336,18 @@ struct Results{
 };
 
 
+//The value bound to var, or nullptr. For the hot paths, which used
+//return_value below: it returned a copy, and a "__CONST__" string to compare
+//against, for every argument of every subtask grounded (8.24).
+inline std::string const* bound_value(std::string const& var, Args const& args) {
+  for (auto const& a : args) {
+    if (var == a.first) {
+      return &a.second;
+    }
+  }
+  return nullptr;
+}
+
 inline std::string return_value(std::string const& var, Args const& args) {
   for (auto const& a : args) {
     if (var == a.first) {
@@ -760,8 +772,22 @@ class MethodDef {
     std::pair<std::vector<int>,TaskGraph> apply_binding(Args const& args, TaskGraph tasks, std::vector<int>& out,
                                                         std::vector<int> const& inherited = {},
                                                         PreconditionMode mode = PreconditionMode::Compiled) {
-      std::unordered_map<std::string,int> gts;
+      //Subtask label -> the task id it was given. A method has a handful of
+      //subtasks, so a linear scan over a vector: the unordered_map this was
+      //cost a bucket array, a node per subtask and a hash per lookup, on every
+      //decomposition of every rollout (8.24).
+      std::vector<std::pair<std::string const*,int>> gts;
+      gts.reserve(this->subtasks.size());
+      auto gts_find = [&gts](std::string const& label) -> int {
+        for (auto const& [l,tid] : gts) {
+          if (*l == label) {
+            return tid;
+          }
+        }
+        return -1;
+      };
       std::vector<int> addedTIDs;
+      addedTIDs.reserve(this->subtasks.size());
 
       //Outside Compiled mode, record this method's precondition as a check its
       //subtasks carry. The loader compiled it into a synthesised subtask
@@ -775,8 +801,8 @@ class MethodDef {
           def->action = pre->second.first;
           def->args.reserve(pre->second.second.size());
           for (auto const& pt : pre->second.second) {
-            std::string val = return_value(pt.first,args);
-            def->args.emplace_back(pt.first,val == "__CONST__" ? pt.first : std::move(val));
+            auto const* val = bound_value(pt.first,args);
+            def->args.emplace_back(pt.first,val ? *val : pt.first);
           }
           PendingCheck chk;
           chk.def = std::move(def);
@@ -790,10 +816,11 @@ class MethodDef {
         gt.head = s.first;
         gt.args.reserve(s.second.size());
         for (auto const& pt : s.second) {
-          std::string val = return_value(pt.first,args);
-          gt.args.emplace_back(pt.first,val == "__CONST__" ? pt.first : std::move(val));
+          auto const* val = bound_value(pt.first,args);
+          gt.args.emplace_back(pt.first,val ? *val : pt.first);
         }
-        gts[id] = tasks.add_node(std::move(gt));
+        int tid = tasks.add_node(std::move(gt));
+        gts.emplace_back(&id,tid);
         if (mode != PreconditionMode::Compiled) {
           //Every subtask arises from this method and from every method the
           //decomposed task itself arose from.
@@ -805,15 +832,15 @@ class MethodDef {
           if (id == "__mprec__") {
             tg.establishes = own_check;
           }
-          tasks.set_tags(gts[id],std::move(tg));
+          tasks.set_tags(tid,std::move(tg));
         }
-        addedTIDs.push_back(gts[id]);
+        addedTIDs.push_back(tid);
         //find, not operator[]: the latter would insert an empty ordering into
         //this->orderings for every subtask label it is asked about.
         auto ord = this->orderings.find(id);
         if (ord == this->orderings.end() || ord->second.empty()) {
           for (auto const& o : out) {
-            tasks.add_edge(gts[id],o);
+            tasks.add_edge(tid,o);
           }
         }
       }
@@ -822,13 +849,13 @@ class MethodDef {
           //An ordering naming a label that is not one of this method's subtasks
           //would silently resolve through gts' operator[] to task id 0 and wire
           //up an edge to an unrelated task.
-          auto g1 = gts.find(t1);
-          auto g2 = gts.find(t2);
-          if (g1 == gts.end() || g2 == gts.end()) {
+          int g1 = gts_find(t1);
+          int g2 = gts_find(t2);
+          if (g1 < 0 || g2 < 0) {
             throw std::logic_error("Method "+this->head+" has an ordering constraint between "+
                                    t1+" and "+t2+", which are not both subtasks of it!");
           }
-          tasks.add_edge(g1->second,g2->second);
+          tasks.add_edge(g1,g2);
         }
       }
       //Moved, not copied: make_pair on the named locals copied the whole network.
