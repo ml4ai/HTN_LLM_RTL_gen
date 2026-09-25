@@ -3125,6 +3125,72 @@ UndefinedBehaviorSanitizer are clean over `test_parser`, `test_loader`,
 consistent in case. **Payoff:** HDDL in the wrong case now loads instead of
 failing, and a model hears about mistakes that are not errors.
 
+### 8.24 What was left of performance — **done: 1.32–1.80× more**
+
+The list this item started from (effect application, evaluator lookups) came
+from profiles taken before §8.18–§8.23. A fresh profile of `transport`,
+`sar3` and `chain_b` (macOS `sample`, self time attributed by call stack)
+showed a different picture. **Allocation and freeing were about two thirds of
+all samples**, spread over every part of the planner. Even the 2–3.5% in
+`mach_absolute_time` was the system allocator's, not the planner's. So each
+step below removes a source of allocation the profile named, and is measured
+alone: interleaved against the step before, seven repetitions, total wall
+time over many rollouts. Each step was required to leave rollout scores and
+`rng_after` identical, and did.
+
+| step | what | transport | chain_b | sar3 | d18 |
+|---|---|---|---|---|---|
+| 1 | a pending check's action and arguments shared between task-network copies, not copied (`CheckDef`) | 1.13× | 1.23× | 1.07× | 1.03× |
+| 2 | task-network tasks copy-on-write: a copy shares every task, and an edge write detaches only the task it changes | 1.13× | 1.15× | 1.03× | 1.07× |
+| 3 | task tags shared the same way | 1.03× | 1.05× | 1.01× | 1.03× |
+| 4 | `MethodDef::apply_binding` maps subtask labels with a small vector, not an `unordered_map` per call, and reads argument values by pointer | 1.05× | 1.06× | 1.04× | 1.02× |
+| 5 | `eval::ask` de-duplicates results by value, not through a string key built per binding | 1.04× | 1.04× | 1.03× | 1.02× |
+| 6 | effects applied through `KnowledgeBase::set_fact`, not built as text for `tell` to parse back; effects read by reference; condition text built only if Z3 is asked | 1.03× | 1.05× | 1.08× | 1.11× |
+| 7 | the evaluator binds variables to object ids, not name strings, converting once per query | 1.07× | 1.06× | 1.05× | 1.04× |
+| | **all seven, against the start** | **1.58×** | **1.80×** | **1.32×** | **1.39×** |
+
+That is well past this item's own estimate of "tens of percent at most". The
+estimate was drawn from
+self-time shares by function. The allocation behind those shares only showed
+up once it was attributed to the callers that allocated.
+
+**How each step kept behaviour identical.** Result order feeds the random
+stream (via the order of successors), so no step reordered anything.
+* Step 2 made `TaskGraph::operator[]` read-only and added `mut()`, which
+  detaches a task before it is written. The compiler then found every write:
+  there were none outside `TaskGraph`, and four functions that took arguments
+  by non-const reference were only reading them.
+* Step 4 visits a method's subtasks in the same `unordered_map` order as before;
+  only the label lookup changed.
+* Step 5 keeps the first occurrence of each binding, in place.
+* Step 6 keeps building the `forall` range from a copy of the effect's map,
+  because a copy of an `unordered_map` does not necessarily iterate in the
+  original's order, and that order decides the order facts are added in.
+* Step 7 changes representation, not algorithm. A value that names no object,
+  which only a parameter pinned to a non-object can produce, keeps its text, so
+  it still fails every atom and compares by name in an equality.
+
+**Checked.**
+* Every step passed all six test suites before it was committed.
+* AddressSanitizer and UndefinedBehaviorSanitizer are clean over the planner,
+  loader, grapher and linkage tests.
+* `scripts/benchmark --compare` reports no semantic difference, `forall_test`
+  included; the timing script does not run it.
+* For step 7, the differential build (`-DHTN_DIFFERENTIAL_EVAL`, which also
+  asks Z3 every query and throws on disagreement) agreed on every query of
+  seven domains, end to end, and of `chain_b`'s rollouts. The run through
+  `chain_b`'s planning phase was stopped after 50 minutes, still in Z3 and
+  making progress: with Z3 answering every query, it would have taken hours.
+
+**What remains is structural.** Allocation is still about 65% of samples, and
+the evaluator is 39–49% of runtime. Both come from the representation: a
+binding list per candidate binding, a result vector per sub-query, and a
+copied task network and fact base per rollout step. Taking them further means
+changing that, and is §9.1.
+
+**Depends on:** §8.11–§8.15. **Risk:** none measured; every step is
+behaviour-identical. **Payoff:** 1.32–1.80× across the four domains measured.
+
 ---
 
 ## 9. Remaining work
@@ -3144,34 +3210,39 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
-The first seven items of that list are done: validating a domain at load time
+All eight items of that list are done: validating a domain at load time
 (§8.17), the `sar3` score function (§8.18), the benchmark harness (§8.19),
 making the planner usable as a library (§8.20), the cleanup (§8.21), the
-task-hierarchy graph (§8.22), and case-insensitive HDDL with warnings (§8.23).
-What remains is performance.
+task-hierarchy graph (§8.22), case-insensitive HDDL with warnings (§8.23), and
+what was left of performance (§8.24). What remains below came out of that last
+item.
 
 ---
 
-### 9.1 What is left of performance
+### 9.1 A representation that allocates less
 
-After §8.11–§8.15, time splits across three shapes of domain as follows.
-The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding
-10–19%, and applying effects 3–8.5%. What remains is spread out:
+§8.24 took runtime down 1.32–1.80× by removing allocations one source at a
+time, and allocation is still about 65% of samples. What is left is in the
+representation itself, not in any one function:
+* **The evaluator** (39–49% of runtime) builds a binding list per candidate
+  binding and a result vector per sub-query. Compiling each precondition at
+  load, with variables numbered as slots and predicate ids resolved, would
+  let a binding be a small fixed array of object ids and a query run without
+  a heap allocation per candidate.
+* **A rollout** copies the task network and the fact base at every step. They
+  are now largely shared (§8.15, §8.24), but every copy still allocates its
+  spine. A rollout is a single dive, so it could apply and undo in place, or
+  allocate from an arena released when the rollout ends. §8.15 rejected a
+  trail for the search tree, which holds many states alive at once; within one
+  rollout that objection does not apply.
 
-* **Applying effects.** `ActionDef::apply_binding` copies each effect's `forall`
-  map and predicate on every application (`auto faparams = e.forall;`,
-  `auto pred = e.pred;`), forall or not. It then builds each fact as a string,
-  which `tell` parses straight back apart and re-interns. Worth 3–8.5%, most
-  on `sar3`.
-* **The evaluator**, in pieces of 1.5–4% each: predicate and object names
-  hashed back to ids on every atom, when the ids could be cached on the
-  expression at load; bindings de-duplicated through string keys built per
-  binding; and binding vectors grown one entry at a time.
+Each is a larger change than anything in §8.24, and each changes code every
+domain depends on. The differential build and `scripts/benchmark --compare`
+are what make it safe to try.
 
-None of these is large. Expect diminishing returns, and measure each.
-
-**Depends on:** nothing; the scorer share went with §8.18. **Risk:** low. **Payoff:** tens of
-percent at most, together.
+**Depends on:** nothing. **Risk:** moderate; both reach deep into evaluation
+and search. **Payoff:** unknown until tried. Allocation is two thirds of
+samples, so plausibly large.
 
 ---
 
