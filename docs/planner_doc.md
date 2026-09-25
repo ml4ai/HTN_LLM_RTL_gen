@@ -3191,6 +3191,80 @@ changing that, and is §9.1.
 **Depends on:** §8.11–§8.15. **Risk:** none measured; every step is
 behaviour-identical. **Payoff:** 1.32–1.80× across the four domains measured.
 
+### 8.25 A representation that allocates less — **done for the evaluator; in-place rollouts measured and deferred**
+
+§8.24 left allocation at about 65% of samples and named two places in the
+representation to change: the evaluator, and the copying of state in a
+rollout. Both were worked on, step by step, measured as in §8.24. Each step was
+required to leave rollout scores and `rng_after` identical, and did.
+
+| step | what | transport | chain_b | sar3 | d18 |
+|---|---|---|---|---|---|
+| 8 | a depth-first evaluator over numbered variables | 1.17× | 1.17× | 1.28× | 1.23× |
+| 9 | a rollout builds a method's network only for the binding it reaches, and appends to the plan in place | 1.01× | 1.02× | 1.05× | 1.04× |
+| 10 | actions and methods map parameters to slots once, not per query | 1.08× | 1.08× | 1.04× | 1.06× |
+| | **the three, against §8.24** | **1.32×** | **1.29×** | **1.38×** | **1.37×** |
+| | **against the start of §8.24** | **2.07×** | **2.38×** | **1.80×** | **1.86×** |
+
+**Step 8, the evaluator.** Each precondition's variables are numbered once, by
+`expr::number_variables`, when the action, method or effect it belongs to is
+constructed, so before any search could run in parallel. The slot is recorded
+on each term and the names on the root. A query is then a depth-first walk
+with one array of object ids indexed by slot. An atom sets the slots it binds,
+the rest of the expression is searched through a continuation, and the slots
+are unset on the way back, so nothing is allocated per candidate binding. The
+old evaluator built, for every subexpression, the vector of every binding
+extending the one it was given. The results are the same and in the same
+order: a breadth-first fold over a conjunction, taken level by level, lists
+its bindings in exactly the order a depth-first walk reaches them. The order
+matters, because it becomes the order of successors and so the random stream.
+`ask_any`, which asks only whether a binding exists, now stops at the first.
+The continuations are a small non-owning callable, not a template parameter,
+which would nest types once per level of the expression without bound.
+
+**Step 9, rollout grounding.** `MethodDef::apply` built a full network for
+every binding of a method, and a rollout shuffled them and usually went down
+the first. It is split into `bindings` and `ground`, and the rollout grounds
+only the binding it reaches. Shuffling an index list of the same length
+applies the same permutation, drawing the same random numbers, and each
+network starts from its own copy of the parent, so the networks the rollout
+sees are unchanged. The rollout also appended to its plan by copying the whole
+plan at every step, which made a rollout's cost grow with the square of its
+length. It now appends in place and removes the entry on the way back.
+
+**Step 10.** Step 8 matched parameter names to slots on every query. An
+action's and a method's expression and parameter lists are fixed, so the map
+(`eval::SlotMap`) is computed in their constructors and passed in.
+
+**Checked.**
+* All six test suites pass.
+* AddressSanitizer and UndefinedBehaviorSanitizer are clean over five of them.
+* `scripts/benchmark --compare` against §8.24's end state reports no semantic
+  difference.
+* The differential build agrees with Z3 on every query of seven domains, end
+  to end with planning, and of `chain_b`'s rollouts. It was run once without
+  step 10 and again with it.
+
+**In-place rollouts, measured and not done.** §8.24 estimated that the copying
+of state in a rollout was a large share of the remaining allocation. After
+steps 1–10 it is not. Attributed by call stack on `transport` and `chain_b`,
+the costs an apply-and-undo rollout would remove come to about 10–15%:
+* frees under `simulation`, about 9%;
+* task-network copies and teardown, 2–3%;
+* detaching tasks on write, about 1%.
+
+What is left is work any design does: creating the new subtasks of a
+decomposition, and evaluating preconditions. Against that ceiling stands the
+risk. To keep results identical, undo would have to put every fact back at its
+old position in its relation and every edge back at its old position in its
+list, since those orders feed the random stream. That is the most invasive
+change the planner has had, for at most 10–15%, so it is left as §9.1 with
+this measurement rather than attempted.
+
+**Depends on:** §8.24. **Risk:** none measured; each step is
+behaviour-identical, and the differential build confirms the evaluator.
+**Payoff:** 1.29–1.38× on top of §8.24.
+
 ---
 
 ## 9. Remaining work
@@ -3214,35 +3288,32 @@ All eight items of that list are done: validating a domain at load time
 (§8.17), the `sar3` score function (§8.18), the benchmark harness (§8.19),
 making the planner usable as a library (§8.20), the cleanup (§8.21), the
 task-hierarchy graph (§8.22), case-insensitive HDDL with warnings (§8.23), and
-what was left of performance (§8.24). What remains below came out of that last
-item.
+what was left of performance (§8.24), followed by the evaluator's
+representation (§8.25). What remains below came out of those last two.
 
 ---
 
-### 9.1 A representation that allocates less
+### 9.1 In-place rollouts: measured, deferred
 
-§8.24 took runtime down 1.32–1.80× by removing allocations one source at a
-time, and allocation is still about 65% of samples. What is left is in the
-representation itself, not in any one function:
-* **The evaluator** (39–49% of runtime) builds a binding list per candidate
-  binding and a result vector per sub-query. Compiling each precondition at
-  load, with variables numbered as slots and predicate ids resolved, would
-  let a binding be a small fixed array of object ids and a query run without
-  a heap allocation per candidate.
-* **A rollout** copies the task network and the fact base at every step. They
-  are now largely shared (§8.15, §8.24), but every copy still allocates its
-  spine. A rollout is a single dive, so it could apply and undo in place, or
-  allocate from an arena released when the rollout ends. §8.15 rejected a
-  trail for the search tree, which holds many states alive at once; within one
-  rollout that objection does not apply.
+A rollout copies the task network and the fact base at every step. They are
+largely shared (§8.15, §8.24), but every copy still allocates its spine. A
+rollout is a single dive, so it could apply and undo in place instead. §8.15
+rejected a trail for the search tree, which holds many states alive at once;
+within one rollout that objection does not apply.
 
-Each is a larger change than anything in §8.24, and each changes code every
-domain depends on. The differential build and `scripts/benchmark --compare`
-are what make it safe to try.
+**Measured ceiling: about 10–15%** (§8.25): frees under `simulation` about 9%,
+task-network copies and teardown 2–3%, detaching tasks on write about 1%. The
+rest of a rollout's cost is work any design does.
 
-**Depends on:** nothing. **Risk:** moderate; both reach deep into evaluation
-and search. **Payoff:** unknown until tried. Allocation is two thirds of
-samples, so plausibly large.
+**Why it is deferred.** To keep results identical, undo must restore every fact
+to its old position in its relation and every edge to its old position in its
+list, because those orders feed the random stream. Otherwise it changes the
+plans the planner returns: not their correctness, but which ones, so every
+comparison against earlier results is lost. It would be the most invasive
+change the planner has had, for at most 10–15%.
+
+**Depends on:** nothing. **Risk:** high for what it pays. **Payoff:** 10–15% at
+most, measured.
 
 ---
 
