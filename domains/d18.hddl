@@ -1,5 +1,5 @@
 (define (domain dom_noLang)
-        (:requirements :negative-preconditions :typing :hierarchy)
+        (:requirements :negative-preconditions :typing :hierarchy :method-preconditions)
         (:types
                 human - object
                 victim - human

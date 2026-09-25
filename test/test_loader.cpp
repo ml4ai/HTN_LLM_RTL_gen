@@ -492,7 +492,7 @@ BOOST_AUTO_TEST_CASE(test_grammar_accepts_legal_hddl) {
     auto const& D = transport_dom;
     auto const& P = transport_prob;
     //:requirements is optional, as in PDDL. It was mandatory.
-    BOOST_TEST(problems_of(replaced(D, "(:requirements :negative-preconditions :typing :hierarchy)", ""), P).empty());
+    BOOST_TEST(problems_of(replaced(D, "(:requirements :negative-preconditions :typing :hierarchy :method-preconditions)", ""), P).empty());
     //HDDL spells the ordering keyword :order[ing]. Only :ordering parsed.
     auto order = replaced(D, ":ordering (and\n\t\t\t(< task0 task1)", ":order (and\n\t\t\t(< task0 task1)");
     BOOST_TEST(problems_of(order, P).empty());
@@ -575,4 +575,103 @@ BOOST_AUTO_TEST_CASE(test_loader_copies_unified) {
         }
     }
     BOOST_TEST(found);
+}
+
+//planner_doc.md 8.23: PDDL is case-insensitive. Keywords match in any case;
+//names match in any case and take the spelling they were declared with.
+BOOST_AUTO_TEST_CASE(test_case_insensitivity) {
+    auto const& D = transport_dom;
+    auto const& P = transport_prob;
+    auto [base,base_p] = load_hddl(D, P);
+
+    //Keywords.
+    std::string upper = D;
+    for (auto const& [from,to] : std::vector<std::pair<std::string,std::string>>{
+             {"(:action", "(:ACTION"}, {":parameters", ":Parameters"}, {":precondition", ":PRECONDITION"},
+             {"(and", "(AND"}, {"(not", "(Not"}, {"(define", "(DEFINE"}, {":subtasks", ":SUBTASKS"}}) {
+        for (auto at = upper.find(from); at != std::string::npos; at = upper.find(from, at + to.size())) {
+            upper.replace(at, from.size(), to);
+        }
+    }
+    auto [up,up_p] = load_hddl(upper, P);
+    BOOST_TEST(up.actions.size() == base.actions.size());
+    BOOST_TEST(up.methods.size() == base.methods.size());
+
+    //Names, used in other cases than declared: a subtask, its arguments, a
+    //subtask id in an ordering, a predicate, a type, the domain name, an
+    //object in :init and in :htn. All load, and all take the declared spelling.
+    auto D2 = replaced(replaced(replaced(replaced(D,
+                  "(task0 (get_to ?v ?l1))", "(TASK0 (GET_TO ?V ?L1))"),
+                  "(< task0 task1)", "(< Task0 TASK1)"),
+                  "(at ?p ?l1)\n", "(AT ?P ?L1)\n"),
+                  "?v - vehicle ?l1 - location ?l2 - location)", "?v - VEHICLE ?l1 - Location ?l2 - location)");
+    auto P2 = replaced(replaced(replaced(P,
+                  "(at truck_0 city_loc_2)", "(At TRUCK_0 City_Loc_2)"),
+                  "(task0 (deliver package_0 city_loc_0))", "(task0 (Deliver Package_0 city_loc_0))"),
+                  "(:domain  domain)", "(:domain  DOMAIN)");
+    auto ps = problems_of(D2, P2);
+    for (auto const& x : ps) BOOST_TEST_INFO(x);
+    BOOST_TEST(ps.empty());
+    auto [mixed,mixed_p] = load_hddl(D2, P2);
+    bool canonical_fact = std::find(mixed_p.initF.begin(), mixed_p.initF.end(),
+                                    "(at truck_0 city_loc_2)") != mixed_p.initF.end();
+    BOOST_TEST(canonical_fact);
+    for (auto const& [name,a] : mixed.actions) {
+        BOOST_TEST_CONTEXT(name) {
+            BOOST_TEST(base.actions.contains(name));
+        }
+    }
+
+    //Two declarations differing only in case are one name declared twice.
+    expect_one(replaced(D, "(road ?arg0 - location ?arg1 - location)",
+                           "(road ?arg0 - location ?arg1 - location)\n\t\t(ROAD ?a - location ?b - location)"),
+               P, "predicate road is declared twice");
+}
+
+//planner_doc.md 8.23: what is legal but probably unintended comes back as a
+//warning, without stopping the load.
+BOOST_AUTO_TEST_CASE(test_warnings) {
+    auto const& D = transport_dom;
+    auto const& P = transport_prob;
+    auto warnings_of = [](std::string const& d, std::string const& p) {
+        std::vector<std::string> ws;
+        load_hddl(d, p, "domain", "problem", &ws);
+        return ws;
+    };
+    auto has = [](std::vector<std::string> const& ws, std::string const& text) {
+        for (auto const& w : ws) {
+            if (w.find(text) != std::string::npos) return true;
+        }
+        return false;
+    };
+    //The shipped transport declares what it uses and uses what it declares.
+    auto clean = warnings_of(D, P);
+    for (auto const& w : clean) BOOST_TEST_INFO(w);
+    BOOST_TEST(clean.empty());
+
+    //A parameter nothing mentions.
+    auto unused = warnings_of(replaced(D, ":parameters (?l - location ?v - vehicle)\n\t\t:task (get_to ?v ?l)",
+                                          ":parameters (?l - location ?v - vehicle ?x - location)\n\t\t:task (get_to ?v ?l)"), P);
+    BOOST_TEST(has(unused, "in method m_i_am_there_ordering_0: parameter ?x is never used"));
+
+    //A task with no method, and a predicate declared but never used.
+    auto idle = warnings_of(replaced(replaced(D, "(:task deliver", "(:task idle :parameters ())\n\t(:task deliver"),
+                                     "(road ?arg0 - location ?arg1 - location)",
+                                     "(road ?arg0 - location ?arg1 - location)\n\t\t(spare ?v - vehicle)"), P);
+    BOOST_TEST(has(idle, "task idle has no method"));
+    BOOST_TEST(has(idle, "predicate spare is declared but never used"));
+
+    //A predicate tested but never true, and a task the problem never reaches.
+    auto never = warnings_of(replaced(replaced(D, "(road ?arg0 - location ?arg1 - location)",
+                                          "(road ?arg0 - location ?arg1 - location)\n\t\t(fuelled ?v - vehicle)"),
+                                      "(road ?l1 ?l2)\n\t\t\t)", "(road ?l1 ?l2)\n\t\t\t\t(fuelled ?v)\n\t\t\t)"),
+                             P);
+    BOOST_TEST(has(never, "predicate fuelled is never true"));
+    //A task with a method, which no subtask and no :htn names.
+    auto unreached = warnings_of(replaced(D, "(:task deliver", "(:task idle :parameters ())\n\t(:method m_idle :task (idle) :subtasks ())\n\t(:task deliver"), P);
+    BOOST_TEST(has(unreached, "task idle is never reached from the problem's :htn"));
+
+    //A feature used without its :requirements key.
+    auto req = warnings_of(replaced(D, " :method-preconditions", ""), P);
+    BOOST_TEST(has(req, "uses a method precondition without declaring :method-preconditions"));
 }

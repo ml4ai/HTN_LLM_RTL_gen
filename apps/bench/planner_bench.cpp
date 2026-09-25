@@ -158,7 +158,12 @@ int main(int argc, char* argv[]) {
       std::cerr << "error: unknown score function \"" << score_fun << "\"\n";
       return 1;
     }
-    auto [domain,problem] = load(dom_file,prob_file);
+    //Warnings go to stderr: stdout is the harness's key=value output.
+    std::vector<std::string> warnings;
+    auto [domain,problem] = load(dom_file,prob_file,&warnings);
+    for (auto const& w : warnings) {
+      std::cerr << "warning: " << w << "\n";
+    }
     domain.set_scorer(scorers[score_fun]);
     if (!parse_precondition_mode(precondition_mode,domain.precondition_mode)) {
       std::cerr << "error: unknown --precondition_mode \"" << precondition_mode

@@ -1,5 +1,5 @@
 (define (domain simple_travel)
-  (:requirements :negative-preconditions :typing :hierarchy)
+  (:requirements :negative-preconditions :typing :hierarchy :disjunctive-preconditions :method-preconditions)
   (:types
     locatable - object
     money - object

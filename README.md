@@ -74,7 +74,12 @@ script for example usage.
 - Some things HDDL fixes are accepted more loosely: `:requirements` and an empty
   `:parameters ()` may be left out, `:order` is accepted for `:ordering`, and
   tasks, methods and actions may come in any order
-- Keywords must be lower case, although PDDL is case-insensitive
+- Case-insensitive, as PDDL is: keywords match in any case, and a name used in
+  a different case from its declaration is the same name, printed as declared
+- What is legal but probably unintended is reported as a warning without
+  stopping the load: a task no method decomposes, a task or action the
+  problem never reaches, a predicate that is never used or can never be true,
+  an unused parameter, a feature used without its `:requirements` key
 - Syntax and logic for the handling of external function calls are not
   currently supported
 
@@ -201,6 +206,9 @@ The planner is a header-only library: include `cpphop/loader.h` and
 
 `load_hddl` and `load` throw `HDDLError`, listing every problem found, for
 HDDL that does not validate, and `ParseError` for HDDL that does not parse.
+Pass a `std::vector<std::string>*` as their last argument to receive warnings
+about HDDL that is legal but probably unintended. Score functions name objects
+in the spelling their declaration uses.
 Separate planners may run on separate threads.
 
 ## Benchmarking

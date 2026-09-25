@@ -17,7 +17,7 @@
 ;; precondition and no effect, and it is present in all four variants.
 
 (define (domain transport_variant)
-	(:requirements :negative-preconditions :typing :hierarchy)
+	(:requirements :negative-preconditions :typing :hierarchy :method-preconditions)
 	(:types
 		package - locatable
 		capacity_number - object

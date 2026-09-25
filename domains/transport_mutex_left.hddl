@@ -15,7 +15,7 @@
 ;; See transport_mutex.hddl for how the lock itself works.
 
 (define (domain transport_variant)
-	(:requirements :negative-preconditions :typing :hierarchy)
+	(:requirements :negative-preconditions :typing :hierarchy :method-preconditions)
 	(:types
 		package - locatable
 		capacity_number - object

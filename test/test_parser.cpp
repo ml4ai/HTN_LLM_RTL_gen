@@ -170,7 +170,7 @@ BOOST_AUTO_TEST_CASE(test_domain_parsing) {
     BOOST_TEST(dom.name == "domain");
 
     // Test requirements
-    BOOST_TEST(equals(dom.requirements, {"negative-preconditions", "typing", "hierarchy"}));
+    BOOST_TEST(equals(dom.requirements, {"negative-preconditions", "typing", "hierarchy", "method-preconditions"}));
 
     // Test parsing of predicates
     BOOST_TEST(dom.predicates.size() == 5);

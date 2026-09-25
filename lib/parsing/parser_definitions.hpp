@@ -8,8 +8,27 @@
 #include "parser_definitions.hpp"
 #include "error_handler.hpp"
 
+// A keyword wrapped in no_case reports what it expected as the keyword itself
+// ("domain"), as it did before it was wrapped; without this x3 names it by the
+// directive's C++ type.
+namespace boost { namespace spirit { namespace x3 {
+    template <typename Subject>
+    struct get_info<no_case_directive<Subject>> {
+        typedef std::string result_type;
+        std::string operator()(no_case_directive<Subject> const& p) const {
+            return what(p.subject);
+        }
+    };
+}}}
+
 namespace parser {
     using namespace ast;
+
+    // PDDL and HDDL are case-insensitive, so every keyword is matched in any
+    // case: (:Action, :PARAMETERS, (AND ...). Names are handled after parsing,
+    // in cpphop/case.h, where each use is rewritten to its declared spelling
+    // (planner_doc.md 8.23).
+    inline auto kw(char const* word) { return x3::no_case[x3::lit(word)]; }
 
     using boost::fusion::at_c;
     using x3::lexeme, x3::lit, x3::alnum, x3::_attr, x3::_val, x3::space,
@@ -33,7 +52,7 @@ namespace parser {
 
     rule<struct TRequirements, std::vector<Name>> const requirements =
         "requirements";
-    auto const requirements_def = '(' >> lit(":requirements") >> +requirement >>
+    auto const requirements_def = '(' >> kw(":requirements") >> +requirement >>
                                   ')';
     BOOST_SPIRIT_DEFINE(requirements);
     struct TRequirements : x3::annotate_on_success {};
@@ -55,7 +74,7 @@ namespace parser {
     struct TPrimitiveType : x3::annotate_on_success {};
 
     rule<struct TEitherType, EitherType> const either_type = "either_type";
-    auto const either_type_def = '(' >> lit("either") >> +primitive_type >> ')';
+    auto const either_type_def = '(' >> kw("either") >> +primitive_type >> ')';
     BOOST_SPIRIT_DEFINE(either_type);
     struct TEitherType : x3::annotate_on_success {};
 
@@ -159,7 +178,7 @@ namespace parser {
     };
 
     rule<struct TNegativeLiteralTerms, Literal<Term>> const negative_literal_terms = "negative_literal_terms";
-    auto const negative_literal_terms_def = ('(' >> lit("not") >> literal_terms >> ')')[parse_negative_literal];
+    auto const negative_literal_terms_def = ('(' >> kw("not") >> literal_terms >> ')')[parse_negative_literal];
     BOOST_SPIRIT_DEFINE(negative_literal_terms);
     struct TNegativeLiteralTerms: x3::annotate_on_success {};
 
@@ -167,7 +186,7 @@ namespace parser {
 
     // Nil
     rule<struct TNil, Nil> const nil = "nil";
-    auto const nil_def = '(' >> lit(")");
+    auto const nil_def = '(' >> kw(")");
     BOOST_SPIRIT_DEFINE(nil);
     struct TNil: x3::annotate_on_success {};
 
@@ -187,7 +206,7 @@ namespace parser {
     rule<struct TConnectedSentence, ConnectedSentence> const connected_sentence =
                                   "connected_sentence";
     auto const connected_sentence_def = '('
-                               >> connector
+                               >> x3::no_case[connector]
                                >> *sentence
                                >> ')';
     BOOST_SPIRIT_DEFINE(connected_sentence);
@@ -197,7 +216,7 @@ namespace parser {
     rule<struct TNotSentence, NotSentence> const not_sentence =
                                   "not_sentence";
     auto const not_sentence_def = '('
-                               >> lit("not")
+                               >> kw("not")
                                >> sentence
                                >> ')';
     BOOST_SPIRIT_DEFINE(not_sentence);
@@ -206,7 +225,7 @@ namespace parser {
 
     rule<struct TImplySentence, ImplySentence> const imply_sentence =
                                    "imply_sentence";
-    auto const imply_sentence_def = ('(' >> lit("imply"))
+    auto const imply_sentence_def = ('(' >> kw("imply"))
                                     > sentence
                                     > sentence
                                     > ')';
@@ -226,7 +245,7 @@ namespace parser {
     rule<struct TQuantifiedSentence, QuantifiedSentence> const quantified_sentence =
                                    "quantified_sentence";
     auto const quantified_sentence_def = '('
-                               > quantifier
+                               > x3::no_case[quantifier]
                                > '('
                                > typed_list_variables
                                > ')'
@@ -237,7 +256,7 @@ namespace parser {
 
     rule<struct TEqualsSentence, EqualsSentence> const equals_sentence =
                                    "equals_sentence";
-    auto const equals_sentence_def = ('(' >> lit("="))
+    auto const equals_sentence_def = ('(' >> kw("="))
                                  > term
                                  > term
                                  > ')';
@@ -247,7 +266,7 @@ namespace parser {
     rule<struct TNotEqualsSentence, NotEqualsSentence> const not_equals_sentence =
                                    "not_equals_sentence";
     auto const not_equals_sentence_def = ('('
-                               >> lit("not"))
+                               >> kw("not"))
                                > equals_sentence
                                > ')';
     BOOST_SPIRIT_DEFINE(not_equals_sentence);
@@ -282,7 +301,7 @@ namespace parser {
 
     // <cond-effect>
     rule<struct TCondEffect, CondEffect> const cond_effect = "cond_effect";
-    auto const cond_effect_def = p_effect | '(' >> lit("and") >> *p_effect >> ')';
+    auto const cond_effect_def = p_effect | '(' >> kw("and") >> *p_effect >> ')';
     BOOST_SPIRIT_DEFINE(cond_effect);
     struct TCondEffect: x3::annotate_on_success {};
 
@@ -291,17 +310,17 @@ namespace parser {
     rule<struct TCEffect, CEffect> const c_effect = "c_effect";
 
     rule<struct TForallCEffect, ForallCEffect> const forall_c_effect = "forall_c_effect";
-    auto const forall_c_effect_def = ('(' >> lit("forall")) > '(' >> typed_list_variables >> ')' >> effect > ')';
+    auto const forall_c_effect_def = ('(' >> kw("forall")) > '(' >> typed_list_variables >> ')' >> effect > ')';
     BOOST_SPIRIT_DEFINE(forall_c_effect);
     struct TForallCEffect: x3::annotate_on_success {};
 
     rule<struct TAndCEffect, AndCEffect> const and_c_effect = "and_c_effect";
-    auto const and_c_effect_def = ('(' >> lit("and")) > *c_effect > ')';
+    auto const and_c_effect_def = ('(' >> kw("and")) > *c_effect > ')';
     BOOST_SPIRIT_DEFINE(and_c_effect);
     struct TAndCEffect: x3::annotate_on_success {};
 
     rule<struct TWhenCEffect, WhenCEffect> const when_c_effect = "when_c_effect";
-    auto const when_c_effect_def = ('(' >> lit("when")) > sentence > cond_effect >> ')';
+    auto const when_c_effect_def = ('(' >> kw("when")) > sentence > cond_effect >> ')';
     BOOST_SPIRIT_DEFINE(when_c_effect);
     struct TWhenCEffect: x3::annotate_on_success {};
 
@@ -319,14 +338,14 @@ namespace parser {
 
     // Typed Lists
     rule<struct TTypes, TypedList<Name>> const types = "types";
-    auto const types_def = ('(' >> lit(":types"))
+    auto const types_def = ('(' >> kw(":types"))
                                > typed_list_names
                                > ')';
     BOOST_SPIRIT_DEFINE(types);
     struct TTypes: x3::annotate_on_success {};
 
     rule<struct TConstants, TypedList<Name>> const constants = "constants";
-    auto const constants_def = ('(' >> lit(":constants"))
+    auto const constants_def = ('(' >> kw(":constants"))
                                > typed_list_names
                                > ')';
     BOOST_SPIRIT_DEFINE(constants);
@@ -334,19 +353,19 @@ namespace parser {
 
     rule<struct TPredicates, std::vector<AtomicFormulaSkeleton>> const
         predicates = "predicates";
-    auto const predicates_def = ('(' >> lit(":predicates"))
+    auto const predicates_def = ('(' >> kw(":predicates"))
                                > +atomic_formula_skeleton > ')';
     BOOST_SPIRIT_DEFINE(predicates);
     struct TPredicates: x3::annotate_on_success {};
 
     rule<struct TPrecondition, Sentence> const precondition = "precondition";
-    auto const precondition_def = lit(":precondition")
+    auto const precondition_def = kw(":precondition")
                                > sentence;
     BOOST_SPIRIT_DEFINE(precondition);
     struct TPrecondition: x3::annotate_on_success {};
 
     rule<struct TParameters, TypedList<Variable>> const parameters = "parameters";
-    auto const parameters_def = lit(":parameters")
+    auto const parameters_def = kw(":parameters")
                                > '('
                                > typed_list_variables
                                > ')';
@@ -366,7 +385,7 @@ namespace parser {
 
     // Abstract Tasks
     rule<struct TAbstractTask, Task> const abstract_task = "abstract_task";
-    auto const abstract_task_def = ('(' >> lit(":task")) > task >> ')';
+    auto const abstract_task_def = ('(' >> kw(":task")) > task >> ')';
     BOOST_SPIRIT_DEFINE(abstract_task);
     struct TAbstractTask: x3::annotate_on_success {};
 
@@ -380,7 +399,7 @@ namespace parser {
     // task as defined in Method struct != task defined in task struct
     // mtask refers to task definition found within a method:
     rule<struct TMTask, MTask> const mtask = "mtask";
-    auto const mtask_def = lit(":task") > task_symbol_with_terms;
+    auto const mtask_def = kw(":task") > task_symbol_with_terms;
     BOOST_SPIRIT_DEFINE(mtask);
     struct TMTask: x3::annotate_on_success {};
 
@@ -395,18 +414,18 @@ namespace parser {
     struct TSubTask: x3::annotate_on_success {};
 
     rule<struct TSubTasks, SubTasks> const subtasks = "subtasks";
-    auto const subtasks_def = nil | subtask | '(' >> lit("and") >> +subtask >> ')';
+    auto const subtasks_def = nil | subtask | '(' >> kw("and") >> +subtask >> ')';
     BOOST_SPIRIT_DEFINE(subtasks);
     struct TSubTasks: x3::annotate_on_success {};
 
     rule<struct TOrdering, Ordering> const ordering = "ordering";
-    auto const ordering_def = '(' >> lit("<") >> name >> name >> ')'; //make sure to use lit("")
+    auto const ordering_def = '(' >> kw("<") >> name >> name >> ')'; //make sure to use kw("")
 
     BOOST_SPIRIT_DEFINE(ordering);
     struct TOrdering: x3::annotate_on_success {};
 
     rule<struct TOrderings, Orderings> const orderings = "orderings";
-    auto const orderings_def = nil | ordering | '(' >> lit("and") >> +ordering >> ')';
+    auto const orderings_def = nil | ordering | '(' >> kw("and") >> +ordering >> ')';
     BOOST_SPIRIT_DEFINE(orderings);
     struct TOrderings: x3::annotate_on_success {};
 
@@ -414,7 +433,7 @@ namespace parser {
     // HDDL spells the keyword :order[ing]. The short form must not match the
     // start of a longer keyword.
     auto const task_network_orderings_def =
-        (lit(":ordering") | (lit(":order") >> !(alnum | char_("-_")))) > orderings;
+        (kw(":ordering") | (kw(":order") >> !(alnum | char_("-_")))) > orderings;
     BOOST_SPIRIT_DEFINE(task_network_orderings);
     struct TTaskNetworkOrderings: x3::annotate_on_success {};
 
@@ -431,7 +450,7 @@ namespace parser {
     } ordering_kw;
 
     rule<struct TMethodSubTasks, MethodSubTasks> const method_subtasks = "method_subtasks";
-    auto const method_subtasks_def = ':' >> ordering_kw >> subtasks;
+    auto const method_subtasks_def = ':' >> x3::no_case[ordering_kw] >> subtasks;
     BOOST_SPIRIT_DEFINE(method_subtasks);
     struct TMethodSubTasks : x3::annotate_on_success {};
 
@@ -442,19 +461,19 @@ namespace parser {
     struct TConstraint : x3::annotate_on_success {};
 
     rule<struct TConstraints, Constraints> const constraints = "constraints";
-    auto const constraints_def = nil | constraint | '(' >> lit("and") >> +constraint >> ')';
+    auto const constraints_def = nil | constraint | '(' >> kw("and") >> +constraint >> ')';
     BOOST_SPIRIT_DEFINE(constraints);
     struct TConstraints : x3::annotate_on_success {};
 
     rule<struct TTaskNetwork, TaskNetwork> const task_network = "task_network";
     auto const task_network_def = -method_subtasks
                                >> -task_network_orderings
-                               >> -(lit(":constraints") > constraints);
+                               >> -(kw(":constraints") > constraints);
     BOOST_SPIRIT_DEFINE(task_network);
     struct TTaskNetwork: x3::annotate_on_success {};
 
     rule<struct TMethod, Method> const method = "method";
-    auto const method_def = ('(' >> lit(":method"))
+    auto const method_def = ('(' >> kw(":method"))
                                 > name
                                 > parameters_or_none
                                 > mtask // one task
@@ -471,11 +490,11 @@ namespace parser {
     // https://arxiv.org/pdf/1911.05499.pdf - in the specification of actions,
     // it should be ':effect' instead of ':effects' (line 44 of their listing).
     rule<struct TAction, Action> const action = "action";
-    auto const action_def = ('(' >> lit(":action"))
+    auto const action_def = ('(' >> kw(":action"))
                                > name
                                > parameters_or_none
                                >> -precondition
-                               >> -(lit(":effect") >> effect)
+                               >> -(kw(":effect") >> effect)
                                > ')';
     BOOST_SPIRIT_DEFINE(action);
     struct TAction: x3::annotate_on_success {};
@@ -488,7 +507,7 @@ namespace parser {
     // that parser's C++ type -- a missing ')' after the domain name came out
     // as "expecting the rest of a requirements". The optional and repeated
     // parts cannot fail, so expecting them changes nothing else.
-    auto const domain_def = ('(' >> lit("define")) > '(' > lit("domain")
+    auto const domain_def = ('(' >> kw("define")) > '(' > kw("domain")
                                > name > ')'
                                > -requirements // optional in HDDL, as in PDDL
                                > -types
@@ -502,7 +521,7 @@ namespace parser {
 
     // Problem definition
     rule<struct TObjects, TypedList<Name>> const objects = "objects";
-    auto const objects_def = ('(' >> lit(":objects"))
+    auto const objects_def = ('(' >> kw(":objects"))
                                > typed_list_names
                                > ')';
     BOOST_SPIRIT_DEFINE(objects);
@@ -511,14 +530,14 @@ namespace parser {
     // <p-init> ::= (:init <init-el>*)
     // <init-el> ::= <literal (name)>
     rule<struct TInit, Init> const init = "init";
-    auto const init_def = ('(' >> lit(":init"))
+    auto const init_def = ('(' >> kw(":init"))
                                >> *literal_names
                                >> ')';
     BOOST_SPIRIT_DEFINE(init);
     struct TInit: x3::annotate_on_success {};
 
     rule<struct TGoal, Sentence> const goal = "goal";
-    auto const goal_def = ('(' >> lit(":goal"))
+    auto const goal_def = ('(' >> kw(":goal"))
                                > sentence
                                > ')';
     BOOST_SPIRIT_DEFINE(goal);
@@ -536,7 +555,7 @@ namespace parser {
     } problem_class;
 
     rule<struct TProblemHTN, ProblemHTN> problem_htn = "problem_htn";
-    auto const problem_htn_def = ('(' >> problem_class)
+    auto const problem_htn_def = ('(' >> x3::no_case[problem_class])
                                > -parameters
                                > task_network > ')';
     BOOST_SPIRIT_DEFINE(problem_htn);
@@ -544,9 +563,9 @@ namespace parser {
 
     rule<struct TProblem, Problem> const problem = "problem";
     // Expectations throughout, for the reason given at domain_def.
-    auto const problem_def = ('(' >> lit("define"))
-                               > '(' > lit("problem") > name > ')'
-                               > '(' > lit(":domain") > name > ')'
+    auto const problem_def = ('(' >> kw("define"))
+                               > '(' > kw("problem") > name > ')'
+                               > '(' > kw(":domain") > name > ')'
                                > -requirements
                                > -objects
                                > -problem_htn

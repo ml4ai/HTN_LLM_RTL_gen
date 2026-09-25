@@ -142,7 +142,11 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
-    auto [domain,problem] = load(dom_file,prob_file);
+    std::vector<std::string> warnings;
+    auto [domain,problem] = load(dom_file,prob_file,&warnings);
+    for (auto const& w : warnings) {
+      std::cerr << "warning: " << w << "\n";
+    }
     if (!parse_precondition_mode(precondition_mode,domain.precondition_mode)) {
       std::cerr << "Unknown --precondition_mode \"" << precondition_mode
                 << "\"; expected compiled, at_start or protected." << std::endl;

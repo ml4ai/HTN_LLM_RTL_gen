@@ -2743,8 +2743,8 @@ and `test_validation_checks_requirements` in `test_loader`, and
 `test_typed_forall_effects`, `test_either_types` and
 `test_planner_rejects_unbound_names` in `test_MCTS_planner`.
 
-**Still open, on the list as §9.1 (Finish the parser: case and warnings):** keywords must be lower case, where PDDL is
-case-insensitive; and a declaration nothing uses is not reported.
+**Closed since, in §8.23:** keywords and names are now case-insensitive, and
+validation reports warnings as well as errors.
 
 **Depends on:** nothing. **Risk:** it rejects input that loaded before, and two
 shipped domains had to be fixed to pass. §8.17.1 widened what parses, and changed
@@ -3057,6 +3057,74 @@ and `test_MCTS_planner`. The README describes the new graph and shows one
 which methods were chosen and when each action runs, which is what checking a
 model-written domain needs.
 
+### 8.23 Case-insensitive HDDL, and warnings — **done**
+
+**Case.** PDDL and HDDL are case-insensitive, and this parser was not.
+`(:Action` or `:PARAMETERS` was a parse error, and `Truck_0` and `truck_0` were
+two names. The choice §8.17.1 left open, what to do with names, was made by the
+person whose research this is: match them in any case and keep the declared
+spelling, so plans print names exactly as the domain declared them.
+* **Keywords** go through `x3::no_case`, all 38 literal keywords and the four
+  keyword tables (`and`/`or`, `exists`/`forall`, the subtask keywords,
+  `:htn`). An error still names the keyword it expected (`Expecting:
+  "domain"`): a small `get_info` specialisation passes x3's description of a
+  keyword through the case-insensitive wrapper, which would otherwise name it
+  by its C++ type.
+* **Names** are handled after parsing by `lib/cpphop/case.h`, a pass over the
+  domain and problem that runs before validation and rewrites every use of a
+  name to the spelling it was first declared with. Each kind of name has its
+  own namespace, as in PDDL: types, predicates (and types used as predicates),
+  tasks and actions together, methods, objects and constants, subtask ids
+  within a network, and variables within their scope. A second declaration
+  differing only in case is rewritten too, so validation reports it as
+  declared twice. Requirement keys are folded to lower case, and the problem's
+  `:domain` name matches the domain's in any case.
+
+A `transport` written with mixed-case uses throughout (`TASK0`, `GET_TO`, `?V`,
+`AT`, `VEHICLE`, `DOMAIN`, `TRUCK_0`, `Deliver`) gives the same plan, rollout
+scores and final state as the original. So does one with every keyword in
+upper case. A score function still names objects in their declared spelling.
+
+**Warnings.** Validation reported only errors. It now also collects what is
+legal but probably unintended, and returns it through a `warnings` argument
+to `load`, `load_hddl` and `loadDomain`. Warnings never stop the load.
+`MCTS_planner` and `planner_bench` print them to standard error:
+* a task that no method decomposes;
+* a predicate declared but never used, and, given a problem, one that a
+  condition tests but no action adds and `:init` never states, so it can never
+  be true;
+* given a problem, a task or action that the problem's `:htn` can never reach;
+* a method or action parameter that nothing mentions, which still has to be
+  bound, so every object of its type becomes a separate, identical branch;
+* a feature used without its `:requirements` key: typing, negative,
+  disjunctive, quantified or equality conditions, conditional effects, method
+  preconditions, tasks and methods. `:adl` and `:quantified-preconditions`
+  count as the keys they imply.
+
+On the shipped domains the warnings are real findings, not noise:
+* `simple_travel`'s `dist_two` is tested but can never be true, so the method
+  that relies on it can never apply;
+* `sar3` and `d18` declare eight and eleven predicates nothing uses, and hold
+  tasks and actions that their problems never reach;
+* no shipped domain has an unused parameter.
+
+Every shipped domain used features it did not declare, most often method
+preconditions. The planner ignores `:requirements`, but other HDDL tools
+refuse such a domain, and these domains are what a model is shown as correct
+HDDL. So the missing keys were added to all ten shipped domain files; no plan
+changed.
+
+**Checked.** Tests `test_case_insensitivity` and `test_warnings` in
+`test_loader`; `test_parser`'s expected requirement list follows the transport
+change. `scripts/benchmark --compare` against the previous commit: no semantic
+differences. All six test suites pass, and AddressSanitizer and
+UndefinedBehaviorSanitizer are clean over `test_parser`, `test_loader`,
+`test_MCTS_planner` and `test_grapher`.
+
+**Depends on:** §8.17. **Risk:** none to shipped domains, which were already
+consistent in case. **Payoff:** HDDL in the wrong case now loads instead of
+failing, and a model hears about mistakes that are not errors.
+
 ---
 
 ## 9. Remaining work
@@ -3076,35 +3144,15 @@ hold up. Leak detection is unavailable on macOS, so leaks were not checked. All
 20 sign-compare warnings are `int i < v.size()` loops that cannot go negative.
 
 The order puts first what matters most for domains a language model writes.
-The first six items of that list are done: validating a domain at load time
+The first seven items of that list are done: validating a domain at load time
 (§8.17), the `sar3` score function (§8.18), the benchmark harness (§8.19),
-making the planner usable as a library (§8.20), the cleanup (§8.21), and the
-task-hierarchy graph (§8.22).
+making the planner usable as a library (§8.20), the cleanup (§8.21), the
+task-hierarchy graph (§8.22), and case-insensitive HDDL with warnings (§8.23).
+What remains is performance.
 
 ---
 
-### 9.1 Finish the parser: case and warnings
-
-Left over from §8.17.1, which closed the rest of the parser's gaps.
-
-* **Case.** PDDL is case-insensitive, and this grammar matches keywords only in
-  lower case, so `(:Action` or `:Parameters` is a parse error. Names are kept
-  exactly as written, so `Truck_0` and `truck_0` are two objects, which
-  validation would then report as an undeclared object. Keywords can be matched
-  with `x3::no_case`. Folding names is a choice to make first, because it
-  changes the case of every name in a printed plan.
-* **Warnings.** Validation reports only errors. A model would also be helped by
-  a warning about what is legal but probably unintended: a task no method
-  decomposes and no problem mentions, a method for a task nothing reaches, a
-  predicate declared and never used, a feature used without its `:requirements`
-  key. That needs a channel beside `HDDLError` that does not stop the load, and
-  the planner printing what comes through it.
-
-**Depends on:** nothing. **Risk:** low; case folding changes printed names, so it
-is opt-in or decided first. **Payoff:** fewer rejections of HDDL a model writes in
-the wrong case, and feedback on mistakes that are not errors.
-
-### 9.2 What is left of performance
+### 9.1 What is left of performance
 
 After §8.11–§8.15, time splits across three shapes of domain as follows.
 The evaluator takes 28–40%, `simulation`'s own body 24–32%, method grounding

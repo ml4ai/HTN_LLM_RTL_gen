@@ -10,7 +10,7 @@
 ; sweep has a forall + when effect: only rooms that are dirty become clean.
 ; Both must fire for EVERY matching object, not just the first one.
 (define (domain forall_test)
-	(:requirements :negative-preconditions :typing :hierarchy)
+	(:requirements :negative-preconditions :typing :hierarchy :conditional-effects)
 	(:types
 		room - object
 		robot - object

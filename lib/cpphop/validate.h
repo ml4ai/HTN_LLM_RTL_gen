@@ -145,6 +145,29 @@ public:
   };
 
   void report(Where const& w, std::string const& what) {
+    record(found, w, what);
+  }
+
+  //Legal, but probably not what was meant: reported without stopping the
+  //load (planner_doc.md 8.23).
+  void warn(Where const& w, std::string const& what) {
+    record(warned, w, what);
+  }
+
+  std::vector<std::string> sorted_problems() const { return sorted(found); }
+  std::vector<std::string> sorted_warnings() const { return sorted(warned); }
+
+private:
+  struct Found {
+    int file_rank;
+    int key;
+    std::string text;
+  };
+  std::vector<Found> found;
+  std::vector<Found> warned;
+  std::vector<std::string> files;
+
+  void record(std::vector<Found>& into, Where const& w, std::string const& what) {
     std::string at = w.file;
     if (w.line > 0) {
       at += ":" + std::to_string(w.line);
@@ -159,12 +182,11 @@ public:
     }
     int key = w.line > 0 ? w.line
             : (w.construct == ":init" || w.construct == ":goal") ? INT_MAX : 0;
-    found.push_back({(int)(rank - files.begin()),key,
-                     at + ": " + (w.construct.empty() ? "" : "in " + w.construct + ": ") + what});
+    into.push_back({(int)(rank - files.begin()),key,
+                    at + ": " + (w.construct.empty() ? "" : "in " + w.construct + ": ") + what});
   }
 
-  std::vector<std::string> sorted_problems() const {
-    auto f = found;
+  static std::vector<std::string> sorted(std::vector<Found> f) {
     std::stable_sort(f.begin(),f.end(),[](auto const& a, auto const& b) {
       return std::tie(a.file_rank,a.key) < std::tie(b.file_rank,b.key);
     });
@@ -175,16 +197,20 @@ public:
     return out;
   }
 
-private:
-  struct Found {
-    int file_rank;
-    int key;
-    std::string text;
-  };
-  std::vector<Found> found;
-  std::vector<std::string> files;
-
 public:
+  //What the warnings are drawn from, gathered while checking.
+  std::map<std::string,Where> task_decl, action_decl, pred_decl;
+  std::set<std::string> tasks_with_method;
+  std::map<std::string,std::set<std::string>> task_subtasks;  //task -> what its methods name
+  std::string current_task;                                   //the method's, while in one
+  std::set<std::string> htn_names;                            //named in the problem's :htn
+  std::set<std::string> preds_tested, preds_added, preds_in_effects, preds_in_init;
+  std::map<std::string,Where> features;                       //requirement -> first use
+  std::set<std::string>* used_vars = nullptr;                 //the construct being checked
+
+  void feature(std::string const& requirement, Where const& w) {
+    features.try_emplace(requirement, w);
+  }
 
   //True when a value of type a can be passed where type b is expected, or the
   //other way round. Both directions are allowed on purpose: domains pass a
@@ -267,6 +293,9 @@ public:
   std::vector<std::pair<std::string,std::string>>
   parameters(TypedList<Variable> const& tl, Where const& w, std::string const& what = "parameter") {
     std::vector<std::pair<std::string,std::string>> out;
+    if (!tl.explicitly_typed_lists.empty()) {
+      feature("typing", w);
+    }
     for (auto const& e : tl.explicitly_typed_lists) {
       for (auto const& v : e.entries) {
         out.push_back({v.name, type_name(e.type,w,what + " ?" + v.name)});
@@ -314,6 +343,9 @@ public:
     }
     if (t.which() == 1) {
       auto const& name = boost::get<Variable>(t).name;
+      if (used_vars) {
+        used_vars->insert(name);
+      }
       auto it = scope.find(name);
       if (it == scope.end()) {
         report(w, in + " uses ?" + name + ", which is not a parameter here or bound by a quantifier" +
@@ -398,6 +430,15 @@ public:
 
   void atom(Literal<Term> const& l, Scope const& scope, Where const& where, bool in_effect) {
     Where w = at(where,l);
+    if (in_effect) {
+      preds_in_effects.insert(l.predicate);
+      if (!l.is_negative) {
+        preds_added.insert(l.predicate);
+      }
+    }
+    else {
+      preds_tested.insert(l.predicate);
+    }
     std::string text = show(l.predicate,l.args);
     std::string in = (in_effect ? "effect " : "condition ") + text;
     Signature const* sig = predicate_signature(l.predicate,l.args.size(),w,in);
@@ -419,14 +460,19 @@ public:
         atom(boost::get<Literal<Term>>(s),scope,w,false);
         return;
       case 2:
+        if (boost::get<ConnectedSentence>(s).connector == "or") {
+          feature("disjunctive-preconditions", w);
+        }
         for (auto const& c : boost::get<ConnectedSentence>(s).sentences) {
           sentence(c,scope,w);
         }
         return;
       case 3:
+        feature("negative-preconditions", w);
         sentence(boost::get<NotSentence>(s).sentence,scope,w);
         return;
       case 4: {
+        feature("disjunctive-preconditions", w);
         auto const& i = boost::get<ImplySentence>(s);
         sentence(i.sentence1,scope,w);
         sentence(i.sentence2,scope,w);
@@ -434,6 +480,7 @@ public:
       }
       case 5: {
         auto const& q = boost::get<QuantifiedSentence>(s);
+        feature(q.quantifier == "forall" ? "universal-preconditions" : "existential-preconditions", w);
         Scope inner = scope;
         for (auto const& [name,type] : parameters(q.variables,w,q.quantifier + " variable")) {
           inner[name] = type;
@@ -442,12 +489,14 @@ public:
         return;
       }
       case 6: {
+        feature("equality", w);
         auto const& e = boost::get<EqualsSentence>(s);
         term_type(e.lhs,scope,w,"(= ...)");
         term_type(e.rhs,scope,w,"(= ...)");
         return;
       }
       case 7: {
+        feature("equality", w);
         auto const& e = boost::get<NotEqualsSentence>(s);
         term_type(e.lhs,scope,w,"(not (= ...))");
         term_type(e.rhs,scope,w,"(not (= ...))");
@@ -469,6 +518,7 @@ public:
 
   void c_effect(CEffect const& c, Scope const& scope, Where const& w) {
     if (c.which() == 0) {
+      feature("conditional-effects", w);
       auto const& f = boost::get<ForallCEffect>(c);
       Scope inner = scope;
       //Untyped ones are `object` here; the loader infers their type from use.
@@ -478,6 +528,7 @@ public:
       effect(f.effect,inner,w);
     }
     else if (c.which() == 1) {
+      feature("conditional-effects", w);
       auto const& when = boost::get<WhenCEffect>(c);
       sentence(when.gd,scope,w);
       if (when.cond_effect.which() == 0) {
@@ -498,6 +549,15 @@ public:
   void task_use(MTask const& t, Scope const& scope, Where w, std::string const& in,
                 bool compound_only) {
     std::string text = show(t.name,t.parameters);
+    if (compound_only) {
+      tasks_with_method.insert(t.name);
+    }
+    else if (!current_task.empty()) {
+      task_subtasks[current_task].insert(t.name);
+    }
+    else {
+      htn_names.insert(t.name);
+    }
     Signature const* sig = nullptr;
     std::string kind = "task";
     if (tasks.contains(t.name)) {
@@ -738,6 +798,7 @@ public:
         continue;
       }
       predicates[p.predicate] = types_of(parameters(p.variables,w));
+      pred_decl[p.predicate] = w;
     }
 
     for (auto const& t : d.tasks) {
@@ -747,6 +808,8 @@ public:
         continue;
       }
       tasks[t.name] = types_of(parameters(t.parameters,w));
+      task_decl[t.name] = w;
+      feature("hierarchy", w);
     }
 
     //Signatures before bodies, so a method may name an action declared after it.
@@ -763,13 +826,18 @@ public:
         report(w, a.name + " is declared both as a task and as an action");
       }
       actions[a.name] = types_of(ps);
+      action_decl[a.name] = w;
     }
 
     for (size_t i = 0; i < d.actions.size(); i++) {
       auto const& a = d.actions[i];
       Where w{lines.file,lines.line(a),"action " + a.name};
+      std::set<std::string> used;
+      used_vars = &used;
       sentence(a.precondition,action_scopes[i],w);
       effect(a.effect,action_scopes[i],w);
+      used_vars = nullptr;
+      unused_parameters(a.parameters,used,w,"action");
     }
 
     std::unordered_set<std::string> method_names;
@@ -781,9 +849,35 @@ public:
       auto scope = scope_of(parameters(m.parameters,w));
       Where tw = w;
       if (lines.line(m.task)) tw.line = lines.line(m.task);
+      std::set<std::string> used;
+      used_vars = &used;
       task_use(m.task,scope,tw,":task",true);
+      if (m.precondition.which() != 0) {
+        feature("method-preconditions", w);
+      }
       sentence(m.precondition,scope,w);
+      current_task = m.task.name;
       task_network(m.task_network,scope,w,lines);
+      current_task.clear();
+      used_vars = nullptr;
+      unused_parameters(m.parameters,used,w,"method");
+    }
+  }
+
+  //A parameter nothing mentions still has to be bound: every object of its
+  //type becomes a separate grounding, all of them the same.
+  void unused_parameters(TypedList<Variable> const& tl, std::set<std::string> const& used,
+                         Where const& w, std::string const& kind) {
+    std::vector<std::string> names;
+    for (auto const& e : tl.explicitly_typed_lists) {
+      for (auto const& v : e.entries) names.push_back(v.name);
+    }
+    for (auto const& v : tl.implicitly_typed_list) names.push_back(v.name);
+    for (auto const& n : names) {
+      if (!used.contains(n)) {
+        warn(w, "parameter ?" + n + " is never used; every object of its type becomes a "
+                "separate, identical " + (kind == "method" ? "decomposition" : "grounding"));
+      }
     }
   }
 
@@ -830,19 +924,93 @@ public:
         continue;
       }
       check_args("predicate",f.predicate,*sig,f.args,type_of,iw,"fact " + text);
+      preds_in_init.insert(f.predicate);
     }
 
     sentence(p.goal,Scope{},Where{lines.file,0,":goal"});
+  }
+
+  //The warnings, once everything has been read. Those about reachability and
+  //about what can ever be true need the problem.
+  void finish(Domain const& d, bool have_problem) {
+    for (auto const& [t,w] : task_decl) {
+      if (!tasks_with_method.contains(t)) {
+        warn(w, "task " + t + " has no method, so a task network containing it can "
+                "never be decomposed");
+      }
+    }
+    for (auto const& [p,w] : pred_decl) {
+      bool used = preds_tested.contains(p) || preds_in_effects.contains(p) ||
+                  (have_problem && preds_in_init.contains(p));
+      if (!used) {
+        warn(w, "predicate " + p + " is declared but never used");
+      }
+      else if (have_problem && preds_tested.contains(p) && !preds_added.contains(p) &&
+               !preds_in_init.contains(p)) {
+        warn(w, "predicate " + p + " is never true: no action adds it and :init has no "
+                "fact of it, so a condition requiring it cannot hold");
+      }
+    }
+    if (have_problem) {
+      //Everything the problem's :htn can reach through methods' subtasks.
+      std::set<std::string> reached;
+      std::vector<std::string> todo(htn_names.begin(), htn_names.end());
+      while (!todo.empty()) {
+        auto n = todo.back();
+        todo.pop_back();
+        if (!reached.insert(n).second) continue;
+        for (auto const& c : task_subtasks[n]) todo.push_back(c);
+      }
+      for (auto const& [t,w] : task_decl) {
+        if (tasks_with_method.contains(t) && !reached.contains(t)) {
+          warn(w, "task " + t + " is never reached from the problem's :htn, so its "
+                  "methods are never used");
+        }
+      }
+      for (auto const& [a,w] : action_decl) {
+        if (!reached.contains(a)) {
+          warn(w, "action " + a + " is never reached from the problem's :htn, so it can "
+                  "never be in a plan");
+        }
+      }
+    }
+    //Features used without their :requirements key. The planner does not need
+    //the key, but other HDDL tools refuse a domain without it.
+    std::set<std::string> declared(d.requirements.begin(), d.requirements.end());
+    if (declared.contains("adl")) {
+      declared.insert({"strips", "typing", "negative-preconditions", "disjunctive-preconditions",
+                       "equality", "quantified-preconditions", "conditional-effects"});
+    }
+    if (declared.contains("quantified-preconditions")) {
+      declared.insert({"existential-preconditions", "universal-preconditions"});
+    }
+    static std::map<std::string,std::string> const what = {
+      {"typing", "typed parameters"},
+      {"negative-preconditions", "a negative condition (not ...)"},
+      {"disjunctive-preconditions", "a disjunctive condition (or, imply)"},
+      {"equality", "an equality (= ...)"},
+      {"existential-preconditions", "an existential condition (exists ...)"},
+      {"universal-preconditions", "a universal condition (forall ...)"},
+      {"conditional-effects", "a conditional effect (when, forall)"},
+      {"method-preconditions", "a method precondition"},
+      {"hierarchy", "tasks and methods"}};
+    for (auto const& [req,w] : features) {
+      if (!declared.contains(req)) {
+        warn(w, "uses " + what.at(req) + " without declaring :" + req + " in :requirements");
+      }
+    }
   }
 };
 
 } // namespace hddl_check
 
 //Checks a domain, and a problem against it when one is given. Throws an
-//HDDLError listing every problem found; returns normally if there are none.
+//HDDLError listing every problem found. Otherwise returns normally, and puts
+//what is legal but probably unintended in `warnings` if given.
 inline void validate_hddl(ast::Domain const& d, SourceLines const& dom_lines,
                           ast::Problem const* p = nullptr,
-                          SourceLines const* prob_lines = nullptr) {
+                          SourceLines const* prob_lines = nullptr,
+                          std::vector<std::string>* warnings = nullptr) {
   hddl_check::Checker c;
   c.domain(d,dom_lines);
   if (p) {
@@ -851,5 +1019,9 @@ inline void validate_hddl(ast::Domain const& d, SourceLines const& dom_lines,
   auto problems = c.sorted_problems();
   if (!problems.empty()) {
     throw HDDLError(problems);
+  }
+  if (warnings) {
+    c.finish(d, p != nullptr);
+    *warnings = c.sorted_warnings();
   }
 }

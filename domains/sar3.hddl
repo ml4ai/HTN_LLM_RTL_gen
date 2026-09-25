@@ -1,5 +1,5 @@
 (define (domain sar3)
-        (:requirements :negative-preconditions :typing :hierarchy)
+        (:requirements :negative-preconditions :typing :hierarchy :disjunctive-preconditions :conditional-effects :method-preconditions)
         (:types
                 human - object
                 victim - human

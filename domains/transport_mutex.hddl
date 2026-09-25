@@ -17,7 +17,7 @@
 ;; the other variants' by two per get_to that actually drives.
 
 (define (domain transport_variant)
-	(:requirements :negative-preconditions :typing :hierarchy)
+	(:requirements :negative-preconditions :typing :hierarchy :method-preconditions)
 	(:types
 		package - locatable
 		capacity_number - object

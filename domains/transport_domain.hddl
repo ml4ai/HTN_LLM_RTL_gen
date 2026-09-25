@@ -1,5 +1,5 @@
 (define (domain domain)
-	(:requirements :negative-preconditions :typing :hierarchy)
+	(:requirements :negative-preconditions :typing :hierarchy :method-preconditions)
 	(:types
 		package - locatable
 		capacity_number - object

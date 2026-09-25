@@ -23,7 +23,7 @@
 ;; the extra drives, so a longer plan scores lower.
 
 (define (domain transport_variant)
-	(:requirements :negative-preconditions :typing :hierarchy)
+	(:requirements :negative-preconditions :typing :hierarchy :method-preconditions)
 	(:types
 		package - locatable
 		capacity_number - object

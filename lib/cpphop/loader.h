@@ -17,6 +17,7 @@
 #include "kb.h"
 #include "typedefs.h"
 #include "validate.h"
+#include "case.h"
 #include <filesystem>
 
 //The loader's workings live in this namespace, where the parser's AST names
@@ -911,10 +912,12 @@ inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain c
 
 //Parses, validates (validate.h) and builds a domain on its own. A problem
 //needs its domain to be checked, so use load() or load_hddl() for the pair.
-inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> loadDomain(std::string dom_file) {
+inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>>
+loadDomain(std::string dom_file, std::vector<std::string>* warnings = nullptr) {
   SourceLines lines;
   Domain dom = parse<Domain>(read_hddl_file(dom_file),dom_file,&lines);
-  validate_hddl(dom,lines);
+  canonicalise_case(dom);
+  validate_hddl(dom,lines,nullptr,nullptr,warnings);
   return createDomainDef(dom);
 }
 
@@ -981,15 +984,20 @@ inline ProblemDef loadProblem(std::string const& prob_file, Ptypes const& ptypes
 //form a pipeline that asks a language model for HDDL has them in. The names
 //are what errors are reported against. Throws ParseError for text the grammar
 //rejects, and HDDLError listing every problem validate.h finds, before
-//anything is built.
+//anything is built. What is legal but probably unintended -- a task nothing
+//reaches, a parameter never used -- goes into `warnings` if one is given.
+//Names are matched in any case and rewritten to their declared spelling first
+//(case.h).
 inline std::pair<DomainDef, ProblemDef> load_hddl(std::string const& dom_text,
                                            std::string const& prob_text,
                                            std::string const& dom_name = "domain",
-                                           std::string const& prob_name = "problem") {
+                                           std::string const& prob_name = "problem",
+                                           std::vector<std::string>* warnings = nullptr) {
   SourceLines dom_lines, prob_lines;
   Domain dom = parse<Domain>(dom_text,dom_name,&dom_lines);
   Problem prob = parse<Problem>(prob_text,prob_name,&prob_lines);
-  validate_hddl(dom,dom_lines,&prob,&prob_lines);
+  canonicalise_case(dom,&prob);
+  validate_hddl(dom,dom_lines,&prob,&prob_lines,warnings);
 
   auto [domDef,types] = createDomainDef(dom);
   auto probDef = createProblemDef(prob,types.first,types.second);
@@ -999,8 +1007,9 @@ inline std::pair<DomainDef, ProblemDef> load_hddl(std::string const& dom_text,
   return std::make_pair(domDef,probDef);
 }
 
-inline std::pair<DomainDef, ProblemDef> load(std::string dom_file, std::string prob_file) {
-  return load_hddl(read_hddl_file(dom_file),read_hddl_file(prob_file),dom_file,prob_file);
+inline std::pair<DomainDef, ProblemDef> load(std::string dom_file, std::string prob_file,
+                                             std::vector<std::string>* warnings = nullptr) {
+  return load_hddl(read_hddl_file(dom_file),read_hddl_file(prob_file),dom_file,prob_file,warnings);
 }
 
 } // namespace hddl_loader
