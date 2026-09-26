@@ -15,6 +15,7 @@ and each plan step is left in symbolic form.
 | `fsm/fsm_plan.txt` | The plan the planner returns: 43 symbolic steps |
 | `fsm/fsm_plan.svg` | The task hierarchy behind that plan (open in a browser; hover for details) |
 | `plan_to_verilog.py` | A check, not a pipeline stage: one fixed template per step |
+| `check_sequence_detectors.py` | Plans, renders and simulates many patterns and variants against a Python model |
 | `fsm/fsm_from_plan.v` | What those templates produce from the plan. Passes `fsm/testbench.v` |
 
 ## Running it
@@ -64,7 +65,15 @@ it by a single fact: overlapping or non-overlapping detection, asynchronous or
 synchronous reset, and either reset polarity. Moore machines, multi-bit ports
 and other kinds of design are not modelled yet.
 
-The derivation was checked beyond `10011`. For every pattern of 1 to 5 bits
-and six longer ones (up to 8 bits), in both overlap modes and all four reset
-styles (136 configurations), the plan was rendered with `plan_to_verilog.py`
-and simulated for 300 cycles against a brute-force Python model. All 136 pass.
+The derivation was checked beyond `10011` with `check_sequence_detectors.py`.
+It covers every pattern of 1 to 5 bits and five longer ones (6 to 8 bits), in
+both overlap modes, with all four reset styles represented (134
+configurations). For each one it writes the problem, plans it, renders the
+plan with `plan_to_verilog.py`, and simulates the result for 300 cycles against
+a brute-force Python model. All 134 pass. Rerun it after changing the domain:
+
+    python rtl_designs/check_sequence_detectors.py               # all 134
+    python rtl_designs/check_sequence_detectors.py --max-len 2 -j 8   # 24, about a minute
+
+It needs the planner built and `iverilog` on `PATH`, and exits non-zero on any
+failure. `--keep DIR` keeps the generated problems, Verilog and testbenches.
