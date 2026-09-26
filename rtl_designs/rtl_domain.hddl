@@ -1,0 +1,720 @@
+; RTL design domain: decomposes "implement this module" into an ordered list of
+; symbolic design and coding steps, each of which is meant to map onto one
+; natural-language instruction for an LLM writing the Verilog.
+;
+; Two kinds of primitive action:
+;
+;   analyze_*   a design decision, worked out by the planner from the spec
+;               (which states exist, where each transition goes, when the
+;               output fires). They write derived facts and emit no code.
+;   write_*     one piece of code to write, using only facts the spec gave or
+;               an analyze_* step derived.
+;
+; What this domain covers is what rtl_designs/fsm needs: a Mealy sequence
+; detector with one serial input, an asynchronous or synchronous reset of
+; either polarity, and overlapping or non-overlapping detection. The code it
+; describes is the conventional three-block FSM: a state register, a
+; combinational next-state block, and a combinational output block.
+;
+; The problem file restates the design description as facts and nothing more.
+; In particular it gives the pattern bit by bit, one state per bit:
+;
+;   (expects s_k b)      the pattern's bit k is b: in state s_k the first k
+;                        bits have been matched and b is the next one wanted
+;   (next_prefix s_k s_k+1), (initial_state m s_0), (last_state m s_L-1)
+;
+; It does NOT give the transition table. The planner derives every transition,
+; including where a mismatch falls back to and where detection restarts after
+; a match, with the Knuth-Morris-Pratt construction written as methods:
+;
+;   fallback(s_1)   = s_0
+;   fallback(s_k)   = next(fallback(s_k-1), pattern[k-1])        for k >= 2
+;   next(s_k, b)    = s_k+1                                if b = pattern[k]
+;                   = s_0                                  if b /= pattern[k], k = 0
+;                   = next(fallback(s_k), b)               if b /= pattern[k], k > 0
+;   next(s_L-1, pattern[L-1]) = next(fallback(s_L-1), pattern[L-1])   (overlapping;
+;                                                          the output fires)
+;
+; Every recursive call is on a strictly earlier state, so the decomposition
+; terminates. Derived facts are memoised through the *_known predicates, and
+; an already-known fact is reused by an empty method rather than derived twice.
+
+(define (domain rtl_fsm)
+  (:requirements :typing :hierarchy :negative-preconditions
+                 :disjunctive-preconditions :method-preconditions)
+
+  (:types
+    module port fsm_state bitval polarity - object
+  )
+
+  (:constants
+    zero one - bitval
+    active_high active_low - polarity
+  )
+
+  (:predicates
+    ; ---- given by the problem: the interface ----
+    (first_port ?m - module ?p - port)
+    (next_port ?p ?q - port)
+    (last_port ?m - module ?p - port)
+    (input_port ?p - port)
+    (output_port ?p - port)
+    (clock_of ?m - module ?p - port)
+    (reset_of ?m - module ?p - port)
+    (data_input_of ?m - module ?p - port)
+    (detect_output_of ?m - module ?p - port)
+    (reset_async ?p - port)
+    (reset_polarity ?p - port ?pol - polarity)
+    (cleared_by_reset ?out ?rst - port)
+
+    ; ---- given by the problem: the behaviour ----
+    (sequence_detector ?m - module)
+    (mealy ?m - module)
+    (overlapping ?m - module)
+    (initial_state ?m - module ?s - fsm_state)
+    (last_state ?m - module ?s - fsm_state)
+    (next_prefix ?s ?t - fsm_state)
+    (expects ?s - fsm_state ?b - bitval)
+
+    ; ---- derived by analyze_* actions ----
+    (fallback ?s ?f - fsm_state)
+    (fallback_known ?s - fsm_state)
+    (transition ?s - fsm_state ?b - bitval ?t - fsm_state)
+    (transition_known ?s - fsm_state ?b - bitval)
+    (asserts_output ?s - fsm_state ?b - bitval)
+    (architecture_chosen ?m - module)
+
+    ; ---- progress of the code being written ----
+    (port_declared ?p - port)
+    (state_declared ?s - fsm_state)
+    (state_case_written ?s - fsm_state)
+    (section_written ?m - module)
+  )
+
+  ;; =====================================================================
+  ;; Tasks
+  ;; =====================================================================
+
+  (:task implement_module :parameters (?m - module))
+
+  ; phase 1: work out the state machine
+  (:task design_state_machine :parameters (?m - module))
+  (:task derive_transitions_from :parameters (?m - module ?s - fsm_state))
+  (:task derive_next :parameters (?m - module ?s - fsm_state ?b - bitval))
+  (:task derive_fallback :parameters (?m - module ?s - fsm_state))
+  (:task derive_fallback_step :parameters (?m - module ?s ?p - fsm_state ?b - bitval))
+  (:task derive_via_fallback :parameters (?m - module ?s - fsm_state ?b - bitval))
+  (:task derive_match_restart :parameters (?m - module ?s - fsm_state ?b - bitval))
+  ; These three read off a transition the step before them has just derived.
+  ; They are compound, not actions, so that the target ?t is bound only once
+  ; that transition exists: a method parameter is grounded when the method is
+  ; chosen, and binding ?t there would guess it before deriving it.
+  (:task conclude_fall_back :parameters (?m - module ?s - fsm_state ?b - bitval ?f - fsm_state))
+  (:task conclude_match_restart :parameters (?m - module ?s - fsm_state ?b - bitval ?f - fsm_state))
+  (:task conclude_fallback_extend :parameters (?m - module ?s ?p - fsm_state ?b - bitval ?fp - fsm_state))
+
+  ; phase 2: write the code
+  (:task write_interface :parameters (?m - module))
+  (:task declare_ports_from :parameters (?m - module ?p - port))
+  (:task declare_port :parameters (?m - module ?p - port))
+  (:task write_state_declarations :parameters (?m - module))
+  (:task declare_states_from :parameters (?m - module ?s - fsm_state))
+  (:task write_state_register :parameters (?m - module))
+  (:task write_next_state_logic :parameters (?m - module))
+  (:task write_state_cases_from :parameters (?m - module ?s - fsm_state))
+  (:task write_output_logic :parameters (?m - module))
+  (:task write_output_reset :parameters (?m - module ?out - port))
+
+  ;; =====================================================================
+  ;; Top level
+  ;; =====================================================================
+
+  (:method m_implement_mealy_sequence_detector
+    :parameters (?m - module)
+    :task (implement_module ?m)
+    :precondition (and (sequence_detector ?m) (mealy ?m))
+    :ordered-subtasks (and
+      (t1 (analyze_choose_three_block_fsm ?m))
+      (t2 (design_state_machine ?m))
+      (t3 (write_interface ?m))
+      (t4 (write_state_declarations ?m))
+      (t5 (write_state_register ?m))
+      (t6 (write_next_state_logic ?m))
+      (t7 (write_output_logic ?m))
+      (t8 (write_module_end ?m))
+    )
+  )
+
+  ; Decide on the structure: a state register, a combinational next-state
+  ; block, and a combinational (Mealy) output block.
+  (:action analyze_choose_three_block_fsm
+    :parameters (?m - module)
+    :precondition (and (sequence_detector ?m) (mealy ?m))
+    :effect (architecture_chosen ?m)
+  )
+
+  ;; =====================================================================
+  ;; Phase 1: design the state machine
+  ;; =====================================================================
+
+  (:method m_design_sequence_fsm
+    :parameters (?m - module ?s0 - fsm_state)
+    :task (design_state_machine ?m)
+    :precondition (and (architecture_chosen ?m) (initial_state ?m ?s0))
+    :ordered-subtasks (and
+      (t1 (derive_transitions_from ?m ?s0))
+    )
+  )
+
+  ; Walk the states in pattern order, fixing both transitions out of each.
+  (:method m_derive_transitions_more
+    :parameters (?m - module ?s ?t - fsm_state)
+    :task (derive_transitions_from ?m ?s)
+    :precondition (next_prefix ?s ?t)
+    :ordered-subtasks (and
+      (t1 (derive_next ?m ?s zero))
+      (t2 (derive_next ?m ?s one))
+      (t3 (derive_transitions_from ?m ?t))
+    )
+  )
+
+  (:method m_derive_transitions_last
+    :parameters (?m - module ?s - fsm_state)
+    :task (derive_transitions_from ?m ?s)
+    :precondition (last_state ?m ?s)
+    :ordered-subtasks (and
+      (t1 (derive_next ?m ?s zero))
+      (t2 (derive_next ?m ?s one))
+    )
+  )
+
+  ; ---- next(s, b) ----
+
+  ; Already derived, while working out an earlier state's fallback.
+  (:method m_next_known
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_next ?m ?s ?b)
+    :precondition (transition_known ?s ?b)
+    :ordered-subtasks ()
+  )
+
+  ; b is the bit wanted next: one more bit of the pattern is matched.
+  (:method m_next_advance
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?t - fsm_state)
+    :task (derive_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b))
+                       (expects ?s ?b) (next_prefix ?s ?t))
+    :ordered-subtasks (and
+      (t1 (analyze_advance ?m ?s ?b ?t))
+    )
+  )
+
+  ; A mismatch before anything is matched: stay in the initial state.
+  (:method m_next_mismatch_initial
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b))
+                       (not (expects ?s ?b)) (initial_state ?m ?s))
+    :ordered-subtasks (and
+      (t1 (analyze_stay_initial ?m ?s ?b))
+    )
+  )
+
+  ; A mismatch after a partial match: the longest matched suffix that is
+  ; still a prefix of the pattern decides where to go.
+  (:method m_next_mismatch_fallback
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b))
+                       (not (expects ?s ?b)) (not (initial_state ?m ?s)))
+    :ordered-subtasks (and
+      (t1 (derive_fallback ?m ?s))
+      (t2 (derive_via_fallback ?m ?s ?b))
+    )
+  )
+
+  (:method m_via_fallback
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?f - fsm_state)
+    :task (derive_via_fallback ?m ?s ?b)
+    :precondition (fallback ?s ?f)
+    :ordered-subtasks (and
+      (t1 (derive_next ?m ?f ?b))
+      (t2 (conclude_fall_back ?m ?s ?b ?f))
+    )
+  )
+
+  (:method m_conclude_fall_back
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?f ?t - fsm_state)
+    :task (conclude_fall_back ?m ?s ?b ?f)
+    :precondition (transition ?f ?b ?t)
+    :ordered-subtasks (and
+      (t1 (analyze_fall_back ?m ?s ?b ?f ?t))
+    )
+  )
+
+  ; The last bit of the pattern arrives: the output fires. With overlapping
+  ; detection, the matched bits may already begin the next occurrence.
+  (:method m_next_match_overlapping
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b))
+                       (expects ?s ?b) (last_state ?m ?s)
+                       (overlapping ?m) (not (initial_state ?m ?s)))
+    :ordered-subtasks (and
+      (t1 (derive_fallback ?m ?s))
+      (t2 (derive_match_restart ?m ?s ?b))
+    )
+  )
+
+  (:method m_match_restart
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?f - fsm_state)
+    :task (derive_match_restart ?m ?s ?b)
+    :precondition (fallback ?s ?f)
+    :ordered-subtasks (and
+      (t1 (derive_next ?m ?f ?b))
+      (t2 (conclude_match_restart ?m ?s ?b ?f))
+    )
+  )
+
+  (:method m_conclude_match_restart
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?f ?t - fsm_state)
+    :task (conclude_match_restart ?m ?s ?b ?f)
+    :precondition (transition ?f ?b ?t)
+    :ordered-subtasks (and
+      (t1 (analyze_match_overlapping ?m ?s ?b ?f ?t))
+    )
+  )
+
+  ; Non-overlapping detection, or a one-bit pattern: after a match, start
+  ; again from the initial state.
+  (:method m_next_match_from_scratch
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?s0 - fsm_state)
+    :task (derive_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b))
+                       (expects ?s ?b) (last_state ?m ?s)
+                       (or (not (overlapping ?m)) (initial_state ?m ?s))
+                       (initial_state ?m ?s0))
+    :ordered-subtasks (and
+      (t1 (analyze_match_from_scratch ?m ?s ?b ?s0))
+    )
+  )
+
+  ; ---- fallback(s): the state for the longest proper suffix of the bits
+  ; matched in s that is also a prefix of the pattern ----
+
+  (:method m_fallback_known
+    :parameters (?m - module ?s - fsm_state)
+    :task (derive_fallback ?m ?s)
+    :precondition (fallback_known ?s)
+    :ordered-subtasks ()
+  )
+
+  (:method m_fallback_first
+    :parameters (?m - module ?s ?p - fsm_state)
+    :task (derive_fallback ?m ?s)
+    :precondition (and (not (fallback_known ?s))
+                       (next_prefix ?p ?s) (initial_state ?m ?p))
+    :ordered-subtasks (and
+      (t1 (analyze_fallback_first ?m ?s ?p))
+    )
+  )
+
+  (:method m_fallback_extend
+    :parameters (?m - module ?s ?p - fsm_state ?b - bitval)
+    :task (derive_fallback ?m ?s)
+    :precondition (and (not (fallback_known ?s))
+                       (next_prefix ?p ?s) (not (initial_state ?m ?p))
+                       (expects ?p ?b))
+    :ordered-subtasks (and
+      (t1 (derive_fallback ?m ?p))
+      (t2 (derive_fallback_step ?m ?s ?p ?b))
+    )
+  )
+
+  (:method m_fallback_step
+    :parameters (?m - module ?s ?p - fsm_state ?b - bitval ?fp - fsm_state)
+    :task (derive_fallback_step ?m ?s ?p ?b)
+    :precondition (fallback ?p ?fp)
+    :ordered-subtasks (and
+      (t1 (derive_next ?m ?fp ?b))
+      (t2 (conclude_fallback_extend ?m ?s ?p ?b ?fp))
+    )
+  )
+
+  (:method m_conclude_fallback_extend
+    :parameters (?m - module ?s ?p - fsm_state ?b - bitval ?fp ?t - fsm_state)
+    :task (conclude_fallback_extend ?m ?s ?p ?b ?fp)
+    :precondition (transition ?fp ?b ?t)
+    :ordered-subtasks (and
+      (t1 (analyze_fallback_extend ?m ?s ?p ?b ?fp ?t))
+    )
+  )
+
+  ; ---- phase 1 actions ----
+
+  ; In ?s, input ?b is the next pattern bit: go to ?t.
+  (:action analyze_advance
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?t - fsm_state)
+    :precondition (and (architecture_chosen ?m) (expects ?s ?b) (next_prefix ?s ?t))
+    :effect (and (transition ?s ?b ?t) (transition_known ?s ?b))
+  )
+
+  ; In the initial state ?s, input ?b is not the first pattern bit: stay.
+  (:action analyze_stay_initial
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :precondition (and (initial_state ?m ?s) (not (expects ?s ?b)))
+    :effect (and (transition ?s ?b ?s) (transition_known ?s ?b))
+  )
+
+  ; In ?s, input ?b breaks the match: go where the fallback state ?f goes
+  ; on ?b, i.e. to ?t.
+  (:action analyze_fall_back
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?f ?t - fsm_state)
+    :precondition (and (architecture_chosen ?m) (fallback ?s ?f) (transition ?f ?b ?t))
+    :effect (and (transition ?s ?b ?t) (transition_known ?s ?b))
+  )
+
+  ; In the last state ?s, input ?b completes the pattern: assert the output,
+  ; and go where the fallback state ?f goes on ?b (overlapping detection).
+  (:action analyze_match_overlapping
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?f ?t - fsm_state)
+    :precondition (and (last_state ?m ?s) (expects ?s ?b)
+                       (fallback ?s ?f) (transition ?f ?b ?t))
+    :effect (and (transition ?s ?b ?t) (transition_known ?s ?b)
+                 (asserts_output ?s ?b))
+  )
+
+  ; In the last state ?s, input ?b completes the pattern: assert the output,
+  ; and go back to the initial state ?s0.
+  (:action analyze_match_from_scratch
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?s0 - fsm_state)
+    :precondition (and (last_state ?m ?s) (expects ?s ?b) (initial_state ?m ?s0))
+    :effect (and (transition ?s ?b ?s0) (transition_known ?s ?b)
+                 (asserts_output ?s ?b))
+  )
+
+  ; The second state ?s has one bit matched; its fallback is the initial
+  ; state ?p.
+  (:action analyze_fallback_first
+    :parameters (?m - module ?s ?p - fsm_state)
+    :precondition (and (next_prefix ?p ?s) (initial_state ?m ?p))
+    :effect (and (fallback ?s ?p) (fallback_known ?s))
+  )
+
+  ; ?s is reached from ?p on ?b; its fallback is where ?p's fallback ?fp
+  ; goes on ?b, i.e. ?t.
+  (:action analyze_fallback_extend
+    :parameters (?m - module ?s ?p - fsm_state ?b - bitval ?fp ?t - fsm_state)
+    :precondition (and (architecture_chosen ?m) (next_prefix ?p ?s) (expects ?p ?b)
+                       (fallback ?p ?fp) (transition ?fp ?b ?t))
+    :effect (and (fallback ?s ?t) (fallback_known ?s))
+  )
+
+  ;; =====================================================================
+  ;; Phase 2: write the code
+  ;; =====================================================================
+
+  ; ---- module header and port declarations ----
+
+  (:method m_write_interface
+    :parameters (?m - module ?p - port)
+    :task (write_interface ?m)
+    :precondition (first_port ?m ?p)
+    :ordered-subtasks (and
+      (t1 (write_module_header ?m))
+      (t2 (declare_ports_from ?m ?p))
+    )
+  )
+
+  (:method m_declare_ports_more
+    :parameters (?m - module ?p ?q - port)
+    :task (declare_ports_from ?m ?p)
+    :precondition (next_port ?p ?q)
+    :ordered-subtasks (and
+      (t1 (declare_port ?m ?p))
+      (t2 (declare_ports_from ?m ?q))
+    )
+  )
+
+  (:method m_declare_ports_last
+    :parameters (?m - module ?p - port)
+    :task (declare_ports_from ?m ?p)
+    :precondition (last_port ?m ?p)
+    :ordered-subtasks (and
+      (t1 (declare_port ?m ?p))
+    )
+  )
+
+  (:method m_declare_input
+    :parameters (?m - module ?p - port)
+    :task (declare_port ?m ?p)
+    :precondition (input_port ?p)
+    :ordered-subtasks (and (t1 (write_input_decl ?m ?p)))
+  )
+
+  ; The detector output is assigned inside an always block, so it is a reg.
+  (:method m_declare_output_reg
+    :parameters (?m - module ?p - port)
+    :task (declare_port ?m ?p)
+    :precondition (and (output_port ?p) (detect_output_of ?m ?p))
+    :ordered-subtasks (and (t1 (write_output_reg_decl ?m ?p)))
+  )
+
+  ; `module <m>(<ports in declaration order>);`
+  (:action write_module_header
+    :parameters (?m - module)
+    :precondition (architecture_chosen ?m)
+    :effect (section_written ?m)
+  )
+
+  ; `input <p>;`
+  (:action write_input_decl
+    :parameters (?m - module ?p - port)
+    :precondition (and (section_written ?m) (input_port ?p) (not (port_declared ?p)))
+    :effect (port_declared ?p)
+  )
+
+  ; `output reg <p>;`
+  (:action write_output_reg_decl
+    :parameters (?m - module ?p - port)
+    :precondition (and (section_written ?m) (detect_output_of ?m ?p) (output_port ?p)
+                       (not (port_declared ?p)))
+    :effect (port_declared ?p)
+  )
+
+  ; ---- state encoding and state registers ----
+
+  (:method m_write_state_declarations
+    :parameters (?m - module ?s0 - fsm_state)
+    :task (write_state_declarations ?m)
+    :precondition (initial_state ?m ?s0)
+    :ordered-subtasks (and
+      (t1 (analyze_choose_state_encoding ?m ?s0))
+      (t2 (declare_states_from ?m ?s0))
+      (t3 (write_state_regs ?m))
+    )
+  )
+
+  (:method m_declare_states_more
+    :parameters (?m - module ?s ?t - fsm_state)
+    :task (declare_states_from ?m ?s)
+    :precondition (next_prefix ?s ?t)
+    :ordered-subtasks (and
+      (t1 (write_state_param ?m ?s))
+      (t2 (declare_states_from ?m ?t))
+    )
+  )
+
+  (:method m_declare_states_last
+    :parameters (?m - module ?s - fsm_state)
+    :task (declare_states_from ?m ?s)
+    :precondition (last_state ?m ?s)
+    :ordered-subtasks (and
+      (t1 (write_state_param ?m ?s))
+    )
+  )
+
+  ; Encode the states in binary, in pattern order starting from ?s0, with
+  ; just enough bits to number them all.
+  (:action analyze_choose_state_encoding
+    :parameters (?m - module ?s0 - fsm_state)
+    :precondition (initial_state ?m ?s0)
+    :effect ()
+  )
+
+  ; `parameter <s> = <its index, in binary>;`
+  (:action write_state_param
+    :parameters (?m - module ?s - fsm_state)
+    :precondition (and (architecture_chosen ?m) (not (state_declared ?s)) (transition_known ?s zero)
+                       (transition_known ?s one))
+    :effect (state_declared ?s)
+  )
+
+  ; `reg [W-1:0] ST_cr, ST_nt;` -- current and next state, W as chosen above.
+  (:action write_state_regs
+    :parameters (?m - module)
+    :precondition (architecture_chosen ?m)
+    :effect ()
+  )
+
+  ; ---- block 1: the state register ----
+
+  (:method m_state_register_async
+    :parameters (?m - module ?clk ?rst - port ?pol - polarity ?s0 - fsm_state)
+    :task (write_state_register ?m)
+    :precondition (and (clock_of ?m ?clk) (reset_of ?m ?rst) (reset_async ?rst)
+                       (reset_polarity ?rst ?pol) (initial_state ?m ?s0))
+    :ordered-subtasks (and
+      (t1 (write_state_register_async ?m ?clk ?rst ?pol ?s0))
+    )
+  )
+
+  (:method m_state_register_sync
+    :parameters (?m - module ?clk ?rst - port ?pol - polarity ?s0 - fsm_state)
+    :task (write_state_register ?m)
+    :precondition (and (clock_of ?m ?clk) (reset_of ?m ?rst) (not (reset_async ?rst))
+                       (reset_polarity ?rst ?pol) (initial_state ?m ?s0))
+    :ordered-subtasks (and
+      (t1 (write_state_register_sync ?m ?clk ?rst ?pol ?s0))
+    )
+  )
+
+  ; `always @(posedge <clk> or <posedge|negedge> <rst>)`:
+  ; reset active -> ST_cr <= <s0>; otherwise ST_cr <= ST_nt.
+  (:action write_state_register_async
+    :parameters (?m - module ?clk ?rst - port ?pol - polarity ?s0 - fsm_state)
+    :precondition (and (clock_of ?m ?clk) (reset_of ?m ?rst) (initial_state ?m ?s0)
+                       (reset_async ?rst) (reset_polarity ?rst ?pol))
+    :effect ()
+  )
+
+  ; `always @(posedge <clk>)`:
+  ; reset active -> ST_cr <= <s0>; otherwise ST_cr <= ST_nt.
+  (:action write_state_register_sync
+    :parameters (?m - module ?clk ?rst - port ?pol - polarity ?s0 - fsm_state)
+    :precondition (and (clock_of ?m ?clk) (reset_of ?m ?rst) (initial_state ?m ?s0)
+                       (not (reset_async ?rst)) (reset_polarity ?rst ?pol))
+    :effect ()
+  )
+
+  ; ---- block 2: next-state logic ----
+
+  (:method m_write_next_state_logic
+    :parameters (?m - module ?s0 - fsm_state)
+    :task (write_next_state_logic ?m)
+    :precondition (initial_state ?m ?s0)
+    :ordered-subtasks (and
+      (t1 (write_next_state_open ?m))
+      (t2 (write_state_cases_from ?m ?s0))
+      (t3 (write_next_state_default ?m ?s0))
+      (t4 (write_next_state_close ?m))
+    )
+  )
+
+  (:method m_state_cases_more
+    :parameters (?m - module ?s ?t - fsm_state ?in - port ?t0 ?t1 - fsm_state)
+    :task (write_state_cases_from ?m ?s)
+    :precondition (and (next_prefix ?s ?t) (data_input_of ?m ?in)
+                       (transition ?s zero ?t0) (transition ?s one ?t1))
+    :ordered-subtasks (and
+      (t1 (write_state_case ?m ?s ?in ?t0 ?t1))
+      (t2 (write_state_cases_from ?m ?t))
+    )
+  )
+
+  (:method m_state_cases_last
+    :parameters (?m - module ?s - fsm_state ?in - port ?t0 ?t1 - fsm_state)
+    :task (write_state_cases_from ?m ?s)
+    :precondition (and (last_state ?m ?s) (data_input_of ?m ?in)
+                       (transition ?s zero ?t0) (transition ?s one ?t1))
+    :ordered-subtasks (and
+      (t1 (write_state_case ?m ?s ?in ?t0 ?t1))
+    )
+  )
+
+  ; `always @(*) begin case (ST_cr)`
+  (:action write_next_state_open
+    :parameters (?m - module)
+    :precondition (architecture_chosen ?m)
+    :effect ()
+  )
+
+  ; `<s>: if (<in> == 0) ST_nt = <t0>; else ST_nt = <t1>;`
+  (:action write_state_case
+    :parameters (?m - module ?s - fsm_state ?in - port ?t0 ?t1 - fsm_state)
+    :precondition (and (data_input_of ?m ?in) (state_declared ?s) (not (state_case_written ?s))
+                       (transition ?s zero ?t0) (transition ?s one ?t1))
+    :effect (state_case_written ?s)
+  )
+
+  ; `default: ST_nt = <s0>;` -- unused encodings recover to the initial state.
+  (:action write_next_state_default
+    :parameters (?m - module ?s0 - fsm_state)
+    :precondition (initial_state ?m ?s0)
+    :effect ()
+  )
+
+  ; `endcase end`
+  (:action write_next_state_close
+    :parameters (?m - module)
+    :precondition (architecture_chosen ?m)
+    :effect ()
+  )
+
+  ; ---- block 3: Mealy output logic ----
+
+  (:method m_write_mealy_output
+    :parameters (?m - module ?out ?in - port ?s - fsm_state ?b - bitval)
+    :task (write_output_logic ?m)
+    :precondition (and (mealy ?m) (detect_output_of ?m ?out)
+                       (data_input_of ?m ?in) (asserts_output ?s ?b))
+    :ordered-subtasks (and
+      (t1 (write_output_open ?m ?out))
+      (t2 (write_output_reset ?m ?out))
+      (t3 (write_output_assert ?m ?out ?s ?in ?b))
+      (t4 (write_output_default ?m ?out))
+      (t5 (write_output_close ?m))
+    )
+  )
+
+  (:method m_output_reset_clause
+    :parameters (?m - module ?out ?rst - port ?pol - polarity)
+    :task (write_output_reset ?m ?out)
+    :precondition (and (reset_of ?m ?rst) (cleared_by_reset ?out ?rst)
+                       (reset_polarity ?rst ?pol))
+    :ordered-subtasks (and
+      (t1 (write_output_reset_clause ?m ?out ?rst ?pol))
+    )
+  )
+
+  (:method m_output_no_reset_clause
+    :parameters (?m - module ?out ?rst - port)
+    :task (write_output_reset ?m ?out)
+    :precondition (and (reset_of ?m ?rst) (not (cleared_by_reset ?out ?rst)))
+    :ordered-subtasks ()
+  )
+
+  ; `always @(*) begin`
+  (:action write_output_open
+    :parameters (?m - module ?out - port)
+    :precondition (detect_output_of ?m ?out)
+    :effect ()
+  )
+
+  ; `if (<rst> is active) <out> = 0;`
+  (:action write_output_reset_clause
+    :parameters (?m - module ?out ?rst - port ?pol - polarity)
+    :precondition (and (reset_of ?m ?rst) (cleared_by_reset ?out ?rst)
+                       (reset_polarity ?rst ?pol))
+    :effect ()
+  )
+
+  ; `[else] if (ST_cr == <s> && <in> == <b>) <out> = 1;`
+  (:action write_output_assert
+    :parameters (?m - module ?out - port ?s - fsm_state ?in - port ?b - bitval)
+    :precondition (and (detect_output_of ?m ?out) (data_input_of ?m ?in)
+                       (asserts_output ?s ?b) (state_declared ?s))
+    :effect ()
+  )
+
+  ; `else <out> = 0;`
+  (:action write_output_default
+    :parameters (?m - module ?out - port)
+    :precondition (detect_output_of ?m ?out)
+    :effect ()
+  )
+
+  ; `end`
+  (:action write_output_close
+    :parameters (?m - module)
+    :precondition (architecture_chosen ?m)
+    :effect ()
+  )
+
+  ; `endmodule`
+  (:action write_module_end
+    :parameters (?m - module)
+    :precondition (and (architecture_chosen ?m) (section_written ?m))
+    :effect ()
+  )
+)

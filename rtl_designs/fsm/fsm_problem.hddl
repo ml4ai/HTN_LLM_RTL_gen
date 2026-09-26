@@ -1,0 +1,68 @@
+; design_description.txt, restated as facts for rtl_designs/rtl_domain.hddl.
+;
+; Every fact below is read off the description; none is a design decision.
+; In particular the transition table is not here -- the planner derives it.
+;
+;   "Mealy FSM detection circuit ... detects a single-bit input IN"
+;        -> (sequence_detector fsm) (mealy fsm) (data_input_of fsm IN)
+;   "When the input is 10011, output MATCH is 1"
+;        -> one state per pattern bit, (expects s_k <bit k>)
+;   "Support for continuous input and loop detection"; "1,0,0,1,1,0,0,1,1
+;    ... MATCH becomes 1 at the fifth and ninth"
+;        -> (overlapping fsm): the trailing 1 of a match may begin the next
+;   "Module name: fsm"; the port list, in the order given
+;        -> the fsm object; first_port / next_port / last_port
+;   "CLK: Clock signal", "RST: Reset signal to initialize the FSM"
+;        -> (clock_of fsm CLK) (reset_of fsm RST)
+;   "positive edge of CLK or RST, if RST is active"
+;        -> (reset_async RST) (reset_polarity RST active_high)
+;   "if RST is active, the output signal MATCH is set to 0"
+;        -> (cleared_by_reset MATCH RST)
+
+(define (problem fsm_10011)
+  (:domain rtl_fsm)
+  (:objects
+    fsm - module
+    IN CLK RST MATCH - port
+    s0 s1 s2 s3 s4 - fsm_state
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module fsm))
+  )
+  (:init
+    ; interface
+    (first_port fsm IN)
+    (next_port IN CLK)
+    (next_port CLK RST)
+    (next_port RST MATCH)
+    (last_port fsm MATCH)
+    (input_port IN)
+    (input_port CLK)
+    (input_port RST)
+    (output_port MATCH)
+    (data_input_of fsm IN)
+    (clock_of fsm CLK)
+    (reset_of fsm RST)
+    (detect_output_of fsm MATCH)
+    (reset_async RST)
+    (reset_polarity RST active_high)
+    (cleared_by_reset MATCH RST)
+
+    ; behaviour: detect 1 0 0 1 1, overlapping, Mealy
+    (sequence_detector fsm)
+    (mealy fsm)
+    (overlapping fsm)
+    (initial_state fsm s0)
+    (last_state fsm s4)
+    (next_prefix s0 s1)
+    (next_prefix s1 s2)
+    (next_prefix s2 s3)
+    (next_prefix s3 s4)
+    (expects s0 one)
+    (expects s1 zero)
+    (expects s2 zero)
+    (expects s3 one)
+    (expects s4 one)
+  )
+)
