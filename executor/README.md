@@ -8,8 +8,47 @@ planner will.
 | File | What it is |
 |---|---|
 | `executor_config.json` | Everything that can change the executor's output, pinned: model file and SHA-256, llama.cpp build, context and batch shapes, flash attention, KV cache type, sampler |
-| `smoke_test.cpp` | Loads the model under that config and checks the setup end to end |
-| `CMakeLists.txt` | Builds the smoke test on its own, apart from the planner |
+| `executor.h` | The executor itself, header-only: loads the config and model, checks the pins and the GPU, generates greedily, extracts the Verilog |
+| `run_prompt.cpp` | `executor_run`: a prompt file in, the model's Verilog out |
+| `smoke_test.cpp` | `executor_smoke`: checks the setup end to end |
+| `CMakeLists.txt` | Builds both, from the main build or on its own |
+
+## Running a prompt
+
+    executor_run PROMPT.txt [-o OUT.v] [--out-dir DIR] [--config CONFIG.json] [--quiet]
+
+The whole prompt file is the user message. The system prompt and every
+generation setting come from `executor_config.json`, and there are no flags to
+override them, so every run is comparable with every other. The reply streams to
+stdout as it is generated; progress goes to stderr. Three files are written,
+named after the prompt file (or after `-o`), in the current directory unless
+`--out-dir` says otherwise:
+
+| File | Contents |
+|---|---|
+| `NAME.v` | The Verilog: the last fenced ` ```verilog ` block of the reply |
+| `NAME.response.txt` | The whole reply |
+| `NAME.run.json` | A record of the run: config version and hash, the model's pinned hash, the llama.cpp commit, the prompt and its hash, the reply, token counts and timings |
+
+The exit status is 0 when Verilog was extracted, and 2 when the reply had no
+` ```verilog ` block. That counts as an abstention: `NAME.v` is not written, and
+one left over from an earlier run is deleted so it cannot pass for this one. The
+status is 1 on any error.
+
+For example, the fsm design description, then the gold testbench (the model
+used SystemVerilog's `typedef enum`, hence `-g2012`):
+
+    ./build/executor/executor_run rtl_designs/fsm/design_description.txt --out-dir /tmp/fsm
+    iverilog -g2012 -o /tmp/fsm/sim /tmp/fsm/design_description.v rtl_designs/fsm/testbench.v
+    vvp /tmp/fsm/sim
+
+That run takes about 80 s: about 4 s for the 284-token prompt, then 721 tokens
+at 9.7 tokens/s. Loading the model takes about 2 s once it is in the page cache.
+The Verilog it produced **fails** the testbench: its transitions return to the
+initial state where the overlapping pattern should fall back to a partial
+match, and it registers `MATCH` rather than driving it combinationally, as the
+Mealy output the spec asks for requires. Running it again, in a new process,
+gives the same bytes.
 
 ## Setup
 

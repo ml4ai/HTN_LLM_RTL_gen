@@ -63,9 +63,16 @@ target_compile_definitions(htn_llama INTERFACE
   EXECUTOR_DEFAULT_CONFIG="${EXECUTOR_CONFIG}"
   EXECUTOR_BACKEND_DIR="${LLAMA_BIN_DIR}")
 
+target_include_directories(htn_llama INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+
 add_executable(executor_smoke smoke_test.cpp)
 target_link_libraries(executor_smoke PRIVATE htn::llama)
 target_compile_options(executor_smoke PRIVATE -Wall -Wextra)
+
+# Prompt file in, Verilog file out (run_prompt.cpp).
+add_executable(executor_run run_prompt.cpp)
+target_link_libraries(executor_run PRIVATE htn::llama)
+target_compile_options(executor_run PRIVATE -Wall -Wextra)
 
 # Off by default: the smoke test loads the ~35 GB model and takes 15 s or more,
 # which a routine `ctest` should not. Select it with `ctest -L llm`.
