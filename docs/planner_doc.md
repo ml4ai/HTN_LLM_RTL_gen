@@ -368,7 +368,8 @@ proven *wins*, meaning solved subtrees whose value is exact.
 and read off a plan. At each step it:
 
 1. rebuilds a fresh search tree `m` rooted at the current node (245–258),
-2. runs MCTS for `time_limit` ms (259–315),
+2. runs MCTS for `time_limit` ms (259–315), or until the decision is forced,
+   meaning every root child but one has been refuted (§8.26),
 3. commits to the root child with the highest **mean** value (317–361). Browne
    et al. (2012) call this final-move rule "max child," after Chaslot et al.
    (2008),
@@ -1335,7 +1336,10 @@ implementation: `transport` 362×, `simple_travel` 479×, `sar3` 578×,
 15× again on the largest chain instance any encoding solves, from §8.7, which
 is a different kind of win and is measured on different instances. §8.8 bought
 no speed at all and is not meant to: it converts two crashes and two hangs into
-reported failures.
+reported failures. §8.26 is a third kind again: it makes a rollout cheaper only
+where bindings are enumerated blindly, but it stops the planner spending its
+budget on decisions that are already decided, which is 3.4–13× end to end on the
+shipped domains and 4–8× on the RTL domain.
 
 ---
 
@@ -3265,6 +3269,139 @@ this measurement rather than attempted.
 behaviour-identical, and the differential build confirms the evaluator.
 **Payoff:** 1.29–1.38× on top of §8.24.
 
+### 8.26 Early commit and precondition look-ahead — **done; changes results by design**
+
+This came out of the first RTL domain (`rtl_designs/`), started as a question
+about giving the planner a heuristic ("Not on this list", below), and ended as
+two changes that are not informed heuristics. Instrumenting the commit loop
+showed why: at the moment each decision committed, how many of the root's
+children were still alive?
+
+| run | decisions | one child only | more than one alive at commit |
+|---|---|---|---|
+| RTL fsm (`-T 10 -r 1`) | 189 | 122 | **0** |
+| `transport` (`-T 50`) | 29 | 12 | 8 |
+| `chain_mutex` (`-T 1000`) | 43 | 23 | 13 |
+| `sar3` (`-T 25`) | 18 | 15 | 3 |
+| `d18_gather` (`-T 25`) | 12 | 10 | 1 |
+
+A heuristic that estimates which option leads to a better plan can act only in
+the last column, and on the RTL domain there is nothing there. What the RTL
+search spent its time on was two kinds of waste, and each change removes one.
+
+**Early commit** (`--early_commit`, default on; `seek_planMCTS`). A decision
+used to run MCTS for its whole budget. It now stops when the root's children
+have all been generated and every one but a single child has been refuted,
+because the final max-child rule can then pick only that child. The rule
+requires refutation, not just a low value: a child that is only losing may
+still be the one committed, so anything short of a proof keeps searching. The
+decision taken is the one the full budget would have taken. What changes is
+the number of random draws, and so every later decision's stream: plans
+differ, but not in length or quality on anything measured.
+
+**Precondition look-ahead** (`--lookahead`, default on; the `lookahead`
+namespace, `simulation`, `expansion`). The loader compiles a method's state
+precondition into a synthesised action ordered ahead of its subtasks (§2.3), so
+`MethodDef::bindings` checks only types. A method parameter the task does not
+bind is enumerated over every object of its type, and a binding that cannot
+hold is found out one step later, when its precondition action fails. The RTL
+domain binds results through preconditions throughout, which is idiomatic
+HDDL, and one of its decisions had 600 children, nearly all doomed. Look-ahead
+evaluates a binding's precondition in the current state before its network is
+built:
+
+* **In a rollout,** bindings whose precondition holds are tried first, then
+  the rest, each group in its shuffled order. The check is made when a
+  binding's turn comes rather than for all bindings up front. The order is the
+  same, but a rollout returns at its first success, so checking up front was
+  paid for bindings never reached. A lone binding is not checked, since there
+  is nothing to reorder. No random numbers are drawn, and everything is still
+  tried, so a Refuted rollout is still a proof.
+* **Where failure is a proof, the binding is dropped,** in rollouts and in the
+  tree. That is when the task being decomposed is the only free task in the
+  network. Then the precondition action is the only task the new network
+  leaves free, it runs next whatever happens, and nothing can change the state
+  first. With another free task this is not so, because that task could run
+  first and make the precondition true. Under Algorithm 2 dropping it anyway
+  would usually be harmless, since the search also branches on running the
+  other task first. Under Algorithm 3 it is not, because primitives cannot run
+  while a compound task is free. `test_lookahead_respects_interleaving` is that
+  case, and fails if the condition is loosened.
+
+Look-ahead also makes the fixed-iteration mode robust on such domains. At 4
+iterations per decision without it, the RTL fsm does not plan: a 600-child
+decision's few explored children are often all doomed, so the decision reads
+as failed, and the planner backtracks until `--max_decisions` stops it. With
+it, 4 iterations plan the fsm, which is what `test_rtl_fsm_plan` runs.
+
+**A misleading message, fixed.** With no successors at the root, the planner
+blamed the time limit, even when the root itself had been proved dead by a
+Refuted first rollout or an empty expansion. Look-ahead makes an empty
+expansion common on problems with no plan, so the message now blames the
+budget only when the root is not proved dead.
+
+**Measured.** End to end, `scripts/benchmark --full` (the real time-limited
+planner) against the build before this change:
+
+| domain | before | after | | plan |
+|---|---|---|---|---|
+| `transport` | 5.8 s | 1.7 s | 3.4× | 8 actions, 3 drives, both |
+| `simple_travel` | 0.4 s | 0.1 s | 4× | same |
+| `sar3` | 1.8 s | 0.30 s | 5.9× | 7 actions, both |
+| `d18_gather` / `d18_p18` | 1.2 / 1.3 s | 0.10 / 0.10 s | 12–13× | same |
+| `chain_mutex` | 172.6 s | 37.6 s | 4.6× | 14 actions, 4 drives, both |
+
+The whole `--full` run went from about 200 s to 43 s, and the quick run from 5.7
+s to 3.2 s. On the RTL domain, over three seeds each:
+
+| run | before | after |
+|---|---|---|
+| fsm, `-T 10 -r 1` | 2.4–3.2 s | 0.6 s |
+| fsm, `-T 25` (5 rollouts a cycle) | fails at the root | 2.6 s |
+| 8-bit pattern, `-T 100 -r 1` | 32 s | 4.0 s |
+| 8-bit pattern, `-T 25 -r 1` | fails at the root | 4.0 s |
+| median rollout, fsm / 8-bit | 5.6 / 29.4 ms | 2.0 / 8.6 ms |
+
+The two failures are budgets too small for the old planner to finish one
+cycle. The 8-bit times at `-T 25` and `-T 100` are the same because nearly
+every decision now ends early, so the budget acts as a cap. Checking all 134 RTL
+configurations with `check_sequence_detectors.py` went from about 2 200 s of
+CPU to 67 s, and all 134 still pass.
+
+Rollout by rollout, look-ahead makes `transport` about 10% faster and
+`chain_mutex` about 30% faster, and raises `transport`'s mean rollout score
+slightly (0.0262 to 0.0264 over 2 000 rollouts and three seeds). The mean is
+now reported by `planner_bench` as `rollout_score_mean`, because a
+rollout-policy change can move it while the hash can only say that something
+moved. On `sar3` it costs about 7%, 32 µs to 34 µs, measured interleaved. Its
+rollouts almost never fail, so nothing is saved. The one check a decomposition
+makes is then repeated when the precondition action runs, and removing that
+repeat would mean carrying "already checked" through the task network, which
+is not worth 2 µs on a domain that is 5.9× faster end to end.
+
+**Checked.**
+* With both options off, `scripts/benchmark --compare` against the previous
+  build reports no semantic difference and no `rng_after` change, so the old
+  behaviour is exactly reproducible. With them on, `transport`, `sar3` and
+  `chain_mutex` change plan, as expected. The plans have the same actions, or
+  the same length and number of drives, in a different order. **Baselines
+  taken before this change will not compare; take a new one.**
+* Plan quality on `transport` over twelve seeds is 3 drives, the optimum,
+  with early commit on and off.
+* All six test suites pass, with two new tests. Each was checked by breaking
+  what it guards: loosening `may_prune` fails the interleaving test, and
+  restoring the old root-failure condition fails its message check.
+
+**What this is not.** Neither change estimates which option is better, and
+both leave every decision with a real choice exactly as uninformed as before.
+The next step is under "Not on this list".
+
+**Depends on:** §8.10 (Algorithm 3, for the one case where pruning is unsound),
+§8.16. **Risk:** low. Early commit takes only the decision the full budget
+would take, and look-ahead drops only proven dead ends; both are measured
+above and can be turned off. **Payoff:** 3.4–13× end to end on the shipped
+domains and 4–8× on the RTL domain; budgets become caps.
+
 ---
 
 ## 9. Remaining work
@@ -3290,6 +3427,8 @@ making the planner usable as a library (§8.20), the cleanup (§8.21), the
 task-hierarchy graph (§8.22), case-insensitive HDDL with warnings (§8.23), and
 what was left of performance (§8.24), followed by the evaluator's
 representation (§8.25). What remains below came out of those last two.
+§8.26, early commit and precondition look-ahead, came afterwards out of the
+first RTL domain; the heuristic question it raised is under "Not on this list".
 
 ---
 
@@ -3333,6 +3472,20 @@ most, measured.
   this system and the ones the literature measures. It is a research direction
   rather than a to-do, and nothing on the list above depends on it.
 
+  §8.26 started on it and says what was learned. Its look-ahead is a heuristic
+  only in the weakest sense: it orders a rollout's bindings by whether their
+  precondition holds now, and removes nothing that could lead to a plan. What
+  §8.26 measured matters more for what comes next. An informed heuristic acts
+  only at decisions with a real choice, meaning more than one option still
+  alive when the decision commits. Those are 8 of 29 decisions on `transport`,
+  13 of 43 on the mutex chain, and **none of the RTL fsm's 189**. So an
+  informed heuristic belongs with domains that have alternatives. For RTL that
+  means a domain with design alternatives in it, such as state encoding or
+  Moore against Mealy, which the current one does not have. The natural
+  general candidate is the task-decomposition-graph estimate of remaining plan
+  length (Bercher, Behnke, Höller & Biundo 2017), used as a UCT prior or as
+  rollout bias.
+
 ---
 
 ## References
@@ -3342,6 +3495,7 @@ most, measured.
 - Auer, P., Cesa-Bianchi, N., & Fischer, P. (2002). Finite-time analysis of the multiarmed bandit problem. *Machine Learning*, 47, 235–256.
 - Behnke, G., Höller, D., & Biundo, S. (2017). This is a solution! (… but is it though?) – Verifying solutions of hierarchical planning problems. *ICAPS 2017*.
 - Bercher, P., Alford, R., & Höller, D. (2019). A survey on hierarchical planning – One abstract idea, many concrete realizations. *IJCAI 2019*.
+- Bercher, P., Behnke, G., Höller, D., & Biundo, S. (2017). An admissible HTN planning heuristic. *IJCAI 2017*, 480–488. https://doi.org/10.24963/ijcai.2017/68
 - Bit-Monnot, A., Ghallab, M., Ingrand, F., & Smith, D. E. (2020). FAPE: a constraint-based planner for generative and hierarchical temporal planning. arXiv:2010.13121. https://arxiv.org/abs/2010.13121
 - Brenner, M., & Nebel, B. (2009). Continual planning and acting in dynamic multiagent environments. *JAAMAS*, 19(3), 297–331.
 - Browne, C. B., et al. (2012). A survey of Monte Carlo tree search methods. *IEEE TCIAIG*, 4(1), 1–43.

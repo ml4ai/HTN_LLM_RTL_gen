@@ -127,6 +127,14 @@ in the planning and MCTS literature.
   The synthesised check actions are search steps, not plan steps, and are left
   out of the reported plan. See [docs/planner\_doc.md](docs/planner_doc.md)
   §8.16 for what each reading does and costs.
+- Method preconditions are also used to steer the search (`--lookahead`, on
+  by default). Because of the compilation above, a method parameter the task
+  does not bind is enumerated over every object of its type. The planner now
+  evaluates each binding's precondition in the current state before building
+  its network. Rollouts try the bindings that hold first, and bindings that
+  provably cannot hold are never built. This changes which plan is found, not
+  whether one is: nothing that could lead to a plan is dropped. See
+  [docs/planner\_doc.md](docs/planner_doc.md) §8.26
 - We also developed a graphing function that can take the results of the
   planner and output a visual representation of the task hierarchy used to
   generate the grounded plan
@@ -177,13 +185,22 @@ the whole state as strings and is too slow to call per rollout.
 
 ### A note on `--time_limit`
 
-`--time_limit` (or `-T`) is the budget for **each planning decision**, and MCTS
-always spends all of it, so the total run is roughly the budget times the number
-of decisions. At the default of 1000 ms the transport domain above takes about
-30 seconds over its 29 decisions. Far less is enough: across five seeds every
-shipped domain solved reliably at 25 ms per decision, except `transport` (50 ms)
-and the chain instances (about 1000 ms, because a single rollout there can take
-hundreds of milliseconds). See [docs/planner\_doc.md](docs/planner_doc.md) §8.19.
+`--time_limit` (or `-T`) is the budget for **each planning decision**. A
+decision with a real choice spends all of it. A forced decision, where every
+option but one has been refuted, commits as soon as that is known, because
+more search could not change it (`--early_commit`, on by default). Most
+decisions are forced: half or more on every shipped domain, and all of them in
+the RTL domain of [rtl\_designs](rtl_designs/README.md). So the budget is closer
+to a cap than to a cost. With the time-limited benchmark settings, the shipped
+domains plan 3.4–13× faster than when every decision spent its whole budget,
+with plans of the same length and quality. See
+[docs/planner\_doc.md](docs/planner_doc.md) §8.26.
+
+The budget still has to be large enough to try every option once. Across five
+seeds every shipped domain solved reliably at 25 ms per decision, except
+`transport` (50 ms) and the chain instances (about 1000 ms, because a single
+rollout there can take hundreds of milliseconds). See
+[docs/planner\_doc.md](docs/planner_doc.md) §8.19.
 
 Preconditions are evaluated directly against an index of the ground facts
 rather than by a solver, which is what makes those numbers what they are — the
@@ -223,8 +240,8 @@ is meant to preserve behaviour:
 
 It exits non-zero if the plans, scores or final states moved, and prints timing
 deltas above its measured run-to-run noise (15%) without failing on them. The
-default run takes about 15 seconds; `--full` swaps the fixed-iteration runs for
-the real time-limited planner and takes about 3 minutes. A baseline must come
+default run takes about 4 seconds; `--full` swaps the fixed-iteration runs for
+the real time-limited planner and takes about 45 seconds. A baseline must come
 from the same harness version, seed and mode, and `--compare` says so up front
 if it does not. See [docs/planner\_doc.md](docs/planner_doc.md) §6.5 and §8.19.
 

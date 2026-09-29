@@ -15,10 +15,12 @@ rotated so that all four (async/sync x active-high/low) occur. Exits non-zero
 if any configuration fails to plan or fails simulation.
 
 Needs the planner built (build/apps/planners/MCTS_planner, or --planner) and
-iverilog/vvp on PATH. --time-limit is the planner's budget per decision; the
-default of 100 ms suits patterns up to 8 bits (about 32 ms per rollout there).
-Running jobs in parallel slows each rollout, so raise it if a run reports
-that the planner exhausted its time limit.
+iverilog/vvp on PATH. --time-limit is the planner's budget per decision. Every
+decision in this domain is forced, and the planner commits a forced decision as
+soon as it is known, so the budget is a cap and the default of 100 ms costs no
+more than a smaller one (planner_doc.md 8.26). It must fit one rollout, about
+9 ms for an 8-bit pattern; running jobs in parallel slows each rollout, so
+raise it if a run reports that the planner exhausted its time limit.
 """
 
 import argparse

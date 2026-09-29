@@ -97,9 +97,10 @@ NOISE_PCT = 15.0
 MIN_PLAN_MS = 5.0
 
 # Rough wall time of the whole run, printed before it starts. Measured with
-# these CONFIGS (8.19).
-DEFAULT_SECONDS = 15
-FULL_SECONDS = 200
+# these CONFIGS (8.19), and again after early commit and look-ahead (8.26),
+# which took the full run from about 200 s; the quick one was about 6 s by then.
+DEFAULT_SECONDS = 4
+FULL_SECONDS = 45
 
 
 def find_bench(explicit):

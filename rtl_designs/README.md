@@ -27,10 +27,14 @@ From the repository root, after building:
     python rtl_designs/plan_to_verilog.py plan.out > fsm.v
     iverilog -o fsm.out fsm.v rtl_designs/fsm/testbench.v && vvp fsm.out
 
-That takes about 2 s. `-r 1` matters: the default of 5 rollouts per cycle at
-about 7 ms each does not fit in `-T 10`, and the planner then stops with "exhausted
-its time limit before evaluating any option at the root". Longer patterns need more
-time; an 8-bit pattern takes about 32 ms per rollout, so use `-T 100` there.
+That takes about 0.6 s. Every decision in this domain is forced: all options
+but one are provably dead. The planner commits each one as soon as that is
+known, so `-T` is a cap rather than a cost, and raising it costs nothing
+(`docs/planner_doc.md` §8.26). It still has to fit one cycle of rollouts, at
+about 2 ms each. With the default of 5 per cycle that means `-T 25` or more,
+and a 2.6 s run. With less, the planner stops with "exhausted its time limit
+before evaluating any option at the root". An 8-bit pattern takes about 9 ms
+per rollout and plans in about 4 s at `-T 25 -r 1`.
 
 ## What the steps mean
 
@@ -70,10 +74,11 @@ It covers every pattern of 1 to 5 bits and five longer ones (6 to 8 bits), in
 both overlap modes, with all four reset styles represented (134
 configurations). For each one it writes the problem, plans it, renders the
 plan with `plan_to_verilog.py`, and simulates the result for 300 cycles against
-a brute-force Python model. All 134 pass. Rerun it after changing the domain:
+a brute-force Python model. All 134 pass, in about 25 s. Rerun it after
+changing the domain:
 
     python rtl_designs/check_sequence_detectors.py               # all 134
-    python rtl_designs/check_sequence_detectors.py --max-len 2 -j 8   # 24, about a minute
+    python rtl_designs/check_sequence_detectors.py --max-len 2 -j 8   # 24, about 6 s
 
 It needs the planner built and `iverilog` on `PATH`, and exits non-zero on any
 failure. `--keep DIR` keeps the generated problems, Verilog and testbenches.
