@@ -26,3 +26,19 @@ add_subdirectory(lib)
 
 enable_testing()
 add_subdirectory(test)
+
+# The local LLM executor (executor/), built only when libllama is found. It
+# lives in its own conda env, so add that env to the prefix path to get it:
+#   -DCMAKE_PREFIX_PATH="/opt/anaconda3/envs/htnplan;/opt/anaconda3/envs/llama"
+# The planner never depends on it, and without libllama nothing here changes.
+option(HTN_WITH_LLAMA "Build the libllama executor targets (executor/) when libllama is found" ON)
+if(HTN_WITH_LLAMA)
+  find_package(llama CONFIG QUIET)
+  find_package(nlohmann_json 3 CONFIG QUIET)
+  if(llama_FOUND AND nlohmann_json_FOUND)
+    add_subdirectory(executor)
+  else()
+    message(STATUS "libllama not found, so executor/ is not built. "
+                   "Add the llama conda env to CMAKE_PREFIX_PATH to build it.")
+  endif()
+endif()

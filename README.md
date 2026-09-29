@@ -37,6 +37,17 @@ The build directory does not have to be `build` inside the source tree: the
 tests, and the planner's default domain and problem, find `domains/` through an
 absolute path fixed when you run `cmake`.
 
+The local LLM executor in [executor/](executor/README.md) is built too when
+CMake can find libllama. The planner does not depend on it. libllama lives in
+its own conda env, so add that env to the prefix path to get it:
+
+    cmake .. -DCMAKE_PREFIX_PATH="/opt/anaconda3/envs/htnplan;/opt/anaconda3/envs/llama"
+
+Without it, or with `-DHTN_WITH_LLAMA=OFF`, the build is the planner alone.
+The executor's smoke test loads a 35 GB model, so `ctest` runs it only when
+configured with `-DHTN_LLAMA_TESTS=ON`; then `ctest -L llm` runs just that test
+and `ctest -LE llm` everything else.
+
 If you want more verbose output (e.g. if you want to show the outputs from your
 `cout << ... << endl` statements), run:
 

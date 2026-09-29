@@ -32,7 +32,13 @@ which stalled at about 50 KB/s here:
 
 ## Build and run
 
-From the repository root (any CMake of 3.19 or later; the `htnplan` env has one):
+As part of the main build, by adding the `llama` env to its prefix path (see the
+top-level README). The smoke test is then `build/executor/executor_smoke`:
+
+    cmake .. -DCMAKE_PREFIX_PATH="/opt/anaconda3/envs/htnplan;/opt/anaconda3/envs/llama"
+
+Or on its own, from the repository root (any CMake of 3.19 or later; the
+`htnplan` env has one):
 
     E=/opt/anaconda3/envs/llama
     cmake -S executor -B executor/build -DCMAKE_PREFIX_PATH=$E -DCMAKE_BUILD_TYPE=Release
@@ -40,8 +46,14 @@ From the repository root (any CMake of 3.19 or later; the `htnplan` env has one)
     ./executor/build/executor_smoke                 # about 15 s
     ./executor/build/executor_smoke --verify-hash   # also checks the model's SHA-256, about 1 min
 
-Configuring fails unless the libllama found is the build the config pins. The
-smoke test checks, and exits non-zero at the first failure:
+Code of ours that runs the executor should link the `htn::llama` target rather
+than `llama` directly. It brings libllama and the JSON reader, and defines
+`EXECUTOR_LLAMA_COMMIT`, `EXECUTOR_DEFAULT_CONFIG` and `EXECUTOR_BACKEND_DIR`.
+Linking it also means the pin checks below run before that code is built.
+
+Configuring fails unless the libllama found is the build the config pins, and
+unless the config's `backend_dir` is that build's `bin/`. The smoke test
+checks, and exits non-zero at the first failure:
 
 1. libllama is the pinned build;
 2. a GPU backend is available;
