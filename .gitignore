@@ -142,6 +142,8 @@ cmake-build-debug
 # ignore datafiles
 *.metadata
 *.json
+# ...except the executor's frozen configuration
+!executor/executor_config.json
 *.rdb
 *.png
 # ...except images the documentation shows
