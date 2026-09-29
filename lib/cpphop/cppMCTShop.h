@@ -151,6 +151,51 @@ inline void record(TaskGraph& succ, bool real, std::vector<int> const& own, int 
 
 } // namespace mprec
 
+//Precondition look-ahead (planner_doc.md 8.26).
+//
+//The loader compiles a method's state precondition into a synthesised action
+//ordered ahead of its subtasks, so MethodDef::bindings checks only types: a
+//method parameter the task does not bind is enumerated over every object of
+//its type, and a binding that cannot hold is found out one step later, when
+//its precondition action fails. In a domain whose methods bind results through
+//their preconditions -- the RTL domain does this throughout -- nearly every
+//binding is one of those. This evaluates that precondition in the current
+//state instead, before the binding's network is built.
+namespace lookahead {
+
+//Does m's precondition hold under this binding in `state`? A method with no
+//state precondition trivially does.
+inline bool holds(MethodDef const& m, Args const& binding, KnowledgeBase& state, DomainDef& domain) {
+  auto const* pre = m.precondition_subtask();
+  if (!pre) {
+    return true;
+  }
+  //Arguments exactly as MethodDef::apply_binding grounds the subtask.
+  Args args;
+  args.reserve(pre->second.size());
+  for (auto const& pt : pre->second) {
+    auto const* val = bound_value(pt.first,binding);
+    args.emplace_back(pt.first,val ? *val : pt.first);
+  }
+  return domain.actions.at(pre->first).holds(state,args);
+}
+
+//Whether a binding that fails holds() may be dropped, not just tried last.
+//
+//`free` is the number of tasks in the network with no predecessor. When the
+//task being decomposed is the only one, the method's precondition action is
+//the only task the new network leaves free (the loader orders it ahead of
+//every other subtask, and the decomposed task's successors stay behind them),
+//so it is the next step whatever happens and nothing can change the state
+//before it runs. A binding whose precondition fails now is then a proven dead
+//end. With any other free task that is not so: that task could run first and
+//make the precondition true, so the binding is only unpromising.
+inline bool may_prune(int free) {
+  return free == 1;
+}
+
+} // namespace lookahead
+
 //Why a rollout stopped.
 //
 //The distinction between Refuted and Cutoff is load-bearing rather than
@@ -198,7 +243,8 @@ simulation(std::vector<std::string>& plan,
            DomainDef& domain,
            std::mt19937_64& g,
            int depth_budget,
-           int restrict_compound) {
+           int restrict_compound,
+           bool lookahead) {
   if (tasks.empty()) {
     return {RolloutStatus::Solved,domain.score(state,plan)};
   }
@@ -238,6 +284,9 @@ simulation(std::vector<std::string>& plan,
       }
     }
   }
+  //Every free task, counted before restrict_compound narrows the candidates:
+  //one left out of the candidates can still run first.
+  int const free = (int)(u.size() + compound.size());
   //1 = lowest task id, exactly as expansion picks it, so the rollout explores
   //the same shape of space the tree does. 2 = a uniformly random one, which
   //keeps the branching reduction but restores the per-rollout diversity a
@@ -320,7 +369,7 @@ simulation(std::vector<std::string>& plan,
           if (step) {
             plan.push_back(act.first+"_"+std::to_string(cTask));
           }
-          auto rs = simulation(plan,ns,gtasks,domain,g,depth_budget-1,restrict_compound);
+          auto rs = simulation(plan,ns,gtasks,domain,g,depth_budget-1,restrict_compound,lookahead);
           if (step) {
             plan.pop_back();
           }
@@ -353,14 +402,38 @@ simulation(std::vector<std::string>& plan,
           std::vector<int> pick(bindings.size());
           std::iota(pick.begin(),pick.end(),0);
           std::shuffle(pick.begin(),pick.end(),g);
-          for (int bi : pick) {
-            auto gts = m.ground(bindings[bi],tasks,cTask,domain.precondition_mode);
-            auto rs = simulation(plan,state,gts.second,domain,g,depth_budget-1,restrict_compound);
-            if (rs.status == RolloutStatus::Solved) {
-              return rs;
-            }
-            if (rs.status == RolloutStatus::Cutoff) {
-              return rs;
+          //Look-ahead (8.26): bindings whose precondition holds now are tried
+          //first, then the rest, each group in its shuffled order; where
+          //failing is a proof (lookahead::may_prune) the rest are dropped.
+          //Nothing else is skipped, so a Refuted result is still a proof, and
+          //nothing is drawn from the RNG, so the stream is the one it was.
+          //
+          //The check is made when a binding's turn comes, not for all of them
+          //up front. The order is the same, but a rollout returns at its
+          //first success, so checking every binding first was paid for
+          //bindings never reached: 8% on sar3's rollouts, which almost never
+          //fail. A lone binding is not checked unless it can be pruned,
+          //since there is nothing to reorder.
+          bool const prune = lookahead::may_prune(free);
+          bool const guided = lookahead && m.precondition_subtask() &&
+                              (pick.size() > 1 || prune);
+          std::vector<int> deferred;
+          for (int pass = 0; pass < 2; pass++) {
+            for (int bi : pass == 0 ? pick : deferred) {
+              if (pass == 0 && guided && !lookahead::holds(m,bindings[bi],state,domain)) {
+                if (!prune) {
+                  deferred.push_back(bi);
+                }
+                continue;
+              }
+              auto gts = m.ground(bindings[bi],tasks,cTask,domain.precondition_mode);
+              auto rs = simulation(plan,state,gts.second,domain,g,depth_budget-1,restrict_compound,lookahead);
+              if (rs.status == RolloutStatus::Solved) {
+                return rs;
+              }
+              if (rs.status == RolloutStatus::Cutoff) {
+                return rs;
+              }
             }
           }
         }
@@ -375,7 +448,8 @@ inline int expansion(pTree& t,
               int n,
               DomainDef& domain,
               std::mt19937_64& g,
-              int algorithm) {
+              int algorithm,
+              bool lookahead) {
     //Höller et al.'s Algorithm 2: branch over every unconstrained primitive
     //task, but over only a single unconstrained compound one. Which compound
     //task is decomposed first carries no commitment -- only the choice of
@@ -410,7 +484,8 @@ inline int expansion(pTree& t,
           throw std::logic_error(message);
         }
       }
-    } 
+    }
+    int const free = (int)(u.size() + compound.size());
     if (!compound.empty()) {
       //The one line that separates the two algorithms: Algorithm 3 drops the
       //unconstrained primitive tasks entirely while a compound one is waiting.
@@ -468,7 +543,22 @@ inline int expansion(pTree& t,
       }
       else {
         for (auto &m : domain.methods[t[n].tasks[tid].head]) {
-          auto gts = m.apply(t[n].state,t[n].tasks[tid].args,t[n].tasks,tid,domain.precondition_mode);
+          //Look-ahead (8.26): where it is a proof, a binding whose
+          //precondition fails now is not made a child. Each such child used
+          //to cost a node, a copied network and a rollout to find it dead,
+          //and one RTL decision had 600 of them. Only proven dead ends are
+          //dropped, so the tree's children are otherwise what they were.
+          std::vector<std::pair<std::vector<int>,TaskGraph>> gts;
+          if (lookahead && lookahead::may_prune(free) && m.precondition_subtask()) {
+            for (auto const& b : m.bindings(t[n].state,t[n].tasks[tid].args)) {
+              if (lookahead::holds(m,b,t[n].state,domain)) {
+                gts.push_back(m.ground(b,t[n].tasks,tid,domain.precondition_mode));
+              }
+            }
+          }
+          else {
+            gts = m.apply(t[n].state,t[n].tasks[tid].args,t[n].tasks,tid,domain.precondition_mode);
+          }
           //Named `grounding`, not `g`: that is the RNG, and a loop variable of
           //the same name shadowed it for the length of this loop.
           for (auto &grounding : gts) {
@@ -514,6 +604,8 @@ seek_planMCTS(pTree& t,
               int max_decisions,
               int restrict_rollouts,
               int algorithm,
+              bool early_commit,
+              bool lookahead,
               long& cutoffs) {
   int stuck_counter = 10;
   //A global cap on committed decisions, separate from stuck_counter, which
@@ -593,7 +685,8 @@ seek_planMCTS(pTree& t,
                                  domain,
                                  g,
                                  max_depth,
-                                 restrict_rollouts);
+                                 restrict_rollouts,
+                                 lookahead);
             //Test this rollout, not the running sum: a failure after a
             //successful rollout leaves a sum that is not -1, so it used to go
             //unnoticed and its -1 was folded into the node's score.
@@ -623,7 +716,7 @@ seek_planMCTS(pTree& t,
         }
         else {
           m[n].state.update_state();
-          int n_p = expansion(m,n,domain,g,algorithm);
+          int n_p = expansion(m,n,domain,g,algorithm,lookahead);
           m[n_p].state.update_state();
           double ar = 0.0;
           bool bp = true;
@@ -634,7 +727,8 @@ seek_planMCTS(pTree& t,
                                  domain,
                                  g,
                                  max_depth,
-                                 restrict_rollouts);
+                                 restrict_rollouts,
+                                 lookahead);
             if (rs.status == RolloutStatus::Refuted) {
               m[n_p].deadend = true;
               backprop(m,n_p,-1.0,1);
@@ -655,6 +749,25 @@ seek_planMCTS(pTree& t,
         }
       }
       stop = std::chrono::high_resolution_clock::now();
+      //Early commit (8.26). Once the root's children are all generated and
+      //every one but a single child has been refuted, the decision below can
+      //only pick that child, so the rest of the budget cannot change it. The
+      //search used to spend the budget anyway, and most decisions are like
+      //this: every one of the RTL fsm's 189, and half or more on every
+      //shipped domain. Refuted, not merely low-valued: a child that is only
+      //losing may still be the one taken, so nothing short of a proof stops
+      //the search.
+      if (early_commit && m[w].unexplored.empty() && !m[w].successors.empty()) {
+        int live = 0;
+        for (auto const& s : m[w].successors) {
+          if (!m[s].deadend && ++live > 1) {
+            break;
+          }
+        }
+        if (live == 1) {
+          break;
+        }
+      }
     }
 
     std::vector<int> arg_maxes = {};
@@ -682,11 +795,14 @@ seek_planMCTS(pTree& t,
       //commit loop below would then exit and report an empty plan as a
       //success. Fail loudly instead.
       if (u == -1) {
-        //Distinguish the two ways of getting here. With no successors at all,
-        //the budget ran out before a single option was expanded, which says
-        //nothing about whether a plan exists; with successors that are all
-        //dead, the options were genuinely refuted.
-        if (m[w].successors.empty()) {
+        //Distinguish the two ways of getting here. With no successors and a
+        //root not proven dead, the budget ran out before a single option was
+        //expanded, which says nothing about whether a plan exists. Otherwise
+        //the options were genuinely refuted: every successor dead, or the root
+        //itself -- its first rollout Refuted, or its expansion empty, which
+        //look-ahead makes common when no binding can hold (8.26). Testing
+        //successors alone blamed the time limit for those proofs.
+        if (m[w].successors.empty() && !m[w].deadend) {
           throw std::logic_error(
               "Planner exhausted its time limit before evaluating any option at the "
               "root. Raise --time_limit (-T) and try again!");
@@ -846,7 +962,9 @@ cppMCTShop(DomainDef& domain,
            int max_depth = kDefaultMaxRolloutDepth,
            int max_decisions = kDefaultMaxDecisions,
            int restrict_rollouts = 0,
-           int algorithm = 2) {
+           int algorithm = 2,
+           bool early_commit = true,
+           bool lookahead = true) {
     check_bound_names(domain,problem);
     domain.set_scorer(scorer);
     pTree t;
@@ -878,7 +996,7 @@ cppMCTShop(DomainDef& domain,
     long cutoffs = 0;
     auto end = seek_planMCTS(t, tasktree, v, domain, time_limit, r, c, g,
                              max_iterations, max_depth, max_decisions, restrict_rollouts,
-                             algorithm, cutoffs);
+                             algorithm, early_commit, lookahead, cutoffs);
     //A rollout that hit the bound is not evidence of anything, so if many did,
     //the search was steering on much less information than it appears to have.
     //Say so: a bound set too low for the domain otherwise looks exactly like a

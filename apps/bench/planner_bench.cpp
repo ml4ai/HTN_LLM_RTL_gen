@@ -107,6 +107,8 @@ int main(int argc, char* argv[]) {
   int max_decisions = kDefaultMaxDecisions;
   int restrict_rollouts = 0;
   int algorithm = 2;
+  bool early_commit = true;
+  bool lookahead = true;
   std::string precondition_mode = "at_start";
   double c = sqrt(2.0);
   bool do_plan = false, show_state = false;
@@ -130,6 +132,8 @@ int main(int argc, char* argv[]) {
       ("precondition_mode", po::value<std::string>(&precondition_mode), "how method preconditions are read: at_start (default), protected, or compiled (HDDL's own semantics)")
       ("algorithm", po::value<int>(&algorithm), "progression algorithm for expansion: 2 (default) branches over all unconstrained primitives plus one compound; 3 progresses no action while any compound task is unconstrained")
       ("restrict_rollouts", po::value<int>(&restrict_rollouts), "rollout candidate set: 0 = every unconstrained task (default), 1 = Algorithm 2 with expansion's lowest-id pick, 2 = Algorithm 2 with a random pick")
+      ("early_commit", po::value<bool>(&early_commit), "commit a decision once every option but one is refuted; default = true")
+      ("lookahead", po::value<bool>(&lookahead), "evaluate method preconditions before building their networks; default = true")
       ("show_state", po::bool_switch(&show_state), "also print the sorted final state")
     ;
     po::variables_map vm;
@@ -194,10 +198,11 @@ int main(int argc, char* argv[]) {
       std::vector<double> ms;
       std::ostringstream scores;
       int failed = 0, cut = 0;
+      double score_sum = 0.0;
       for (int i = 0; i < rollouts; i++) {
         std::vector<std::string> plan;
         auto t0 = std::chrono::steady_clock::now();
-        auto rs = simulation(plan,state,tasks,domain,g,max_depth,restrict_rollouts);
+        auto rs = simulation(plan,state,tasks,domain,g,max_depth,restrict_rollouts,lookahead);
         ms.push_back(std::chrono::duration<double,std::milli>(
                        std::chrono::steady_clock::now()-t0).count());
         if (i) scores << ",";
@@ -207,6 +212,7 @@ int main(int argc, char* argv[]) {
         //swapped would be a behaviour change worth failing on.
         if (rs.status == RolloutStatus::Solved) {
           scores << std::fixed << std::setprecision(6) << rs.score;
+          score_sum += rs.score;
         }
         else if (rs.status == RolloutStatus::Cutoff) {
           scores << "cutoff";
@@ -232,6 +238,7 @@ int main(int argc, char* argv[]) {
       std::cout << "rollout_cutoff=" << cut << "\n";
       std::cout << "max_depth=" << max_depth << "\n";
       std::cout << "restrict_rollouts=" << restrict_rollouts << "\n";
+      std::cout << "lookahead=" << lookahead << "\n";
       //Four decimals: the fastest domains' rollouts take about ten
       //microseconds, which two decimals rounded to 0.01 or 0.00 -- a
       //"100% faster" out of nothing.
@@ -261,6 +268,12 @@ int main(int argc, char* argv[]) {
       std::ostringstream hs;
       hs << std::hex << std::setw(16) << std::setfill('0') << h;
       std::cout << "rollout_scores=" << head << "\n";
+      //What a change to the rollout policy does to the value estimates the
+      //tree steers by, which the hash can only say moved (8.26). Over solved
+      //rollouts; failures and cutoffs are counted above.
+      int const solved = rollouts - failed - cut;
+      std::cout << std::setprecision(6)
+                << "rollout_score_mean=" << (solved ? score_sum/solved : 0.0) << "\n";
       std::cout << "rollout_scores_hash=" << hs.str() << "\n";
       std::ostringstream rng;
       rng << std::hex << std::setw(16) << std::setfill('0') << g();
@@ -276,6 +289,7 @@ int main(int argc, char* argv[]) {
       }
       std::cout << "simulations=" << r << "\n";
       std::cout << "algorithm=" << algorithm << "\n";
+      std::cout << "early_commit=" << early_commit << "\n";
       //The harness speaks key=value, so the planner's narration is off.
       domain.narration = nullptr;
       auto t0 = std::chrono::steady_clock::now();
@@ -285,7 +299,7 @@ int main(int argc, char* argv[]) {
       size_t plan_len = 0;
       std::string state_canon;
       try {
-        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions,restrict_rollouts,algorithm);
+        auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions,restrict_rollouts,algorithm,early_commit,lookahead);
         auto& end = results.t[results.end];
         plan_len = end.plan.size();
         for (size_t i = 0; i < end.plan.size(); i++) {

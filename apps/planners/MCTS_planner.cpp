@@ -28,6 +28,8 @@ int main(int argc, char* argv[]) {
   int max_depth = kDefaultMaxRolloutDepth;
   int max_decisions = kDefaultMaxDecisions;
   std::string precondition_mode = "at_start";
+  bool early_commit = true;
+  bool lookahead = true;
   //Absolute, from the build configuration, so the default runs from anywhere.
   //The fallback is the old relative path, correct only from <source>/build.
 #ifndef HTN_DOMAINS_DIR
@@ -43,10 +45,12 @@ int main(int argc, char* argv[]) {
     po::options_description desc("Allowed options");
     desc.add_options()
       ("help,h", "produce help message")
-      ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search decision (int), default = 1000. MCTS always spends the whole budget, so lower it for small domains")
+      ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search decision (int), default = 1000. A decision spends all of it unless every option but one is refuted first (see --early_commit)")
       ("simulations,r", po::value<int>(), "Number of simulations per MCTS cycle (int), default = 5")
       ("exp_param,c",po::value<double>(),"The exploration parameter for the planner (double), default = sqrt(2)")
       ("precondition_mode",po::value<std::string>(),"How method preconditions are read (string): at_start (default; must also hold at the method's first real action), protected (must hold throughout from the check to that action), or compiled (HDDL's own semantics, for conformance; accepts plans that break a precondition before the method starts)")
+      ("early_commit",po::value<bool>(),"Commit a decision as soon as every option but one is refuted, rather than spending the rest of --time_limit on it (bool), default = true. It cannot change which option is taken")
+      ("lookahead",po::value<bool>(),"Evaluate a method's precondition in the current state before building its network (bool), default = true: rollouts try the bindings that hold first, and bindings that provably cannot hold are dropped")
       ("max_decisions",po::value<int>(),"Backstop on the number of committed decisions before the planner gives up (int), default = 1000. It exists so that a search with no useful signal reports instead of running forever")
       ("max_depth",po::value<int>(),"Depth bound for a single rollout (int), default = 1000. Rollouts are a depth-first search, so a domain whose decomposition can cycle needs this to terminate; raise it if the planner reports rollouts stopping at the bound")
       ("dom_file,D", po::value<std::string>(),"domain file (string), default = transport_domain.hddl")
@@ -85,6 +89,14 @@ int main(int argc, char* argv[]) {
 
     if (vm.count("max_decisions")) {
       max_decisions = vm["max_decisions"].as<int>();
+    }
+
+    if (vm.count("early_commit")) {
+      early_commit = vm["early_commit"].as<bool>();
+    }
+
+    if (vm.count("lookahead")) {
+      lookahead = vm["lookahead"].as<bool>();
     }
 
     if (vm.count("precondition_mode")) {
@@ -164,7 +176,7 @@ int main(int argc, char* argv[]) {
       //after the whole search.
       task_graph::format_of(graph_file);
       auto start = std::chrono::high_resolution_clock::now();
-      auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions);
+      auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions,0,2,early_commit,lookahead);
       auto stop = std::chrono::high_resolution_clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
       cout << "Time taken by planner: "
@@ -188,7 +200,7 @@ int main(int argc, char* argv[]) {
     }
     else {
       auto start = std::chrono::high_resolution_clock::now();
-      cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions);
+      cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions,0,2,early_commit,lookahead);
       auto stop = std::chrono::high_resolution_clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
       cout << "Time taken by planner: "

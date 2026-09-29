@@ -732,6 +732,15 @@ class MethodDef {
     TaskDefs get_subtasks() {
       return this->subtasks;
     }
+
+    //The synthesised precondition subtask (loader.h) -- the action name and
+    //the method parameters it is passed -- or nullptr for a method with no
+    //state precondition. By pointer rather than through get_subtasks(),
+    //which copies the whole map, because the search asks per binding (8.26).
+    TaskDef const* precondition_subtask() const {
+      auto pre = this->subtasks.find("__mprec__");
+      return pre == this->subtasks.end() ? nullptr : &pre->second;
+    }
     
     std::unordered_map<std::string,std::vector<std::string>> get_orderings() {
       return this->orderings;

@@ -302,3 +302,114 @@ BOOST_AUTO_TEST_CASE(test_method_precondition_modes) {
         }
     }
 }// end of testing method-precondition semantics
+
+//Precondition look-ahead (planner_doc.md 8.26) may drop a binding whose
+//precondition fails now only when the decomposed task is the only free task,
+//because then nothing can run before the check. Here it is not: consume's
+//item is readied by make_ready, which is free when `use` is decomposed.
+//Algorithm 3 is what makes this bite. It progresses no action while a compound
+//task is free, so `use` must be decomposed before make_ready can run, with
+//(ready b) still false. Algorithm 2 would also branch on running make_ready
+//first, and hide a look-ahead that pruned too eagerly.
+BOOST_AUTO_TEST_CASE(test_lookahead_respects_interleaving) {
+    std::string dom = R"(
+(define (domain lookahead_test)
+  (:requirements :typing :hierarchy :method-preconditions)
+  (:types item - object)
+  (:predicates (spare ?i - item) (ready ?i - item) (used ?i - item))
+  (:task go :parameters ())
+  (:task use :parameters ())
+  (:method m_go
+    :parameters (?s - item)
+    :task (go)
+    :subtasks (and (t1 (use)) (t2 (make_ready ?s))))
+  (:method m_use
+    :parameters (?i - item)
+    :task (use)
+    :precondition (ready ?i)
+    :ordered-subtasks (and (t1 (consume ?i))))
+  (:action make_ready
+    :parameters (?i - item)
+    :precondition (spare ?i)
+    :effect (ready ?i))
+  (:action consume
+    :parameters (?i - item)
+    :precondition (ready ?i)
+    :effect (used ?i)))
+)";
+    std::string prob = R"(
+(define (problem lookahead_p)
+  (:domain lookahead_test)
+  (:objects a b - item)
+  (:htn :parameters () :subtasks (and (go)))
+  (:init (spare b)))
+)";
+    for (int algorithm : {2, 3}) {
+        for (bool lookahead : {false, true}) {
+            BOOST_TEST_CONTEXT("algorithm " << algorithm << " lookahead " << lookahead) {
+                auto [domain,problem] = load_hddl(dom, prob);
+                domain.narration = nullptr;
+                auto results = cppMCTShop(domain,problem,scorers["simple"],0,1,sqrt(2.0),2022,
+                                          10,kDefaultMaxRolloutDepth,kDefaultMaxDecisions,
+                                          algorithm == 3 ? 3 : 0,algorithm,true,lookahead);
+                auto& end = results.t[results.end];
+                BOOST_TEST(end.state.get_facts("used").contains("(used b)"));
+                BOOST_TEST(end.plan.size() == 2u);
+            }
+        }
+    }
+    //With nothing spare there is no plan, and the planner must say it proved
+    //that rather than blame its time limit, which it used to whenever the
+    //root had no successors -- including when the root itself was refuted.
+    std::string none = prob;
+    none.replace(none.find("(:init (spare b))"), 17, "(:init)");
+    for (bool lookahead : {false, true}) {
+        auto [domain,problem] = load_hddl(dom, none);
+        domain.narration = nullptr;
+        BOOST_CHECK_EXCEPTION(
+            cppMCTShop(domain,problem,scorers["simple"],0,1,sqrt(2.0),2022,
+                       10,kDefaultMaxRolloutDepth,kDefaultMaxDecisions,0,2,true,lookahead),
+            std::logic_error,
+            [](std::logic_error const& e) {
+                return std::string(e.what()).find("no plan exists") != std::string::npos;
+            });
+    }
+}
+
+//The RTL demo's plan (rtl_designs/), as a regression test of both 8.26 changes
+//on the domain they were made for. Every decision in it is forced and its plan
+//is unique, so early commit, which may only ever skip search that could not
+//change a decision, must return exactly the committed plan whether it is on
+//or off. Four iterations a decision is enough only because look-ahead keeps
+//the doomed bindings out of the tree: without it, a decision's few explored
+//children are often all dead, and the planner backtracks until its decision
+//cap stops it.
+BOOST_AUTO_TEST_CASE(test_rtl_fsm_plan) {
+    std::string const dir = HTN_DOMAINS_DIR "/../rtl_designs";
+    std::vector<std::string> expected;
+    {
+        std::ifstream in(dir + "/fsm/fsm_plan.txt");
+        BOOST_TEST_REQUIRE(in.good(), "cannot read " << dir << "/fsm/fsm_plan.txt");
+        for (std::string line; std::getline(in, line);) {
+            if (!line.empty()) {
+                expected.push_back(line);
+            }
+        }
+    }
+    BOOST_TEST_REQUIRE(expected.size() == 42u);
+    for (bool early : {true, false}) {
+        BOOST_TEST_CONTEXT("early_commit " << early) {
+            auto [domain,problem] = load(dir + "/rtl_domain.hddl", dir + "/fsm/fsm_problem.hddl");
+            domain.narration = nullptr;
+            auto results = cppMCTShop(domain,problem,scorers["simple"],0,1,sqrt(2.0),2022,
+                                      4,kDefaultMaxRolloutDepth,kDefaultMaxDecisions,0,2,early,true);
+            //Plan steps carry the id of the task they came from, "(...)_17";
+            //the committed file does not.
+            std::vector<std::string> plan;
+            for (auto const& step : results.t[results.end].plan) {
+                plan.push_back(step.substr(0, step.rfind('_')));
+            }
+            BOOST_TEST(plan == expected, boost::test_tools::per_element());
+        }
+    }
+}
