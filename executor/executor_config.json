@@ -1,5 +1,5 @@
 {
-  "config_version": 1,
+  "config_version": 2,
   "description": "Frozen executor configuration for the local LLM that writes Verilog from the planner's instructions. Everything that can change the executor's output is pinned here: the model file and its hash, the llama.cpp build, context and batch shapes, flash attention, KV cache type and the sampler. Change any of it and results are no longer comparable with runs made under the old values; bump config_version when you do.",
 
   "model": {
@@ -54,6 +54,16 @@
   "sampling": {
     "sampler": "greedy",
     "note": "Argmax only: no temperature, top-k/top-p, penalties, DRY, grammar or speculative drafting. Greedy single-sequence decoding is what makes the output reproducible (LLM_RTL_code_generation.md 9.8). The pass@k ladder uses a separate, seeded sampled configuration."
+  },
+
+  "ladder_sampling": {
+    "temperature": 0.85,
+    "top_p": 0.95,
+    "base_seed": 20260929,
+    "parallel_sequences": 20,
+    "kv_unified": true,
+    "chain": "temperature, then top-p, then a seeded draw (the OpenAI and Hugging Face order); sample i of a request is seeded base_seed + i",
+    "note": "For the sampled pass@k ladders only (n samples per problem); the greedy line uses the sampling block above. Temperature and top-p are VerilogEval v2's own setting for n = 20 samples, the default candidate to pre-register. Samples are decoded parallel_sequences at a time as separate sequences sharing one decoded prompt; outputs are reproducible per seed under this configuration, not bit-identical across batch sizes. Measured 2026-09-30 on a VerilogEval FSM problem: 20 sequences in one unified cache ran at 36.6 tokens/s in aggregate, against 9.7 for one sequence, 24.8 for 10 unified and 18.2 for 10 in separate per-sequence caches."
   },
 
   "generation": {

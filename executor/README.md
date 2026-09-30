@@ -10,6 +10,7 @@ planner will.
 | `executor_config.json` | Everything that can change the executor's output, pinned: model file and SHA-256, llama.cpp build, context and batch shapes, flash attention, KV cache type, sampler |
 | `executor.h` | The executor itself, header-only: loads the config and model, checks the pins and the GPU, generates greedily, extracts the Verilog |
 | `run_prompt.cpp` | `executor_run`: a prompt file in, the model's Verilog out |
+| `sample_request.cpp` | `executor_sample`: n samples of one request, for the evaluation harness (`eval/`) |
 | `smoke_test.cpp` | `executor_smoke`: checks the setup end to end |
 | `CMakeLists.txt` | Builds both, from the main build or on its own |
 
@@ -103,6 +104,45 @@ checks, and exits non-zero at the first failure:
 
 `--verbose` shows llama.cpp's own log, which is where to look when a backend
 will not load or a model will not fit.
+
+## Sampling for the pass@k ladders
+
+`executor_sample --request REQ.json --out-dir DIR --n 20` draws 20 samples of a
+request. `REQ.json` holds the benchmark adapter's messages, `{"system": ...,
+"user": ...}`, because the prompt template belongs to the benchmark, not to
+the executor. It writes one `sample_XX.response.txt` per sample, and `gen.json`
+(settings, seeds, token counts, timings) last, so a directory without
+`gen.json` is unfinished. `--greedy` draws the single greedy reply instead,
+under the same frozen settings as `executor_run`. The harness in `eval/` drives
+it; see `eval/README.md`.
+
+The config's `ladder_sampling` block sets how:
+
+- **Sampler:** temperature 0.85, then top-p 0.95, then a draw seeded
+  `base_seed + i` for sample i. That is VerilogEval v2's setting for 20 samples,
+  applied in the order the OpenAI and Hugging Face samplers use.
+- **Batching:** the 20 samples are decoded as one batch of 20 sequences. The
+  prompt is decoded once, its memory copied to every sequence, and each step
+  then decodes one token of every unfinished sequence. Decoding on Apple Silicon
+  is bound by reading the weights, which a batch reads once for all its
+  sequences.
+
+| Decoding (32B, M1 Max) | Tokens/s in aggregate |
+|---|---|
+| 1 sequence | 9.7 |
+| 10 sequences, separate caches | 18.2 |
+| 10 sequences, one shared cache | 24.8 |
+| **20 sequences, one shared cache (the setting)** | **36.6** |
+
+These were measured on a VerilogEval FSM problem.
+
+A copy test confirms that the prompt reaches every sequence. At a temperature
+near zero, all sequences reproduce the greedy reply. If the copy failed, the
+sequences after the first would have generated without the prompt.
+
+Sampled output is reproducible **per seed, under a fixed configuration**. It is
+not bit-identical across batch sizes, because GPU kernels are not
+batch-invariant. The greedy line is the bit-exact one.
 
 ## Things that are easy to get wrong
 

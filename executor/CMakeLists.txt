@@ -74,6 +74,11 @@ add_executable(executor_run run_prompt.cpp)
 target_link_libraries(executor_run PRIVATE htn::llama)
 target_compile_options(executor_run PRIVATE -Wall -Wextra)
 
+# n samples of one request, for the evaluation harness in eval/ (sample_request.cpp).
+add_executable(executor_sample sample_request.cpp)
+target_link_libraries(executor_sample PRIVATE htn::llama)
+target_compile_options(executor_sample PRIVATE -Wall -Wextra)
+
 # Off by default: the smoke test loads the ~35 GB model and takes 15 s or more,
 # which a routine `ctest` should not. Select it with `ctest -L llm`.
 option(HTN_LLAMA_TESTS "Register the executor smoke test with ctest (loads the model)" OFF)

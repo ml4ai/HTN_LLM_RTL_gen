@@ -19,6 +19,7 @@
 #include <CommonCrypto/CommonDigest.h>
 #endif
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -114,6 +115,7 @@ struct Reply {
   double prompt_seconds = 0.0;
   double decode_seconds = 0.0;
   double decode_tok_s = 0.0;
+  uint32_t seed = 0;          //sampled replies only (generate_samples)
 };
 
 class LibLlamaExecutor {
@@ -182,7 +184,13 @@ public:
   //The prompt exactly as the model sees it: the config's system prompt and
   //this user message, in the chat template embedded in the GGUF.
   std::string format(std::string const& user) const {
-    std::string const sys = cfg_["generation"]["system_prompt"];
+    return format(cfg_["generation"]["system_prompt"].get<std::string>(), user);
+  }
+
+  //The same with an explicit system prompt. Benchmarks bring their own prompt
+  //templates, system message included; the template belongs to the benchmark
+  //adapter, not to the executor, whose frozen settings are how it decodes.
+  std::string format(std::string const& sys, std::string const& user) const {
     llama_chat_message msgs[] = {{"system", sys.c_str()}, {"user", user.c_str()}};
     char const* tmpl = llama_model_chat_template(model_, nullptr);
     std::vector<char> buf(user.size() + sys.size() + 1024);
@@ -201,19 +209,25 @@ public:
   //receives the reply as it is generated.
   Reply generate(std::string const& user,
                  std::function<void(std::string const&)> const& on_piece = {}) {
+    return generate(cfg_["generation"]["system_prompt"].get<std::string>(), user, on_piece);
+  }
+
+  Reply generate(std::string const& sys, std::string const& user,
+                 std::function<void(std::string const&)> const& on_piece = {}) {
     json const& cx = cfg_["context"];
     int const max_new = cfg_["generation"]["max_new_tokens"];
     const llama_vocab* vocab = llama_model_get_vocab(model_);
-    std::string const prompt = format(user);
-
-    int n = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), nullptr, 0, true, true);
-    std::vector<llama_token> toks(n);
-    llama_tokenize(vocab, prompt.c_str(), prompt.size(), toks.data(), n, true, true);
+    std::vector<llama_token> toks = tokenize(format(sys, user));
+    int const n = (int)toks.size();
     int const n_ctx = cx["n_ctx"];
     if (n + max_new > n_ctx) {
       throw std::runtime_error("prompt is " + std::to_string(n) + " tokens; with max_new_tokens " +
                                std::to_string(max_new) + " that exceeds n_ctx " +
                                std::to_string(n_ctx));
+    }
+    if (n > cx["n_batch"].get<int>()) {
+      throw std::runtime_error("prompt is " + std::to_string(n) + " tokens, more than n_batch " +
+                               std::to_string(cx["n_batch"].get<int>()));
     }
 
     auto cp = llama_context_default_params();
@@ -286,7 +300,191 @@ public:
     return r;
   }
 
+  //`n` samples of one request, for the pass@k ladders (the config's
+  //ladder_sampling block): seeded temperature and top-p sampling, sample i
+  //seeded base_seed + i. They are decoded parallel_sequences at a time as
+  //separate sequences of one context: the prompt is decoded once, its memory
+  //copied to every sequence, and each step then decodes one token of every
+  //unfinished sequence in a single batch. Decoding on Apple Silicon is bound
+  //by reading the weights, which a batch reads once for all its sequences.
+  //
+  //Not bit-reproducible across batch compositions: GPU kernels are not
+  //batch-invariant, so the same seed in a different batch can decode
+  //differently. Sampled runs promise per-seed reproducibility under a fixed
+  //configuration, not more; the greedy line (generate) is the bit-exact one.
+  std::vector<Reply> generate_samples(std::string const& sys, std::string const& user, int n,
+                                      std::function<void(int, int)> const& on_done = {}) {
+    json const& ls = cfg_.at("ladder_sampling");
+    float const temperature = ls["temperature"];
+    float const top_p = ls["top_p"];
+    uint32_t const base_seed = ls["base_seed"];
+    int const parallel = ls["parallel_sequences"];
+    bool const kv_unified = ls.value("kv_unified", false);
+    json const& cx = cfg_["context"];
+    int const max_new = cfg_["generation"]["max_new_tokens"];
+    int const n_batch = cx["n_batch"];
+    const llama_vocab* vocab = llama_model_get_vocab(model_);
+    std::vector<llama_token> const toks = tokenize(format(sys, user));
+    int const n_prompt = (int)toks.size();
+
+    std::vector<Reply> out(n);
+    int done = 0;
+    for (int first = 0; first < n; first += parallel) {
+      int const P = std::min(parallel, n - first);
+      int const per_seq = n_prompt + max_new;
+
+      auto cp = llama_context_default_params();
+      //Each sequence its own memory stream: the samples share only the prompt,
+      //and in one unified buffer every sequence would attend over all the
+      //others' cells, which grow with every step (llama.h, kv_unified).
+      cp.n_seq_max = P;
+      cp.kv_unified = kv_unified;
+      cp.n_ctx = P * per_seq;
+      cp.n_batch = std::max(n_batch, P);
+      cp.n_ubatch = cx["n_ubatch"];
+      cp.n_threads = cx["n_threads"];
+      cp.n_threads_batch = cx["n_threads_batch"];
+      cp.flash_attn_type = flash_attn(cx["flash_attn"]);
+      cp.type_k = kv_type(cx["type_k"]);
+      cp.type_v = kv_type(cx["type_v"]);
+      cp.offload_kqv = cx["offload_kqv"];
+      llama_context* ctx = llama_init_from_model(model_, cp);
+      if (!ctx) {
+        throw std::runtime_error("could not create a context for " + std::to_string(P) +
+                                 " sequences of " + std::to_string(per_seq) + " tokens");
+      }
+      llama_batch batch = llama_batch_init(std::max(n_batch, P), 0, P);
+      std::vector<llama_sampler*> smpl(P, nullptr);
+      struct Cleanup {
+        llama_context* c; llama_batch* b; std::vector<llama_sampler*>* s;
+        ~Cleanup() {
+          for (auto* x : *s) if (x) llama_sampler_free(x);
+          llama_batch_free(*b);
+          llama_free(c);
+        }
+      } cleanup{ctx, &batch, &smpl};
+
+      if ((int)llama_n_ctx_seq(ctx) < per_seq) {
+        throw std::runtime_error("each sequence got " + std::to_string(llama_n_ctx_seq(ctx)) +
+                                 " tokens of context, fewer than the " + std::to_string(per_seq) + " needed");
+      }
+      for (int s = 0; s < P; s++) {
+        //Temperature before top-p: the order the OpenAI and Hugging Face
+        //samplers use, so top-p cuts the tempered distribution.
+        smpl[s] = llama_sampler_chain_init(llama_sampler_chain_default_params());
+        llama_sampler_chain_add(smpl[s], llama_sampler_init_temp(temperature));
+        llama_sampler_chain_add(smpl[s], llama_sampler_init_top_p(top_p, 1));
+        uint32_t const seed = base_seed + (uint32_t)(first + s);
+        llama_sampler_chain_add(smpl[s], llama_sampler_init_dist(seed));
+        out[first + s].seed = seed;
+        out[first + s].prompt_tokens = n_prompt;
+        out[first + s].finish_reason = "length";
+      }
+
+      //The prompt, once, into sequence 0, in chunks of n_batch.
+      auto t0 = std::chrono::steady_clock::now();
+      int last_idx = 0;
+      for (int i = 0; i < n_prompt; i += n_batch) {
+        batch.n_tokens = 0;
+        int const end = std::min(n_prompt, i + n_batch);
+        for (int j = i; j < end; j++) {
+          batch_add(batch, toks[j], j, 0, j == n_prompt - 1);
+        }
+        if (llama_decode(ctx, batch)) {
+          throw std::runtime_error("llama_decode failed on the prompt");
+        }
+        last_idx = batch.n_tokens - 1;
+      }
+      llama_memory_t mem = llama_get_memory(ctx);
+      for (int s = 1; s < P; s++) {
+        llama_memory_seq_cp(mem, 0, s, -1, -1);
+      }
+
+      //Every sequence samples its first token from the prompt's last logits.
+      std::vector<int> idx(P, last_idx);
+      std::vector<bool> active(P, true);
+      std::vector<llama_token> cur(P);
+      std::vector<char> piece(256);
+      std::chrono::steady_clock::time_point first_tok;
+      int generated_total = 0;
+      for (int pos = n_prompt;; pos++) {
+        int live = 0;
+        for (int s = 0; s < P; s++) {
+          if (!active[s]) continue;
+          Reply& r = out[first + s];
+          llama_token t = llama_sampler_sample(smpl[s], ctx, idx[s]);
+          if (llama_vocab_is_eog(vocab, t)) {
+            r.finish_reason = "stop";
+            active[s] = false;
+            continue;
+          }
+          int k = llama_token_to_piece(vocab, t, piece.data(), piece.size(), 0, true);
+          if (k < 0) {
+            piece.resize(-k);
+            k = llama_token_to_piece(vocab, t, piece.data(), piece.size(), 0, true);
+          }
+          r.text.append(piece.data(), k);
+          r.generated_tokens++;
+          generated_total++;
+          cur[s] = t;
+          if (r.generated_tokens >= max_new) {
+            active[s] = false;
+            continue;
+          }
+          live++;
+        }
+        if (pos == n_prompt) {
+          first_tok = std::chrono::steady_clock::now();
+        }
+        if (live == 0) {
+          break;
+        }
+        batch.n_tokens = 0;
+        for (int s = 0; s < P; s++) {
+          if (active[s]) {
+            idx[s] = batch.n_tokens;
+            batch_add(batch, cur[s], pos, s, true);
+          }
+        }
+        if (llama_decode(ctx, batch)) {
+          throw std::runtime_error("llama_decode failed while sampling");
+        }
+      }
+      double const prompt_s = std::chrono::duration<double>(first_tok - t0).count();
+      double const decode_s = seconds_since(first_tok);
+      for (int s = 0; s < P; s++) {
+        Reply& r = out[first + s];
+        r.prompt_seconds = prompt_s;
+        r.decode_seconds = decode_s;
+        //Aggregate over the batch: what the batch achieved, not one sequence.
+        r.decode_tok_s = decode_s > 0 ? generated_total / decode_s : 0.0;
+      }
+      done += P;
+      if (on_done) {
+        on_done(done, n);
+      }
+    }
+    return out;
+  }
+
 private:
+  std::vector<llama_token> tokenize(std::string const& prompt) const {
+    const llama_vocab* vocab = llama_model_get_vocab(model_);
+    int n = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), nullptr, 0, true, true);
+    std::vector<llama_token> toks(n);
+    llama_tokenize(vocab, prompt.c_str(), prompt.size(), toks.data(), n, true, true);
+    return toks;
+  }
+
+  static void batch_add(llama_batch& b, llama_token t, llama_pos pos, llama_seq_id s, bool logits) {
+    b.token[b.n_tokens] = t;
+    b.pos[b.n_tokens] = pos;
+    b.n_seq_id[b.n_tokens] = 1;
+    b.seq_id[b.n_tokens][0] = s;
+    b.logits[b.n_tokens] = logits;
+    b.n_tokens++;
+  }
+
   static double seconds_since(std::chrono::steady_clock::time_point t0) {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   }
