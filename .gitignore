@@ -155,3 +155,6 @@ cmake-build-debug
 
 # Evaluation runs: generated samples and results, large and machine-specific
 eval/runs/
+
+# Personal Claude Code settings (machine-specific hooks)
+.claude/settings.local.json
