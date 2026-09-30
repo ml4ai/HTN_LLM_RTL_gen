@@ -144,6 +144,7 @@ cmake-build-debug
 *.json
 # ...except the executor's frozen configuration
 !executor/executor_config.json
+!eval/eval_config.json
 *.rdb
 *.png
 # ...except images the documentation shows
@@ -151,3 +152,6 @@ cmake-build-debug
 
 # Private research notes -- never push; this repository is public
 /docs/LLM_RTL_code_generation.md
+
+# Evaluation runs: generated samples and results, large and machine-specific
+eval/runs/

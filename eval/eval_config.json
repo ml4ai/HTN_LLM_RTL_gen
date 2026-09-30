@@ -1,0 +1,54 @@
+{
+  "config_version": 1,
+  "description": "Frozen settings of the RTL evaluation harness (LLM_RTL_code_generation.md 6.1.3, settings table). The executor's own settings are in executor/executor_config.json; this file pins everything on the evaluation side. Change a setting and results are no longer comparable; bump config_version when you do.",
+
+  "tools": {
+    "iverilog": "/opt/anaconda3/envs/iverilog12/bin/iverilog",
+    "vvp": "/opt/anaconda3/envs/iverilog12/bin/vvp",
+    "iverilog_version": "12.0 (v12-branch, commit 4fd5291632232fbe1ba49b2c26bb6b2bf1c6c9cf, built into conda env iverilog12)",
+    "iverilog_flags": ["-Wall", "-Winfloop", "-Wno-timescale"],
+    "standard": "-g2012",
+    "diagnostic_standard": "-g2005",
+    "yosys": "/usr/local/bin/yosys",
+    "yosys_version": "0.60"
+  },
+
+  "timeouts_s": {
+    "compile": 60,
+    "simulate": 30,
+    "synth": 120
+  },
+
+  "executor": {
+    "binary": "build/executor/executor_sample",
+    "config": "executor/executor_config.json"
+  },
+
+  "ladder": {
+    "n": 20,
+    "k": [1, 5, 10],
+    "estimator": "Chen et al. 2021 unbiased pass@k, averaged over problems, from the same n samples per problem"
+  },
+
+  "benchmarks": {
+    "verilog-eval-v2": {
+      "path": "~/benchmarks/verilog-eval",
+      "commit": "c498220d0a52248f8e3fdffe279075215bde2da6",
+      "task": "spec-to-rtl",
+      "in_context_examples": 0,
+      "rules": false,
+      "note": "Prompt template, code extraction and pass/fail classification are VerilogEval v2's own (scripts/sv-generate, scripts/sv-iv-analyze). 0 in-context examples and rules off are sv-generate's defaults; pre-register any change."
+    },
+    "rtllm-2": {
+      "path": "~/benchmarks/RTLLM",
+      "commit": "51ed553d0ffd32797a1a0a13e051656bf302c81f",
+      "note": "The design description is the whole prompt, under the executor's default system message. Pass rule: the simulation output contains 'Pass' or 'pass' (auto_run.py), with Icarus in place of VCS. Extraction: the last fenced code block defining the design's module."
+    }
+  },
+
+  "report": {
+    "bootstrap_resamples": 2000,
+    "bootstrap_seed": 1,
+    "confidence": 0.95
+  }
+}
