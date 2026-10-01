@@ -5,6 +5,7 @@
     rtl_eval.py generate --bench B --run-dir D (--n N | --greedy) [--problems ...] [--limit K]
     rtl_eval.py evaluate --run-dir D [--bench B] [--jobs J]
     rtl_eval.py report   --run-dir D [--bench B] [--selftest FILE]
+    rtl_eval.py breakdown --run-dir D [--greedy-run G] [--bench B]
     rtl_eval.py compare  --a D1 --b D2 --bench B [--selftest FILE]
 
 B is verilog-eval-v2 or rtllm-2. A run directory holds one arm's samples for
@@ -412,6 +413,165 @@ def cmd_report(args, cfg, tools):
     print("\n".join(md))
 
 
+def cmd_breakdown(args, cfg, tools):
+    """The report split by problem category (benchmarks.py, category()): the
+    design class read off the reference (FSM / sequential / combinational),
+    the form of the spec, and the benchmark's own grouping."""
+    meta = json.load(open(os.path.join(args.run_dir, "run.json")))
+    n = meta["n"]
+    ks = [k for k in cfg["ladder"]["k"] if k <= n]
+    out = {"run_dir": args.run_dir, "greedy_run": args.greedy_run, "created": now(), "benchmarks": {}}
+    md = ["# Failure breakdown by problem category", "",
+          f"Run `{args.run_dir}` ({meta['arm']}, {meta['mode']}, n = {n})"
+          + (f"; greedy line from `{args.greedy_run}`" if args.greedy_run else "") + ".", ""]
+    for bench in ([args.bench] if args.bench else meta["benchmarks"]):
+        ad = bench_adapter(cfg, bench)
+        _, by_pid, excluded, _, _ = load_results(args.run_dir, bench, args.selftest)
+        greedy = {}
+        if args.greedy_run:
+            _, g, _, _, _ = load_results(args.greedy_run, bench, args.selftest)
+            greedy = {pid: rs[0]["functional"] for pid, rs in g.items()}
+        cats = {pid: ad.category(ad.load(pid)) for pid in by_pid}
+        dims = ["class", "spec"] if bench == "verilog-eval-v2" else ["class", "group", "subgroup"]
+        out["benchmarks"][bench] = {"categories": cats, "by": {}}
+        md += [f"## {bench}", ""]
+        for dim in dims:
+            groups = {}
+            for pid in by_pid:
+                groups.setdefault(cats[pid][dim], []).append(pid)
+            rows = []
+            for key, pids in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+                samples = [r for p_ in pids for r in by_pid[p_]]
+                c_syn = [sum(r["syntax"] for r in by_pid[p_]) for p_ in pids]
+                c_func = [sum(r["functional"] for r in by_pid[p_]) for p_ in pids]
+                syn = passk.ladder(c_syn, n, [1])[1]
+                func = passk.ladder(c_func, n, ks)
+                mix = {c: sum(r["category"] == c for r in samples) / len(samples) for c in CATEGORIES}
+                row = {"problems": len(pids), "syntax_pass@1": syn,
+                       "functional_pass_at_k": func,
+                       "conditional": (func[1] / syn) if syn else None,
+                       "failure_mix": mix,
+                       "never_solved": sorted(p_ for p_, c in zip(pids, c_func) if c == 0)}
+                if greedy:
+                    row["greedy_functional"] = sum(greedy.get(p_, False) for p_ in pids) / len(pids)
+                rows.append((key, row))
+            out["benchmarks"][bench]["by"][dim] = dict(rows)
+            md += [f"### By {dim}", "",
+                   "| " + dim + " | problems | syntax @1 | " + " | ".join(f"functional @{k}" for k in ks)
+                   + (" | greedy functional" if greedy else "") + " | conditional | sim fail | syntax err | interface err | never solved |",
+                   "|---|---|---|" + "---|" * len(ks) + ("---|" if greedy else "") + "---|---|---|---|---|"]
+            for key, r in rows:
+                md.append(f"| {key} | {r['problems']} | {pct(r['syntax_pass@1'])} | "
+                          + " | ".join(pct(r["functional_pass_at_k"][k]) for k in ks)
+                          + (f" | {pct(r['greedy_functional'])}" if greedy else "")
+                          + f" | {pct(r['conditional'])} | {pct(r['failure_mix']['simulation_fail'])}"
+                          f" | {pct(r['failure_mix']['syntax_error'])} | {pct(r['failure_mix']['interface_error'])}"
+                          f" | {len(r['never_solved'])} |")
+            md.append("")
+        never = sorted(p_ for p_ in by_pid if sum(r["functional"] for r in by_pid[p_]) == 0)
+        md += [f"Never solved in {n} samples ({len(never)}): "
+               + ", ".join(f"{p_} ({cats[p_]['class']})" for p_ in never) + ".", ""]
+        audit, audit_md = reset_audit(ad, bench, by_pid, cats, args, cfg, tools)
+        out["benchmarks"][bench]["reset_audit"] = audit
+        md += audit_md
+    with open(os.path.join(args.run_dir, "breakdown.json"), "w") as f:
+        json.dump(out, f, indent=1)
+    with open(os.path.join(args.run_dir, "breakdown.md"), "w") as f:
+        f.write("\n".join(md) + "\n")
+    print("\n".join(md))
+
+
+def resim_synchronous(ad, p, path, tools, to):
+    """Whether a failing sample passes once its asynchronous reset is made
+    synchronous (benchmarks.make_reset_synchronous); None if there was nothing
+    to rewrite. A diagnostic; the scored result is never changed."""
+    with open(path) as f:
+        new, cut = benchmarks.make_reset_synchronous(f.read())
+    if not cut:
+        return None
+    with tempfile.TemporaryDirectory() as w:
+        v = os.path.join(w, os.path.basename(path))
+        with open(v, "w") as f:
+            f.write(new)
+        passed, _, _ = ad.functional(p, v, w, tools, to)
+    return passed
+
+
+def reset_audit(ad, bench, by_pid, cats, args, cfg, tools):
+    """Does each syntax-valid sample use the reset its spec asks for
+    (benchmarks.reset_style, benchmarks.uses_async_reset)? For specs that ask
+    for a synchronous reset, also re-simulate the failing samples with the
+    reset made synchronous, unless --no-resim: the functional pass@1 the
+    reset style alone costs, by design class."""
+    n = len(next(iter(by_pid.values())))
+    problems = {pid: ad.load(pid) for pid in by_pid}
+    style = {pid: benchmarks.reset_style(p.extra["spec"]) for pid, p in problems.items()}
+    rows, jobs = {}, []
+    for pid in sorted(by_pid):
+        if style[pid] not in ("synchronous", "asynchronous"):
+            continue
+        valid = [r for r in by_pid[pid] if r["syntax"]]
+        paths = {r["sample"]: os.path.join(args.run_dir, bench, pid, f"sample_{r['sample']:02d}.v") for r in valid}
+        async_ = {i for i, path in paths.items() if benchmarks.uses_async_reset(open(path).read())}
+        wrong = async_ if style[pid] == "synchronous" else set(paths) - async_
+        rows[pid] = {"spec_reset": style[pid], "class": cats[pid]["class"],
+                     "functional": sum(r["functional"] for r in by_pid[pid]),
+                     "syntax_valid": len(valid), "wrong_reset_style": len(wrong)}
+        if style[pid] == "synchronous" and not args.no_resim:
+            rows[pid]["passes_once_synchronous"] = 0
+            jobs += [(pid, paths[r["sample"]]) for r in valid if not r["functional"] and r["sample"] in async_]
+    if jobs:
+        with cf.ThreadPoolExecutor(args.jobs) as ex:
+            for (pid, _), ok in zip(jobs, ex.map(lambda j: resim_synchronous(
+                    ad, problems[j[0]], j[1], tools, cfg["timeouts_s"]), jobs)):
+                rows[pid]["passes_once_synchronous"] += bool(ok)
+
+    out = {"problems": rows}
+    md = ["### Reset audit", "",
+          "Specs that name a reset style, and the syntax-valid samples that use the other one: an "
+          "asynchronous reset is a clock-plus-one-edge sensitivity list, `@(posedge clk or posedge reset)`.", ""]
+    for want in ("synchronous", "asynchronous"):
+        rs = {pid: r for pid, r in rows.items() if r["spec_reset"] == want}
+        if not rs:
+            continue
+        valid = sum(r["syntax_valid"] for r in rs.values())
+        wrong = sum(r["wrong_reset_style"] for r in rs.values())
+        out[want] = {"problems": len(rs), "syntax_valid": valid, "wrong_reset_style": wrong}
+        md.append(f"- **{want.capitalize()} reset asked for** ({len(rs)} problems): "
+                  f"{wrong} of {valid} syntax-valid samples ({pct(wrong / valid if valid else None)}%) "
+                  f"use the other style.")
+    md.append("")
+    sync = {pid: r for pid, r in rows.items() if r["spec_reset"] == "synchronous"}
+    if sync and not args.no_resim:
+        fixed = sum(r["passes_once_synchronous"] for r in sync.values())
+        md += [f"Failing samples on synchronous-reset specs that pass once their reset is made synchronous: "
+               f"**{fixed}**. Functional pass@1 if they had (a diagnostic; the scores above are unchanged):", "",
+               "| class | problems | functional @1 | with synchronous reset | never solved | with synchronous reset |",
+               "|---|---|---|---|---|---|"]
+        by_class = {}
+        for pid, rs in by_pid.items():
+            base = sum(r["functional"] for r in rs)
+            extra = rows.get(pid, {}).get("passes_once_synchronous", 0)
+            for key in (cats[pid]["class"], "all"):
+                c = by_class.setdefault(key, [0, 0.0, 0.0, 0, 0])
+                c[0] += 1
+                c[1] += base / n
+                c[2] += (base + extra) / n
+                c[3] += base == 0
+                c[4] += base + extra == 0
+        out["counterfactual_by_class"] = {}
+        for key, (k, b, f, z0, z1) in sorted(by_class.items(), key=lambda kv: (kv[0] == "all", -kv[1][0])):
+            out["counterfactual_by_class"][key] = {"problems": k, "functional_pass@1": b / k,
+                                                   "with_synchronous_reset": f / k,
+                                                   "never_solved": z0, "never_solved_with_synchronous_reset": z1}
+            md.append(f"| {key} | {k} | {pct(b / k)} | {pct(f / k)} | {z0} | {z1} |")
+        md += ["", "| problem | class | functional | async-reset samples | pass once synchronous |", "|---|---|---|---|---|"]
+        md += [f"| {pid} | {r['class']} | {r['functional']}/{n} | {r['wrong_reset_style']}/{r['syntax_valid']} | "
+               f"{r['passes_once_synchronous']} |" for pid, r in sorted(sync.items())]
+        md.append("")
+    return out, md
+
+
 def cmd_compare(args, cfg, tools):
     ma, ra, exa, _, _ = load_results(args.a, args.bench, args.selftest)
     mb, rb, exb, _, _ = load_results(args.b, args.bench, args.selftest)
@@ -505,6 +665,15 @@ def main():
     s.add_argument("--bench")
     s.add_argument("--selftest")
 
+    s = sub.add_parser("breakdown")
+    s.add_argument("--run-dir", required=True)
+    s.add_argument("--greedy-run")
+    s.add_argument("--bench")
+    s.add_argument("--selftest")
+    s.add_argument("--jobs", type=int, default=8)
+    s.add_argument("--no-resim", action="store_true",
+                   help="skip re-simulating failing samples with their reset made synchronous")
+
     s = sub.add_parser("compare")
     s.add_argument("--a", required=True)
     s.add_argument("--b", required=True)
@@ -516,12 +685,12 @@ def main():
     # Absolute from here on: the tools run inside temporary working
     # directories, where a relative sample path names nothing, and every
     # sample then "failed" its syntax check with "No such file or directory".
-    for attr in ("run_dir", "a", "b", "out", "selftest"):
+    for attr in ("run_dir", "greedy_run", "a", "b", "out", "selftest"):
         if getattr(args, attr, None):
             setattr(args, attr, os.path.abspath(getattr(args, attr)))
     cfg, tools = load_config(args.config)
     {"selftest": cmd_selftest, "generate": cmd_generate, "evaluate": cmd_evaluate,
-     "report": cmd_report, "compare": cmd_compare}[args.cmd](args, cfg, tools)
+     "report": cmd_report, "breakdown": cmd_breakdown, "compare": cmd_compare}[args.cmd](args, cfg, tools)
 
 
 if __name__ == "__main__":

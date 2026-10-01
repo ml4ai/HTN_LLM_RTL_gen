@@ -33,6 +33,62 @@ class Problem:
     extra: dict = field(default_factory=dict)
 
 
+def design_class(reference, name=""):
+    """FSM, sequential or combinational, read off a reference design: clocked if
+    it has a posedge/negedge, an FSM if clocked with a state register driven
+    through a case statement, or so named. Deterministic, so a breakdown by
+    class is reproducible rather than hand-labelled."""
+    clocked = bool(re.search(r"\b(posedge|negedge)\b", reference))
+    named_fsm = bool(re.search(r"fsm|lemmings", name, re.I))
+    stateful = bool(re.search(r"\b(state|next_state|next)\b", reference) and re.search(r"\bcase\b", reference))
+    if named_fsm or (clocked and stateful):
+        return "FSM"
+    return "sequential" if clocked else "combinational"
+
+
+def reset_style(spec):
+    """The reset a spec asks for: 'synchronous' or 'asynchronous' if a sentence
+    that mentions a reset says which (both, if different sentences disagree),
+    else None. Read off the spec's own words, never the reference."""
+    styles = set()
+    for sentence in re.split(r"(?<=[.;:])\s+|\n\s*\n", spec):
+        if not re.search(r"reset", sentence, re.I):
+            continue
+        if re.search(r"\basynchronous(ly)?\b", sentence, re.I):
+            styles.add("asynchronous")
+        if re.search(r"\bsynchronous(ly)?\b", sentence, re.I):
+            styles.add("synchronous")
+    return "both" if len(styles) > 1 else (styles.pop() if styles else None)
+
+
+# A sensitivity list of two edges, one of them a clock: the shape of a flop
+# with an asynchronous reset (or set), `@(posedge clk or posedge reset)`.
+TWO_EDGE_RE = re.compile(r"@\s*\(\s*((?:posedge|negedge)\s+(\w+))\s*(?:or|,)\s*((?:posedge|negedge)\s+(\w+))\s*\)")
+CLOCK_RE = re.compile(r"cl(oc)?k", re.I)
+
+
+def uses_async_reset(code):
+    return any(CLOCK_RE.search(m.group(2)) or CLOCK_RE.search(m.group(4)) for m in TWO_EDGE_RE.finditer(code))
+
+
+def make_reset_synchronous(code):
+    """`code` with every clock-plus-one-edge sensitivity list cut down to the
+    clock edge alone, so a reset tested inside the block becomes synchronous.
+    A diagnostic for the reset audit, never applied to a scored sample.
+    Returns the new code and the number of lists cut."""
+    cut = 0
+
+    def keep_clock(m):
+        nonlocal cut
+        for edge, name in ((m.group(1), m.group(2)), (m.group(3), m.group(4))):
+            if CLOCK_RE.search(name):
+                cut += 1
+                return f"@({edge})"
+        return m.group(0)
+    new = TWO_EDGE_RE.sub(keep_clock, code)
+    return new, cut
+
+
 def has_module(code):
     return bool(MODULE_RE.search(code or ""))
 
@@ -118,7 +174,20 @@ and do NOT output anything else.
         return Problem(bench=self.name, pid=pid, top="TopModule", system=self.SYSTEM,
                        user=self.user_prompt(spec), golden=rename_top(ref, "RefModule", "TopModule"),
                        extra={"ref": os.path.join(self.dir, pid + "_ref.sv"),
-                              "test": os.path.join(self.dir, pid + "_test.sv")})
+                              "test": os.path.join(self.dir, pid + "_test.sv"),
+                              "spec": spec})
+
+    def category(self, problem):
+        """The design class from the reference, and the form the spec takes:
+        prose, a simulation waveform to reverse-engineer (the circuitN
+        problems), or a Karnaugh map."""
+        with open(problem.extra["ref"]) as f:
+            ref = f.read()
+        spec = problem.extra["spec"]
+        form =("waveform" if re.search(r"waveform", spec, re.I) else
+                "kmap" if re.search(r"karnaugh|k-map", spec, re.I) else "prose")
+        cls = design_class(ref, problem.pid)
+        return {"class": cls, "spec": form, "group": cls}
 
     @staticmethod
     def extract(content, top="TopModule"):
@@ -289,7 +358,14 @@ class RTLLM2:
         return Problem(bench=self.name, pid=pid, top=top, system=self.SYSTEM, user=desc,
                        golden=golden,
                        extra={"dir": d, "testbench": os.path.join(d, "testbench.v"),
-                              "tb_top": tbtops[0], "data": data, "golden_file": pick})
+                              "tb_top": tbtops[0], "data": data, "golden_file": pick, "spec": desc})
+
+    def category(self, problem):
+        """The design class from the golden, and RTLLM's own grouping: its
+        top-level folder and the folder below it (Arithmetic/Adder, ...)."""
+        rel = os.path.relpath(problem.extra["dir"], self.path).split(os.sep)
+        return {"class": design_class(problem.golden, problem.pid), "spec": "prose",
+                "group": rel[0], "subgroup": "/".join(rel[:2])}
 
     @classmethod
     def extract(cls, content, top):

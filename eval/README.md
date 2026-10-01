@@ -60,6 +60,20 @@ The Python is standard library only; any Python 3.9+ works.
   It reports the functional pass@1 difference split exactly into a syntax term
   and a conditional term, the difference at every rung of both ladders with
   bootstrap confidence intervals, and, for greedy runs, McNemar's test.
+- **Breaking a run down by problem type** (about 10 s):
+
+      $PY eval/rtl_eval.py breakdown --run-dir eval/runs/direct --greedy-run eval/runs/direct_greedy
+
+  It writes `breakdown.md` and `breakdown.json` into the run directory. The
+  ladders are split by design class (FSM, sequential or combinational, read off
+  the reference), by spec form on VerilogEval (prose, waveform, Karnaugh map),
+  and by RTLLM's own folders, and the never-solved problems are listed.
+
+  It also runs a **reset audit**. For each spec that names a reset style, it
+  counts the samples using the other style. For synchronous-reset specs, it
+  re-simulates each failing sample with the asynchronous reset made synchronous,
+  and reports the pass@1 that the reset style alone costs. This is a diagnostic
+  only; scores never change. `--no-resim` skips the re-simulation.
 
 **Time.** With the 32B executor, 20 samples of a problem are decoded as one
 batch of 20 sequences, at about 37 tokens/s in aggregate, against 9.7 for a
