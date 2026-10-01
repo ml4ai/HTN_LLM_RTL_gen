@@ -126,6 +126,13 @@ The config's `ladder_sampling` block sets how:
   then decodes one token of every unfinished sequence. Decoding on Apple Silicon
   is bound by reading the weights, which a batch reads once for all its
   sequences.
+- **Memory:** the shared cache holds the prompt once plus `max_new_tokens` per
+  sequence, capped at `max_context_tokens` (45,056 slots). If a long prompt
+  would exceed the cap, fewer sequences are decoded at a time. For a 1,000-token
+  prompt that is about 46 GB with the model, under the 53 GB the GPU may use.
+  (Config version 2 reserved a copy of the prompt per sequence, and ran out of
+  GPU memory on such a prompt. The cache's size does not change the output: 40
+  of 40 replies regenerated under version 3 were byte-identical.)
 
 | Decoding (32B, M1 Max) | Tokens/s in aggregate |
 |---|---|

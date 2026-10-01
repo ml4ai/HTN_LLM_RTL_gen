@@ -327,10 +327,32 @@ public:
     std::vector<llama_token> const toks = tokenize(format(sys, user));
     int const n_prompt = (int)toks.size();
 
+    //How many sequences fit. In a unified cache the prompt is stored once and
+    //shared by every sequence (llama_memory_seq_cp shares its cells), so a
+    //batch of P needs n_prompt + P * max_new cells, not P * (n_prompt +
+    //max_new). Sizing it the second way wasted (P - 1) * n_prompt cells, and
+    //the compute buffer grows with the cache too: on a 1,000-token VerilogEval
+    //prompt (Prob147) the 32B model then needed 52.9 GB of the 53.1 GB Metal
+    //allows, and ran out of GPU memory. max_context_tokens caps the cache;
+    //P shrinks rather than exceed it.
+    int const max_cells = ls.value("max_context_tokens", 1 << 30);
+    int cap = parallel;
+    if (kv_unified) {
+      cap = std::min(parallel, (max_cells - n_prompt) / max_new);
+    }
+    else {
+      cap = std::min(parallel, max_cells / (n_prompt + max_new));
+    }
+    if (cap < 1) {
+      throw std::runtime_error("a " + std::to_string(n_prompt) + "-token prompt with max_new_tokens " +
+                               std::to_string(max_new) + " does not fit max_context_tokens " +
+                               std::to_string(max_cells));
+    }
+
     std::vector<Reply> out(n);
     int done = 0;
-    for (int first = 0; first < n; first += parallel) {
-      int const P = std::min(parallel, n - first);
+    for (int first = 0; first < n; first += cap) {
+      int const P = std::min(cap, n - first);
       int const per_seq = n_prompt + max_new;
 
       auto cp = llama_context_default_params();
@@ -339,7 +361,7 @@ public:
       //others' cells, which grow with every step (llama.h, kv_unified).
       cp.n_seq_max = P;
       cp.kv_unified = kv_unified;
-      cp.n_ctx = P * per_seq;
+      cp.n_ctx = kv_unified ? n_prompt + P * max_new : P * per_seq;
       cp.n_batch = std::max(n_batch, P);
       cp.n_ubatch = cx["n_ubatch"];
       cp.n_threads = cx["n_threads"];

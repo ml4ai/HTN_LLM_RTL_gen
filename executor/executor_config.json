@@ -1,5 +1,5 @@
 {
-  "config_version": 2,
+  "config_version": 3,
   "description": "Frozen executor configuration for the local LLM that writes Verilog from the planner's instructions. Everything that can change the executor's output is pinned here: the model file and its hash, the llama.cpp build, context and batch shapes, flash attention, KV cache type and the sampler. Change any of it and results are no longer comparable with runs made under the old values; bump config_version when you do.",
 
   "model": {
@@ -62,6 +62,8 @@
     "base_seed": 20260929,
     "parallel_sequences": 20,
     "kv_unified": true,
+    "max_context_tokens": 45056,
+    "memory_note": "The unified cache holds the prompt once plus max_new_tokens per sequence: n_prompt + P * max_new_tokens cells. If that would exceed max_context_tokens, fewer sequences are decoded at a time. 45,056 cells is about 11 GB of f16 cache for this model, plus a compute buffer that grows with the cache: about 47 GB with the 32.4 GB of weights, under the 53 GB Metal working set. Version 3: before it, the cache was sized parallel_sequences * (n_prompt + max_new_tokens), and VerilogEval's Prob147 ran the GPU out of memory.",
     "chain": "temperature, then top-p, then a seeded draw (the OpenAI and Hugging Face order); sample i of a request is seeded base_seed + i",
     "note": "For the sampled pass@k ladders only (n samples per problem); the greedy line uses the sampling block above. Temperature and top-p are VerilogEval v2's own setting for n = 20 samples, the default candidate to pre-register. Samples are decoded parallel_sequences at a time as separate sequences sharing one decoded prompt; outputs are reproducible per seed under this configuration, not bit-identical across batch sizes. Measured 2026-09-30 on a VerilogEval FSM problem: 20 sequences in one unified cache ran at 36.6 tokens/s in aggregate, against 9.7 for one sequence, 24.8 for 10 unified and 18.2 for 10 in separate per-sequence caches."
   },
