@@ -167,6 +167,13 @@ def cmd_selftest(args, cfg, tools):
 # generate
 
 def cmd_generate(args, cfg, tools):
+    if args.rules:
+        # sv-generate --rules: VerilogEval's rules suffix on, for the rules-on
+        # direct arm (LLM_RTL_code_generation.md 6.1.7). The frozen config
+        # keeps sv-generate's default; run.json records the override.
+        if args.bench != "verilog-eval-v2":
+            sys.exit("error: --rules is VerilogEval v2's prompt option only")
+        cfg["benchmarks"][args.bench] = dict(cfg["benchmarks"][args.bench], rules=True)
     ad = bench_adapter(cfg, args.bench)
     ids = select(ad, args.problems, args.limit)
     n = 1 if args.greedy else (args.n or cfg["ladder"]["n"])
@@ -183,6 +190,10 @@ def cmd_generate(args, cfg, tools):
     if (meta["arm"], meta["mode"], meta["n"]) != (args.arm, mode, n):
         sys.exit(f"error: {args.run_dir} holds arm={meta['arm']} mode={meta['mode']} n={meta['n']}; "
                  f"use another run directory")
+    prev = meta["benchmarks"].get(args.bench)
+    if prev and prev["settings"] != cfg["benchmarks"][args.bench]:
+        sys.exit(f"error: {args.run_dir} holds {args.bench} generated with other settings "
+                 f"({prev['settings']}); use another run directory")
     meta["benchmarks"][args.bench] = {"commit": cfg["benchmarks"][args.bench]["commit"],
                                       "settings": cfg["benchmarks"][args.bench]}
     meta["eval_config_sha256"] = sha256_file(args.config)
@@ -654,6 +665,8 @@ def main():
     s.add_argument("--problems", nargs="*")
     s.add_argument("--limit", type=int)
     s.add_argument("--arm", default="direct")
+    s.add_argument("--rules", action="store_true",
+                   help="VerilogEval v2 only: append sv-generate's rules suffix to the prompt")
 
     s = sub.add_parser("evaluate")
     s.add_argument("--run-dir", required=True)
