@@ -1,0 +1,45 @@
+{"title": "signal_generator_triangle (domain rtl_fsm)",
+ "roots": [
+  {"token": "(__signal_generator_triangle__)", "action": false, "method": "", "children": [
+    {"token": "(implement_module signal_generator)", "action": false, "method": "m_implement_triangle_generator", "children": [
+      {"token": "(analyze_choose_direction_register signal_generator)", "action": true, "method": "", "step": 1, "children": []},
+      {"token": "(design_generator signal_generator)", "action": false, "method": "m_design_generator", "children": [
+        {"token": "(analyze_turn_point signal_generator n0 n31 n1)", "action": true, "method": "", "step": 2, "children": []},
+        {"token": "(analyze_turn_point signal_generator n1 n0 n0)", "action": true, "method": "", "step": 3, "children": []}
+      ]},
+      {"token": "(write_interface signal_generator)", "action": false, "method": "m_write_interface", "children": [
+        {"token": "(write_module_header signal_generator)", "action": true, "method": "", "step": 4, "children": []},
+        {"token": "(declare_ports_from signal_generator clk)", "action": false, "method": "m_declare_ports_more", "children": [
+          {"token": "(declare_port signal_generator clk)", "action": false, "method": "m_declare_input", "children": [
+            {"token": "(write_input_decl signal_generator clk)", "action": true, "method": "", "step": 5, "children": []}
+          ]},
+          {"token": "(declare_ports_from signal_generator rst_n)", "action": false, "method": "m_declare_ports_more", "children": [
+            {"token": "(declare_port signal_generator rst_n)", "action": false, "method": "m_declare_input", "children": [
+              {"token": "(write_input_decl signal_generator rst_n)", "action": true, "method": "", "step": 6, "children": []}
+            ]},
+            {"token": "(declare_ports_from signal_generator wave)", "action": false, "method": "m_declare_ports_last", "children": [
+              {"token": "(declare_port signal_generator wave)", "action": false, "method": "m_declare_output_vector_reg", "children": [
+                {"token": "(write_output_reg_vector_decl signal_generator wave bits5)", "action": true, "method": "", "step": 7, "children": []}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(write_internal_registers signal_generator)", "action": false, "method": "m_write_internal_registers", "children": [
+        {"token": "(write_register_decl signal_generator state bits1)", "action": true, "method": "", "step": 8, "children": []}
+      ]},
+      {"token": "(write_generator_logic signal_generator)", "action": false, "method": "m_write_generator_logic", "children": [
+        {"token": "(open_clocked_block signal_generator clk rst_n active_low)", "action": false, "method": "m_open_clocked_block_async", "children": [
+          {"token": "(write_clocked_block_open_async signal_generator clk rst_n active_low)", "action": true, "method": "", "step": 9, "children": []}
+        ]},
+        {"token": "(write_generator_reset signal_generator rst_n active_low state n0 wave n0)", "action": true, "method": "", "step": 10, "children": []},
+        {"token": "(write_direction_case_open signal_generator state)", "action": true, "method": "", "step": 11, "children": []},
+        {"token": "(write_rising_phase signal_generator state n0 wave n31 n1)", "action": true, "method": "", "step": 12, "children": []},
+        {"token": "(write_falling_phase signal_generator state n1 wave n0 n0)", "action": true, "method": "", "step": 13, "children": []},
+        {"token": "(write_direction_case_close signal_generator)", "action": true, "method": "", "step": 14, "children": []},
+        {"token": "(write_clocked_block_close signal_generator)", "action": true, "method": "", "step": 15, "children": []}
+      ]},
+      {"token": "(write_module_end signal_generator)", "action": true, "method": "", "step": 16, "children": []}
+    ]}
+  ]}
+]}

@@ -1,0 +1,181 @@
+{"title": "fsm_10011 (domain rtl_fsm)",
+ "roots": [
+  {"token": "(__fsm_10011__)", "action": false, "method": "", "children": [
+    {"token": "(implement_module fsm)", "action": false, "method": "m_implement_mealy_sequence_detector", "children": [
+      {"token": "(analyze_choose_three_block_fsm fsm)", "action": true, "method": "", "step": 1, "children": []},
+      {"token": "(design_state_machine fsm)", "action": false, "method": "m_design_sequence_fsm", "children": [
+        {"token": "(derive_transitions_from fsm s0)", "action": false, "method": "m_derive_transitions_more", "children": [
+          {"token": "(derive_next fsm s0 zero)", "action": false, "method": "m_next_mismatch_initial", "children": [
+            {"token": "(analyze_stay_initial fsm s0 zero)", "action": true, "method": "", "step": 2, "children": []}
+          ]},
+          {"token": "(derive_next fsm s0 one)", "action": false, "method": "m_next_advance", "children": [
+            {"token": "(analyze_advance fsm s0 one s1)", "action": true, "method": "", "step": 3, "children": []}
+          ]},
+          {"token": "(derive_transitions_from fsm s1)", "action": false, "method": "m_derive_transitions_more", "children": [
+            {"token": "(derive_next fsm s1 zero)", "action": false, "method": "m_next_advance", "children": [
+              {"token": "(analyze_advance fsm s1 zero s2)", "action": true, "method": "", "step": 4, "children": []}
+            ]},
+            {"token": "(derive_next fsm s1 one)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+              {"token": "(derive_fallback fsm s1)", "action": false, "method": "m_fallback_first", "children": [
+                {"token": "(analyze_fallback_first fsm s1 s0)", "action": true, "method": "", "step": 5, "children": []}
+              ]},
+              {"token": "(derive_via_fallback fsm s1 one)", "action": false, "method": "m_via_fallback", "children": [
+                {"token": "(conclude_fall_back fsm s1 one s0)", "action": false, "method": "m_conclude_fall_back", "children": [
+                  {"token": "(analyze_fall_back fsm s1 one s0 s1)", "action": true, "method": "", "step": 6, "children": []}
+                ]},
+                {"token": "(derive_next fsm s0 one)", "action": false, "method": "m_next_known", "children": []}
+              ]}
+            ]},
+            {"token": "(derive_transitions_from fsm s2)", "action": false, "method": "m_derive_transitions_more", "children": [
+              {"token": "(derive_next fsm s2 zero)", "action": false, "method": "m_next_advance", "children": [
+                {"token": "(analyze_advance fsm s2 zero s3)", "action": true, "method": "", "step": 7, "children": []}
+              ]},
+              {"token": "(derive_next fsm s2 one)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+                {"token": "(derive_fallback fsm s2)", "action": false, "method": "m_fallback_extend", "children": [
+                  {"token": "(derive_fallback_step fsm s2 s1 zero)", "action": false, "method": "m_fallback_step", "children": [
+                    {"token": "(conclude_fallback_extend fsm s2 s1 zero s0)", "action": false, "method": "m_conclude_fallback_extend", "children": [
+                      {"token": "(analyze_fallback_extend fsm s2 s1 zero s0 s0)", "action": true, "method": "", "step": 8, "children": []}
+                    ]},
+                    {"token": "(derive_next fsm s0 zero)", "action": false, "method": "m_next_known", "children": []}
+                  ]},
+                  {"token": "(derive_fallback fsm s1)", "action": false, "method": "m_fallback_known", "children": []}
+                ]},
+                {"token": "(derive_via_fallback fsm s2 one)", "action": false, "method": "m_via_fallback", "children": [
+                  {"token": "(conclude_fall_back fsm s2 one s0)", "action": false, "method": "m_conclude_fall_back", "children": [
+                    {"token": "(analyze_fall_back fsm s2 one s0 s1)", "action": true, "method": "", "step": 9, "children": []}
+                  ]},
+                  {"token": "(derive_next fsm s0 one)", "action": false, "method": "m_next_known", "children": []}
+                ]}
+              ]},
+              {"token": "(derive_transitions_from fsm s3)", "action": false, "method": "m_derive_transitions_more", "children": [
+                {"token": "(derive_next fsm s3 zero)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+                  {"token": "(derive_fallback fsm s3)", "action": false, "method": "m_fallback_extend", "children": [
+                    {"token": "(derive_fallback_step fsm s3 s2 zero)", "action": false, "method": "m_fallback_step", "children": [
+                      {"token": "(conclude_fallback_extend fsm s3 s2 zero s0)", "action": false, "method": "m_conclude_fallback_extend", "children": [
+                        {"token": "(analyze_fallback_extend fsm s3 s2 zero s0 s0)", "action": true, "method": "", "step": 10, "children": []}
+                      ]},
+                      {"token": "(derive_next fsm s0 zero)", "action": false, "method": "m_next_known", "children": []}
+                    ]},
+                    {"token": "(derive_fallback fsm s2)", "action": false, "method": "m_fallback_known", "children": []}
+                  ]},
+                  {"token": "(derive_via_fallback fsm s3 zero)", "action": false, "method": "m_via_fallback", "children": [
+                    {"token": "(conclude_fall_back fsm s3 zero s0)", "action": false, "method": "m_conclude_fall_back", "children": [
+                      {"token": "(analyze_fall_back fsm s3 zero s0 s0)", "action": true, "method": "", "step": 11, "children": []}
+                    ]},
+                    {"token": "(derive_next fsm s0 zero)", "action": false, "method": "m_next_known", "children": []}
+                  ]}
+                ]},
+                {"token": "(derive_next fsm s3 one)", "action": false, "method": "m_next_advance", "children": [
+                  {"token": "(analyze_advance fsm s3 one s4)", "action": true, "method": "", "step": 12, "children": []}
+                ]},
+                {"token": "(derive_transitions_from fsm s4)", "action": false, "method": "m_derive_transitions_last", "children": [
+                  {"token": "(derive_next fsm s4 zero)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+                    {"token": "(derive_fallback fsm s4)", "action": false, "method": "m_fallback_extend", "children": [
+                      {"token": "(derive_fallback_step fsm s4 s3 one)", "action": false, "method": "m_fallback_step", "children": [
+                        {"token": "(conclude_fallback_extend fsm s4 s3 one s0)", "action": false, "method": "m_conclude_fallback_extend", "children": [
+                          {"token": "(analyze_fallback_extend fsm s4 s3 one s0 s1)", "action": true, "method": "", "step": 13, "children": []}
+                        ]},
+                        {"token": "(derive_next fsm s0 one)", "action": false, "method": "m_next_known", "children": []}
+                      ]},
+                      {"token": "(derive_fallback fsm s3)", "action": false, "method": "m_fallback_known", "children": []}
+                    ]},
+                    {"token": "(derive_via_fallback fsm s4 zero)", "action": false, "method": "m_via_fallback", "children": [
+                      {"token": "(conclude_fall_back fsm s4 zero s1)", "action": false, "method": "m_conclude_fall_back", "children": [
+                        {"token": "(analyze_fall_back fsm s4 zero s1 s2)", "action": true, "method": "", "step": 14, "children": []}
+                      ]},
+                      {"token": "(derive_next fsm s1 zero)", "action": false, "method": "m_next_known", "children": []}
+                    ]}
+                  ]},
+                  {"token": "(derive_next fsm s4 one)", "action": false, "method": "m_next_match_overlapping", "children": [
+                    {"token": "(derive_match_restart fsm s4 one)", "action": false, "method": "m_match_restart", "children": [
+                      {"token": "(conclude_match_restart fsm s4 one s1)", "action": false, "method": "m_conclude_match_restart", "children": [
+                        {"token": "(analyze_match_overlapping fsm s4 one s1 s1)", "action": true, "method": "", "step": 15, "children": []}
+                      ]},
+                      {"token": "(derive_next fsm s1 one)", "action": false, "method": "m_next_known", "children": []}
+                    ]},
+                    {"token": "(derive_fallback fsm s4)", "action": false, "method": "m_fallback_known", "children": []}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(write_interface fsm)", "action": false, "method": "m_write_interface", "children": [
+        {"token": "(write_module_header fsm)", "action": true, "method": "", "step": 16, "children": []},
+        {"token": "(declare_ports_from fsm IN)", "action": false, "method": "m_declare_ports_more", "children": [
+          {"token": "(declare_port fsm IN)", "action": false, "method": "m_declare_input", "children": [
+            {"token": "(write_input_decl fsm IN)", "action": true, "method": "", "step": 17, "children": []}
+          ]},
+          {"token": "(declare_ports_from fsm CLK)", "action": false, "method": "m_declare_ports_more", "children": [
+            {"token": "(declare_port fsm CLK)", "action": false, "method": "m_declare_input", "children": [
+              {"token": "(write_input_decl fsm CLK)", "action": true, "method": "", "step": 18, "children": []}
+            ]},
+            {"token": "(declare_ports_from fsm RST)", "action": false, "method": "m_declare_ports_more", "children": [
+              {"token": "(declare_port fsm RST)", "action": false, "method": "m_declare_input", "children": [
+                {"token": "(write_input_decl fsm RST)", "action": true, "method": "", "step": 19, "children": []}
+              ]},
+              {"token": "(declare_ports_from fsm MATCH)", "action": false, "method": "m_declare_ports_last", "children": [
+                {"token": "(declare_port fsm MATCH)", "action": false, "method": "m_declare_output_reg", "children": [
+                  {"token": "(write_output_reg_decl fsm MATCH)", "action": true, "method": "", "step": 20, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(write_state_declarations fsm)", "action": false, "method": "m_write_state_declarations", "children": [
+        {"token": "(analyze_choose_state_encoding fsm s0)", "action": true, "method": "", "step": 21, "children": []},
+        {"token": "(declare_states_from fsm s0)", "action": false, "method": "m_declare_states_more", "children": [
+          {"token": "(write_state_param fsm s0)", "action": true, "method": "", "step": 22, "children": []},
+          {"token": "(declare_states_from fsm s1)", "action": false, "method": "m_declare_states_more", "children": [
+            {"token": "(write_state_param fsm s1)", "action": true, "method": "", "step": 23, "children": []},
+            {"token": "(declare_states_from fsm s2)", "action": false, "method": "m_declare_states_more", "children": [
+              {"token": "(write_state_param fsm s2)", "action": true, "method": "", "step": 24, "children": []},
+              {"token": "(declare_states_from fsm s3)", "action": false, "method": "m_declare_states_more", "children": [
+                {"token": "(write_state_param fsm s3)", "action": true, "method": "", "step": 25, "children": []},
+                {"token": "(declare_states_from fsm s4)", "action": false, "method": "m_declare_states_last", "children": [
+                  {"token": "(write_state_param fsm s4)", "action": true, "method": "", "step": 26, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]},
+        {"token": "(write_state_regs fsm)", "action": true, "method": "", "step": 27, "children": []}
+      ]},
+      {"token": "(write_state_register fsm)", "action": false, "method": "m_state_register_async", "children": [
+        {"token": "(write_state_register_async fsm CLK RST active_high s0)", "action": true, "method": "", "step": 28, "children": []}
+      ]},
+      {"token": "(write_next_state_logic fsm)", "action": false, "method": "m_write_next_state_logic", "children": [
+        {"token": "(write_next_state_open fsm)", "action": true, "method": "", "step": 29, "children": []},
+        {"token": "(write_state_cases_from fsm s0)", "action": false, "method": "m_state_cases_more", "children": [
+          {"token": "(write_state_case fsm s0 IN s0 s1)", "action": true, "method": "", "step": 30, "children": []},
+          {"token": "(write_state_cases_from fsm s1)", "action": false, "method": "m_state_cases_more", "children": [
+            {"token": "(write_state_case fsm s1 IN s2 s1)", "action": true, "method": "", "step": 31, "children": []},
+            {"token": "(write_state_cases_from fsm s2)", "action": false, "method": "m_state_cases_more", "children": [
+              {"token": "(write_state_case fsm s2 IN s3 s1)", "action": true, "method": "", "step": 32, "children": []},
+              {"token": "(write_state_cases_from fsm s3)", "action": false, "method": "m_state_cases_more", "children": [
+                {"token": "(write_state_case fsm s3 IN s0 s4)", "action": true, "method": "", "step": 33, "children": []},
+                {"token": "(write_state_cases_from fsm s4)", "action": false, "method": "m_state_cases_last", "children": [
+                  {"token": "(write_state_case fsm s4 IN s2 s1)", "action": true, "method": "", "step": 34, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]},
+        {"token": "(write_next_state_default fsm s0)", "action": true, "method": "", "step": 35, "children": []},
+        {"token": "(write_next_state_close fsm)", "action": true, "method": "", "step": 36, "children": []}
+      ]},
+      {"token": "(write_output_logic fsm)", "action": false, "method": "m_write_mealy_output", "children": [
+        {"token": "(write_output_open fsm MATCH)", "action": true, "method": "", "step": 37, "children": []},
+        {"token": "(write_output_reset fsm MATCH)", "action": false, "method": "m_output_reset_clause", "children": [
+          {"token": "(write_output_reset_clause fsm MATCH RST active_high)", "action": true, "method": "", "step": 38, "children": []}
+        ]},
+        {"token": "(write_output_assert fsm MATCH s4 IN one)", "action": true, "method": "", "step": 39, "children": []},
+        {"token": "(write_output_default fsm MATCH)", "action": true, "method": "", "step": 40, "children": []},
+        {"token": "(write_output_close fsm)", "action": true, "method": "", "step": 41, "children": []}
+      ]},
+      {"token": "(write_module_end fsm)", "action": true, "method": "", "step": 42, "children": []}
+    ]}
+  ]}
+]}

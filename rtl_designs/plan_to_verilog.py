@@ -41,8 +41,27 @@ def active(rst, pol):
     return rst if pol == "active_high" else f"!{rst}"
 
 
+def number(obj):
+    """The number a width or value object stands for: bits5 -> 5, n31 -> 31."""
+    m = re.fullmatch(r"(?:bits|n)(\d+)", obj)
+    if not m:
+        sys.exit(f"{obj} is not a width (bitsN) or a value (nN)")
+    return int(m.group(1))
+
+
+PORT_DECLS = ("write_input_decl", "write_output_reg_decl", "write_output_decl",
+              "write_output_reg_vector_decl")
+
+
 def render(steps):
-    ports = [a[1] for n, a in steps if n in ("write_input_decl", "write_output_reg_decl")]
+    ports = [a[1] for n, a in steps if n in PORT_DECLS]
+    widths = {a[1]: number(a[2]) for n, a in steps
+              if n in ("write_output_reg_vector_decl", "write_register_decl")}
+
+    def lit(target, value):
+        """`value` as a literal sized for the port or register `target`."""
+        return f"{widths[target]}'d{number(value)}"
+
     states = [a[1] for n, a in steps if n == "write_state_param"]
     width = max(1, math.ceil(math.log2(len(states)))) if states else 1
     code = {s: i for i, s in enumerate(states)}
@@ -59,6 +78,12 @@ def render(steps):
             out.append(f"input {a[1]};")
         elif name == "write_output_reg_decl":
             out.append(f"output reg {a[1]};")
+        elif name == "write_output_decl":
+            out.append(f"output {a[1]};")
+        elif name == "write_output_reg_vector_decl":
+            out.append(f"output reg [{widths[a[1]] - 1}:0] {a[1]};")
+        elif name == "write_register_decl":
+            out.append(f"reg [{widths[a[1]] - 1}:0] {a[1]};")
         elif name == "write_state_param":
             out.append(f"parameter {a[1]} = {width}'d{code[a[1]]};")
         elif name == "write_state_regs":
@@ -96,6 +121,44 @@ def render(steps):
         elif name == "write_output_close":
             out.append("end")
             output_branch_open = False
+        elif name == "write_moore_output_assign":
+            _, o, st = a
+            out.append(f"assign {o} = ({CUR} == {st});")
+        elif name in ("write_clocked_block_open_async", "write_clocked_block_open_sync"):
+            _, clk, rst, pol = a
+            edge = "posedge" if pol == "active_high" else "negedge"
+            sens = f"posedge {clk} or {edge} {rst}" if name.endswith("async") else f"posedge {clk}"
+            out.append(f"always @({sens}) begin")
+        elif name == "write_clocked_block_close":
+            out.append("end")
+        elif name == "write_counter_reset":
+            _, cnt, rst, pol, v = a
+            out.append(f"  if ({active(rst, pol)}) {cnt} <= {lit(cnt, v)};")
+        elif name == "write_counter_enable_open":
+            out.append(f"  else if ({a[1]}) begin")
+        elif name == "write_counter_wrap":
+            _, cnt, top, to = a
+            out.append(f"    if ({cnt} == {lit(cnt, top)}) {cnt} <= {lit(cnt, to)};")
+            out.append(f"    else {cnt} <= {cnt} + 1'b1;")
+        elif name == "write_counter_enable_close":
+            out.append("  end")
+        elif name == "write_counter_hold":
+            out.append(f"  else {a[1]} <= {a[1]};")
+        elif name == "write_generator_reset":
+            _, rst, pol, d, dv, w, wv = a
+            out += [f"  if ({active(rst, pol)}) begin",
+                    f"    {d} <= {lit(d, dv)};",
+                    f"    {w} <= {lit(w, wv)};",
+                    "  end else begin"]
+        elif name == "write_direction_case_open":
+            out.append(f"    case ({a[1]})")
+        elif name in ("write_rising_phase", "write_falling_phase"):
+            _, d, phase, w, limit, nxt = a
+            step = "+" if name == "write_rising_phase" else "-"
+            out.append(f"      {lit(d, phase)}: if ({w} == {lit(w, limit)}) {d} <= {lit(d, nxt)};")
+            out.append(f"        else {w} <= {w} {step} 1'b1;")
+        elif name == "write_direction_case_close":
+            out += ["    endcase", "  end"]
         elif name == "write_module_end":
             out.append("endmodule")
         else:

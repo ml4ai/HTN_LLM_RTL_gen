@@ -1,0 +1,189 @@
+{"title": "sequence_detector_1001 (domain rtl_fsm)",
+ "roots": [
+  {"token": "(__sequence_detector_1001__)", "action": false, "method": "", "children": [
+    {"token": "(implement_module sequence_detector)", "action": false, "method": "m_implement_moore_sequence_detector", "children": [
+      {"token": "(analyze_choose_moore_fsm sequence_detector)", "action": true, "method": "", "step": 1, "children": []},
+      {"token": "(design_state_machine sequence_detector)", "action": false, "method": "m_design_sequence_fsm", "children": [
+        {"token": "(derive_transitions_from sequence_detector IDLE)", "action": false, "method": "m_derive_transitions_more", "children": [
+          {"token": "(derive_next sequence_detector IDLE zero)", "action": false, "method": "m_next_mismatch_initial", "children": [
+            {"token": "(analyze_stay_initial sequence_detector IDLE zero)", "action": true, "method": "", "step": 2, "children": []}
+          ]},
+          {"token": "(derive_next sequence_detector IDLE one)", "action": false, "method": "m_next_advance", "children": [
+            {"token": "(analyze_advance sequence_detector IDLE one S1)", "action": true, "method": "", "step": 3, "children": []}
+          ]},
+          {"token": "(derive_transitions_from sequence_detector S1)", "action": false, "method": "m_derive_transitions_more", "children": [
+            {"token": "(derive_next sequence_detector S1 zero)", "action": false, "method": "m_next_advance", "children": [
+              {"token": "(analyze_advance sequence_detector S1 zero S2)", "action": true, "method": "", "step": 4, "children": []}
+            ]},
+            {"token": "(derive_next sequence_detector S1 one)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+              {"token": "(derive_fallback sequence_detector S1)", "action": false, "method": "m_fallback_first", "children": [
+                {"token": "(analyze_fallback_first sequence_detector S1 IDLE)", "action": true, "method": "", "step": 5, "children": []}
+              ]},
+              {"token": "(derive_via_fallback sequence_detector S1 one)", "action": false, "method": "m_via_fallback", "children": [
+                {"token": "(conclude_fall_back sequence_detector S1 one IDLE)", "action": false, "method": "m_conclude_fall_back", "children": [
+                  {"token": "(analyze_fall_back sequence_detector S1 one IDLE S1)", "action": true, "method": "", "step": 6, "children": []}
+                ]},
+                {"token": "(derive_next sequence_detector IDLE one)", "action": false, "method": "m_next_known", "children": []}
+              ]}
+            ]},
+            {"token": "(derive_transitions_from sequence_detector S2)", "action": false, "method": "m_derive_transitions_more", "children": [
+              {"token": "(derive_next sequence_detector S2 zero)", "action": false, "method": "m_next_advance", "children": [
+                {"token": "(analyze_advance sequence_detector S2 zero S3)", "action": true, "method": "", "step": 7, "children": []}
+              ]},
+              {"token": "(derive_next sequence_detector S2 one)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+                {"token": "(derive_fallback sequence_detector S2)", "action": false, "method": "m_fallback_extend", "children": [
+                  {"token": "(derive_fallback_step sequence_detector S2 S1 zero)", "action": false, "method": "m_fallback_step", "children": [
+                    {"token": "(conclude_fallback_extend sequence_detector S2 S1 zero IDLE)", "action": false, "method": "m_conclude_fallback_extend", "children": [
+                      {"token": "(analyze_fallback_extend sequence_detector S2 S1 zero IDLE IDLE)", "action": true, "method": "", "step": 8, "children": []}
+                    ]},
+                    {"token": "(derive_next sequence_detector IDLE zero)", "action": false, "method": "m_next_known", "children": []}
+                  ]},
+                  {"token": "(derive_fallback sequence_detector S1)", "action": false, "method": "m_fallback_known", "children": []}
+                ]},
+                {"token": "(derive_via_fallback sequence_detector S2 one)", "action": false, "method": "m_via_fallback", "children": [
+                  {"token": "(conclude_fall_back sequence_detector S2 one IDLE)", "action": false, "method": "m_conclude_fall_back", "children": [
+                    {"token": "(analyze_fall_back sequence_detector S2 one IDLE S1)", "action": true, "method": "", "step": 9, "children": []}
+                  ]},
+                  {"token": "(derive_next sequence_detector IDLE one)", "action": false, "method": "m_next_known", "children": []}
+                ]}
+              ]},
+              {"token": "(derive_transitions_from sequence_detector S3)", "action": false, "method": "m_derive_transitions_more", "children": [
+                {"token": "(derive_next sequence_detector S3 zero)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+                  {"token": "(derive_fallback sequence_detector S3)", "action": false, "method": "m_fallback_extend", "children": [
+                    {"token": "(derive_fallback_step sequence_detector S3 S2 zero)", "action": false, "method": "m_fallback_step", "children": [
+                      {"token": "(conclude_fallback_extend sequence_detector S3 S2 zero IDLE)", "action": false, "method": "m_conclude_fallback_extend", "children": [
+                        {"token": "(analyze_fallback_extend sequence_detector S3 S2 zero IDLE IDLE)", "action": true, "method": "", "step": 10, "children": []}
+                      ]},
+                      {"token": "(derive_next sequence_detector IDLE zero)", "action": false, "method": "m_next_known", "children": []}
+                    ]},
+                    {"token": "(derive_fallback sequence_detector S2)", "action": false, "method": "m_fallback_known", "children": []}
+                  ]},
+                  {"token": "(derive_via_fallback sequence_detector S3 zero)", "action": false, "method": "m_via_fallback", "children": [
+                    {"token": "(conclude_fall_back sequence_detector S3 zero IDLE)", "action": false, "method": "m_conclude_fall_back", "children": [
+                      {"token": "(analyze_fall_back sequence_detector S3 zero IDLE IDLE)", "action": true, "method": "", "step": 11, "children": []}
+                    ]},
+                    {"token": "(derive_next sequence_detector IDLE zero)", "action": false, "method": "m_next_known", "children": []}
+                  ]}
+                ]},
+                {"token": "(derive_next sequence_detector S3 one)", "action": false, "method": "m_next_advance", "children": [
+                  {"token": "(analyze_advance sequence_detector S3 one S4)", "action": true, "method": "", "step": 12, "children": []}
+                ]},
+                {"token": "(derive_transitions_from sequence_detector S4)", "action": false, "method": "m_derive_transitions_last", "children": [
+                  {"token": "(derive_next sequence_detector S4 zero)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+                    {"token": "(derive_fallback sequence_detector S4)", "action": false, "method": "m_fallback_extend", "children": [
+                      {"token": "(derive_fallback_step sequence_detector S4 S3 one)", "action": false, "method": "m_fallback_step", "children": [
+                        {"token": "(conclude_fallback_extend sequence_detector S4 S3 one IDLE)", "action": false, "method": "m_conclude_fallback_extend", "children": [
+                          {"token": "(analyze_fallback_extend sequence_detector S4 S3 one IDLE S1)", "action": true, "method": "", "step": 13, "children": []}
+                        ]},
+                        {"token": "(derive_next sequence_detector IDLE one)", "action": false, "method": "m_next_known", "children": []}
+                      ]},
+                      {"token": "(derive_fallback sequence_detector S3)", "action": false, "method": "m_fallback_known", "children": []}
+                    ]},
+                    {"token": "(derive_via_fallback sequence_detector S4 zero)", "action": false, "method": "m_via_fallback", "children": [
+                      {"token": "(conclude_fall_back sequence_detector S4 zero S1)", "action": false, "method": "m_conclude_fall_back", "children": [
+                        {"token": "(analyze_fall_back sequence_detector S4 zero S1 S2)", "action": true, "method": "", "step": 14, "children": []}
+                      ]},
+                      {"token": "(derive_next sequence_detector S1 zero)", "action": false, "method": "m_next_known", "children": []}
+                    ]}
+                  ]},
+                  {"token": "(derive_next sequence_detector S4 one)", "action": false, "method": "m_next_mismatch_fallback", "children": [
+                    {"token": "(derive_via_fallback sequence_detector S4 one)", "action": false, "method": "m_via_fallback", "children": [
+                      {"token": "(conclude_fall_back sequence_detector S4 one S1)", "action": false, "method": "m_conclude_fall_back", "children": [
+                        {"token": "(analyze_fall_back sequence_detector S4 one S1 S1)", "action": true, "method": "", "step": 15, "children": []}
+                      ]},
+                      {"token": "(derive_next sequence_detector S1 one)", "action": false, "method": "m_next_known", "children": []}
+                    ]},
+                    {"token": "(derive_fallback sequence_detector S4)", "action": false, "method": "m_fallback_known", "children": []}
+                  ]}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(analyze_output_in_accept_state sequence_detector sequence_detected S4)", "action": true, "method": "", "step": 16, "children": []},
+      {"token": "(write_interface sequence_detector)", "action": false, "method": "m_write_interface", "children": [
+        {"token": "(write_module_header sequence_detector)", "action": true, "method": "", "step": 17, "children": []},
+        {"token": "(declare_ports_from sequence_detector clk)", "action": false, "method": "m_declare_ports_more", "children": [
+          {"token": "(declare_port sequence_detector clk)", "action": false, "method": "m_declare_input", "children": [
+            {"token": "(write_input_decl sequence_detector clk)", "action": true, "method": "", "step": 18, "children": []}
+          ]},
+          {"token": "(declare_ports_from sequence_detector rst_n)", "action": false, "method": "m_declare_ports_more", "children": [
+            {"token": "(declare_port sequence_detector rst_n)", "action": false, "method": "m_declare_input", "children": [
+              {"token": "(write_input_decl sequence_detector rst_n)", "action": true, "method": "", "step": 19, "children": []}
+            ]},
+            {"token": "(declare_ports_from sequence_detector data_in)", "action": false, "method": "m_declare_ports_more", "children": [
+              {"token": "(declare_port sequence_detector data_in)", "action": false, "method": "m_declare_input", "children": [
+                {"token": "(write_input_decl sequence_detector data_in)", "action": true, "method": "", "step": 20, "children": []}
+              ]},
+              {"token": "(declare_ports_from sequence_detector sequence_detected)", "action": false, "method": "m_declare_ports_last", "children": [
+                {"token": "(declare_port sequence_detector sequence_detected)", "action": false, "method": "m_declare_output_wire", "children": [
+                  {"token": "(write_output_decl sequence_detector sequence_detected)", "action": true, "method": "", "step": 21, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(write_state_declarations sequence_detector)", "action": false, "method": "m_write_state_declarations", "children": [
+        {"token": "(analyze_choose_state_encoding sequence_detector IDLE)", "action": true, "method": "", "step": 22, "children": []},
+        {"token": "(declare_states_from sequence_detector IDLE)", "action": false, "method": "m_declare_states_more", "children": [
+          {"token": "(write_state_param sequence_detector IDLE)", "action": true, "method": "", "step": 23, "children": []},
+          {"token": "(declare_states_from sequence_detector S1)", "action": false, "method": "m_declare_states_more", "children": [
+            {"token": "(write_state_param sequence_detector S1)", "action": true, "method": "", "step": 24, "children": []},
+            {"token": "(declare_states_from sequence_detector S2)", "action": false, "method": "m_declare_states_more", "children": [
+              {"token": "(write_state_param sequence_detector S2)", "action": true, "method": "", "step": 25, "children": []},
+              {"token": "(declare_states_from sequence_detector S3)", "action": false, "method": "m_declare_states_more", "children": [
+                {"token": "(write_state_param sequence_detector S3)", "action": true, "method": "", "step": 26, "children": []},
+                {"token": "(declare_states_from sequence_detector S4)", "action": false, "method": "m_declare_states_last", "children": [
+                  {"token": "(write_state_param sequence_detector S4)", "action": true, "method": "", "step": 27, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]},
+        {"token": "(write_state_regs sequence_detector)", "action": true, "method": "", "step": 28, "children": []}
+      ]},
+      {"token": "(write_state_register sequence_detector)", "action": false, "method": "m_state_register_sync", "children": [
+        {"token": "(write_state_register_sync sequence_detector clk rst_n active_low IDLE)", "action": true, "method": "", "step": 29, "children": []}
+      ]},
+      {"token": "(write_next_state_logic sequence_detector)", "action": false, "method": "m_write_next_state_logic", "children": [
+        {"token": "(write_next_state_open sequence_detector)", "action": true, "method": "", "step": 30, "children": []},
+        {"token": "(write_state_cases_from sequence_detector IDLE)", "action": false, "method": "m_state_cases_more", "children": [
+          {"token": "(write_state_case sequence_detector IDLE data_in IDLE S1)", "action": true, "method": "", "step": 31, "children": []},
+          {"token": "(write_state_cases_from sequence_detector S1)", "action": false, "method": "m_state_cases_more", "children": [
+            {"token": "(write_state_case sequence_detector S1 data_in S2 S1)", "action": true, "method": "", "step": 32, "children": []},
+            {"token": "(write_state_cases_from sequence_detector S2)", "action": false, "method": "m_state_cases_more", "children": [
+              {"token": "(write_state_case sequence_detector S2 data_in S3 S1)", "action": true, "method": "", "step": 33, "children": []},
+              {"token": "(write_state_cases_from sequence_detector S3)", "action": false, "method": "m_state_cases_more", "children": [
+                {"token": "(write_state_case sequence_detector S3 data_in IDLE S4)", "action": true, "method": "", "step": 34, "children": []},
+                {"token": "(write_state_cases_from sequence_detector S4)", "action": false, "method": "m_state_cases_last", "children": [
+                  {"token": "(write_state_case sequence_detector S4 data_in S2 S1)", "action": true, "method": "", "step": 35, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]},
+        {"token": "(write_next_state_default sequence_detector IDLE)", "action": true, "method": "", "step": 36, "children": []},
+        {"token": "(write_next_state_close sequence_detector)", "action": true, "method": "", "step": 37, "children": []}
+      ]},
+      {"token": "(write_output_logic sequence_detector)", "action": false, "method": "m_write_moore_outputs", "children": [
+        {"token": "(write_moore_outputs_from sequence_detector clk)", "action": false, "method": "m_moore_outputs_more", "children": [
+          {"token": "(write_moore_outputs_from sequence_detector rst_n)", "action": false, "method": "m_moore_outputs_more", "children": [
+            {"token": "(write_moore_outputs_from sequence_detector data_in)", "action": false, "method": "m_moore_outputs_more", "children": [
+              {"token": "(write_moore_outputs_from sequence_detector sequence_detected)", "action": false, "method": "m_moore_outputs_last", "children": [
+                {"token": "(write_moore_output sequence_detector sequence_detected)", "action": false, "method": "m_moore_output_assign", "children": [
+                  {"token": "(write_moore_output_assign sequence_detector sequence_detected S4)", "action": true, "method": "", "step": 38, "children": []}
+                ]}
+              ]},
+              {"token": "(write_moore_output sequence_detector data_in)", "action": false, "method": "m_moore_output_skip_input", "children": []}
+            ]},
+            {"token": "(write_moore_output sequence_detector rst_n)", "action": false, "method": "m_moore_output_skip_input", "children": []}
+          ]},
+          {"token": "(write_moore_output sequence_detector clk)", "action": false, "method": "m_moore_output_skip_input", "children": []}
+        ]}
+      ]},
+      {"token": "(write_module_end sequence_detector)", "action": true, "method": "", "step": 39, "children": []}
+    ]}
+  ]}
+]}

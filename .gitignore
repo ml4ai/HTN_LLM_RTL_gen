@@ -145,6 +145,10 @@ cmake-build-debug
 # ...except the executor's frozen configuration
 !executor/executor_config.json
 !eval/eval_config.json
+# ...and the RTL pilot's manifest, task trees and action glosses
+!rtl_designs/pilot/pilot.json
+!rtl_designs/pilot/**/*.tree.json
+!rtl_designs/rtl_domain_gloss.json
 *.rdb
 *.png
 # ...except images the documentation shows

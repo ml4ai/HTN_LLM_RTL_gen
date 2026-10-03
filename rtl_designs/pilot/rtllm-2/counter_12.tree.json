@@ -1,0 +1,44 @@
+{"title": "counter_12_wrap (domain rtl_fsm)",
+ "roots": [
+  {"token": "(__counter_12_wrap__)", "action": false, "method": "", "children": [
+    {"token": "(implement_module counter_12)", "action": false, "method": "m_implement_wrap_counter", "children": [
+      {"token": "(analyze_choose_counter_register counter_12)", "action": true, "method": "", "step": 1, "children": []},
+      {"token": "(analyze_wrap_point counter_12 n11 n0)", "action": true, "method": "", "step": 2, "children": []},
+      {"token": "(write_interface counter_12)", "action": false, "method": "m_write_interface", "children": [
+        {"token": "(write_module_header counter_12)", "action": true, "method": "", "step": 3, "children": []},
+        {"token": "(declare_ports_from counter_12 rst_n)", "action": false, "method": "m_declare_ports_more", "children": [
+          {"token": "(declare_port counter_12 rst_n)", "action": false, "method": "m_declare_input", "children": [
+            {"token": "(write_input_decl counter_12 rst_n)", "action": true, "method": "", "step": 4, "children": []}
+          ]},
+          {"token": "(declare_ports_from counter_12 clk)", "action": false, "method": "m_declare_ports_more", "children": [
+            {"token": "(declare_port counter_12 clk)", "action": false, "method": "m_declare_input", "children": [
+              {"token": "(write_input_decl counter_12 clk)", "action": true, "method": "", "step": 5, "children": []}
+            ]},
+            {"token": "(declare_ports_from counter_12 valid_count)", "action": false, "method": "m_declare_ports_more", "children": [
+              {"token": "(declare_port counter_12 valid_count)", "action": false, "method": "m_declare_input", "children": [
+                {"token": "(write_input_decl counter_12 valid_count)", "action": true, "method": "", "step": 6, "children": []}
+              ]},
+              {"token": "(declare_ports_from counter_12 out)", "action": false, "method": "m_declare_ports_last", "children": [
+                {"token": "(declare_port counter_12 out)", "action": false, "method": "m_declare_output_vector_reg", "children": [
+                  {"token": "(write_output_reg_vector_decl counter_12 out bits4)", "action": true, "method": "", "step": 7, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(write_counter_logic counter_12)", "action": false, "method": "m_write_counter_logic", "children": [
+        {"token": "(open_clocked_block counter_12 clk rst_n active_low)", "action": false, "method": "m_open_clocked_block_sync", "children": [
+          {"token": "(write_clocked_block_open_sync counter_12 clk rst_n active_low)", "action": true, "method": "", "step": 8, "children": []}
+        ]},
+        {"token": "(write_counter_reset counter_12 out rst_n active_low n0)", "action": true, "method": "", "step": 9, "children": []},
+        {"token": "(write_counter_enable_open counter_12 valid_count)", "action": true, "method": "", "step": 10, "children": []},
+        {"token": "(write_counter_wrap counter_12 out n11 n0)", "action": true, "method": "", "step": 11, "children": []},
+        {"token": "(write_counter_enable_close counter_12)", "action": true, "method": "", "step": 12, "children": []},
+        {"token": "(write_counter_hold counter_12 out)", "action": true, "method": "", "step": 13, "children": []},
+        {"token": "(write_clocked_block_close counter_12)", "action": true, "method": "", "step": 14, "children": []}
+      ]},
+      {"token": "(write_module_end counter_12)", "action": true, "method": "", "step": 15, "children": []}
+    ]}
+  ]}
+]}

@@ -9,7 +9,7 @@ and each plan step is left in symbolic form.
 
 | File | What it is |
 |---|---|
-| `rtl_domain.hddl` | The domain: how to design and write a Mealy sequence-detector FSM |
+| `rtl_domain.hddl` | The domain: how to design and write six families of small sequential designs (below). It began as the Mealy sequence detector |
 | `fsm/design_description.txt` | The spec (given) |
 | `fsm/fsm_problem.hddl` | The spec restated as facts: the hand-done translation step |
 | `fsm/fsm_plan.txt` | The plan the planner returns: 43 symbolic steps |
@@ -17,6 +17,9 @@ and each plan step is left in symbolic form.
 | `plan_to_verilog.py` | A check, not a pipeline stage: one fixed template per step |
 | `check_sequence_detectors.py` | Plans, renders and simulates many patterns and variants against a Python model |
 | `fsm/fsm_from_plan.v` | What those templates produce from the plan. Passes `fsm/testbench.v` |
+| `rtl_domain_gloss.json` | One sentence per action, used to present a plan to an LLM (`eval/pseries.py`) |
+| `pilot/` | Eight benchmark problems restated as facts, with their saved plans and task trees (below) |
+| `check_pilot.py` | Plans the pilot problems, renders each plan and runs the benchmark's own testbench on it |
 
 ## Running it
 
@@ -64,12 +67,24 @@ reuses `s1`, which is the minimal machine.
 
 ## Coverage of the domain
 
-The domain covers what this example needs, plus the variants that differ from
-it by a single fact: overlapping or non-overlapping detection, asynchronous or
-synchronous reset, and either reset polarity. Moore machines, multi-bit ports
-and other kinds of design are not modelled yet.
+The domain is hand-written, and so are the problem files. A reproducible
+procedure for producing both is future work; these exist to test whether a
+plan helps an LLM write the code at all.
 
-The derivation was checked beyond `10011` with `check_sequence_detectors.py`.
+| Family | What the planner works out |
+|---|---|
+| Mealy sequence detector | Every transition, from the pattern alone (above) |
+| Moore sequence detector | The same, plus an accepting state whose output is 1 |
+| Moore FSM from a state table or diagram | Nothing beyond reading the table; the plan is the code's structure |
+| Run classifier (HDLC framing) | Every transition, from the run of 1s and the rules that end one |
+| Wrap-around counter with an enable | The wrap point |
+| Triangle-wave generator | Where the direction turns |
+
+All of them have one clock and a reset that is asynchronous or synchronous, of
+either polarity. The FSM families have one serial input. Multi-bit inputs,
+several inputs per transition and other kinds of design are not modelled.
+
+The Mealy derivation was checked beyond `10011` with `check_sequence_detectors.py`.
 It covers every pattern of 1 to 5 bits and five longer ones (6 to 8 bits), in
 both overlap modes, with all four reset styles represented (134
 configurations). For each one it writes the problem, plans it, renders the
@@ -82,3 +97,26 @@ changing the domain:
 
 It needs the planner built and `iverilog` on `PATH`, and exits non-zero on any
 failure. `--keep DIR` keeps the generated problems, Verilog and testbenches.
+
+## The pilot problems
+
+`pilot/pilot.json` lists eight problems from RTLLM 2.0 and VerilogEval v2: two
+from each that a direct prompt fails, and two it handles. Each has a problem
+file under `pilot/<benchmark>/`, with the description's own words beside the
+facts read off them.
+
+    python rtl_designs/check_pilot.py
+
+That plans all eight (15 to 58 steps, about 20 s in all) and saves each plan
+(`.plan.txt`) and its task tree (`.tree.json`, from the planner's
+`-g -f x.json`). It then renders each plan with `plan_to_verilog.py` and runs
+the benchmark's own testbench on the result. All eight pass, so each plan
+carries every fact its code needs.
+
+It needs the evaluation harness set up (`eval/README.md`). It plans with
+`-T 200`: one rollout of the longest plan does not fit the 25 ms that is
+enough for `fsm`.
+
+The saved plans are what `eval/pseries.py` presents to the LLM: in four
+formats, as one prompt or a conversation, with or without the task tree and
+the description.

@@ -1,0 +1,102 @@
+{"title": "fsm3_moore (domain rtl_fsm)",
+ "roots": [
+  {"token": "(__fsm3_moore__)", "action": false, "method": "", "children": [
+    {"token": "(implement_module TopModule)", "action": false, "method": "m_implement_table_fsm", "children": [
+      {"token": "(analyze_choose_moore_fsm TopModule)", "action": true, "method": "", "step": 1, "children": []},
+      {"token": "(read_state_table TopModule)", "action": false, "method": "m_read_state_table", "children": [
+        {"token": "(read_table_from TopModule A)", "action": false, "method": "m_read_table_more", "children": [
+          {"token": "(analyze_read_transition TopModule A zero A)", "action": true, "method": "", "step": 2, "children": []},
+          {"token": "(analyze_read_transition TopModule A one B)", "action": true, "method": "", "step": 3, "children": []},
+          {"token": "(read_table_from TopModule B)", "action": false, "method": "m_read_table_more", "children": [
+            {"token": "(analyze_read_transition TopModule B zero C)", "action": true, "method": "", "step": 4, "children": []},
+            {"token": "(analyze_read_transition TopModule B one B)", "action": true, "method": "", "step": 5, "children": []},
+            {"token": "(read_table_from TopModule C)", "action": false, "method": "m_read_table_more", "children": [
+              {"token": "(analyze_read_transition TopModule C zero A)", "action": true, "method": "", "step": 6, "children": []},
+              {"token": "(analyze_read_transition TopModule C one D)", "action": true, "method": "", "step": 7, "children": []},
+              {"token": "(read_table_from TopModule D)", "action": false, "method": "m_read_table_last", "children": [
+                {"token": "(analyze_read_transition TopModule D zero C)", "action": true, "method": "", "step": 8, "children": []},
+                {"token": "(analyze_read_transition TopModule D one B)", "action": true, "method": "", "step": 9, "children": []}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(write_interface TopModule)", "action": false, "method": "m_write_interface", "children": [
+        {"token": "(write_module_header TopModule)", "action": true, "method": "", "step": 10, "children": []},
+        {"token": "(declare_ports_from TopModule clk)", "action": false, "method": "m_declare_ports_more", "children": [
+          {"token": "(declare_port TopModule clk)", "action": false, "method": "m_declare_input", "children": [
+            {"token": "(write_input_decl TopModule clk)", "action": true, "method": "", "step": 11, "children": []}
+          ]},
+          {"token": "(declare_ports_from TopModule areset)", "action": false, "method": "m_declare_ports_more", "children": [
+            {"token": "(declare_port TopModule areset)", "action": false, "method": "m_declare_input", "children": [
+              {"token": "(write_input_decl TopModule areset)", "action": true, "method": "", "step": 12, "children": []}
+            ]},
+            {"token": "(declare_ports_from TopModule in)", "action": false, "method": "m_declare_ports_more", "children": [
+              {"token": "(declare_port TopModule in)", "action": false, "method": "m_declare_input", "children": [
+                {"token": "(write_input_decl TopModule in)", "action": true, "method": "", "step": 13, "children": []}
+              ]},
+              {"token": "(declare_ports_from TopModule out)", "action": false, "method": "m_declare_ports_last", "children": [
+                {"token": "(declare_port TopModule out)", "action": false, "method": "m_declare_output_wire", "children": [
+                  {"token": "(write_output_decl TopModule out)", "action": true, "method": "", "step": 14, "children": []}
+                ]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]},
+      {"token": "(write_state_declarations TopModule)", "action": false, "method": "m_write_state_declarations_listed", "children": [
+        {"token": "(analyze_choose_state_encoding TopModule A)", "action": true, "method": "", "step": 15, "children": []},
+        {"token": "(declare_states_from TopModule A)", "action": false, "method": "m_declare_states_listed_more", "children": [
+          {"token": "(write_state_param TopModule A)", "action": true, "method": "", "step": 16, "children": []},
+          {"token": "(declare_states_from TopModule B)", "action": false, "method": "m_declare_states_listed_more", "children": [
+            {"token": "(write_state_param TopModule B)", "action": true, "method": "", "step": 17, "children": []},
+            {"token": "(declare_states_from TopModule C)", "action": false, "method": "m_declare_states_listed_more", "children": [
+              {"token": "(write_state_param TopModule C)", "action": true, "method": "", "step": 18, "children": []},
+              {"token": "(declare_states_from TopModule D)", "action": false, "method": "m_declare_states_listed_last", "children": [
+                {"token": "(write_state_param TopModule D)", "action": true, "method": "", "step": 19, "children": []}
+              ]}
+            ]}
+          ]}
+        ]},
+        {"token": "(write_state_regs TopModule)", "action": true, "method": "", "step": 20, "children": []}
+      ]},
+      {"token": "(write_state_register TopModule)", "action": false, "method": "m_state_register_async", "children": [
+        {"token": "(write_state_register_async TopModule clk areset active_high A)", "action": true, "method": "", "step": 21, "children": []}
+      ]},
+      {"token": "(write_next_state_logic TopModule)", "action": false, "method": "m_write_next_state_logic_listed", "children": [
+        {"token": "(write_next_state_open TopModule)", "action": true, "method": "", "step": 22, "children": []},
+        {"token": "(write_state_cases_from TopModule A)", "action": false, "method": "m_state_cases_listed_more", "children": [
+          {"token": "(write_state_case TopModule A in A B)", "action": true, "method": "", "step": 23, "children": []},
+          {"token": "(write_state_cases_from TopModule B)", "action": false, "method": "m_state_cases_listed_more", "children": [
+            {"token": "(write_state_case TopModule B in C B)", "action": true, "method": "", "step": 24, "children": []},
+            {"token": "(write_state_cases_from TopModule C)", "action": false, "method": "m_state_cases_listed_more", "children": [
+              {"token": "(write_state_case TopModule C in A D)", "action": true, "method": "", "step": 25, "children": []},
+              {"token": "(write_state_cases_from TopModule D)", "action": false, "method": "m_state_cases_listed_last", "children": [
+                {"token": "(write_state_case TopModule D in C B)", "action": true, "method": "", "step": 26, "children": []}
+              ]}
+            ]}
+          ]}
+        ]},
+        {"token": "(write_next_state_default TopModule A)", "action": true, "method": "", "step": 27, "children": []},
+        {"token": "(write_next_state_close TopModule)", "action": true, "method": "", "step": 28, "children": []}
+      ]},
+      {"token": "(write_output_logic TopModule)", "action": false, "method": "m_write_moore_outputs", "children": [
+        {"token": "(write_moore_outputs_from TopModule clk)", "action": false, "method": "m_moore_outputs_more", "children": [
+          {"token": "(write_moore_outputs_from TopModule areset)", "action": false, "method": "m_moore_outputs_more", "children": [
+            {"token": "(write_moore_outputs_from TopModule in)", "action": false, "method": "m_moore_outputs_more", "children": [
+              {"token": "(write_moore_outputs_from TopModule out)", "action": false, "method": "m_moore_outputs_last", "children": [
+                {"token": "(write_moore_output TopModule out)", "action": false, "method": "m_moore_output_assign", "children": [
+                  {"token": "(write_moore_output_assign TopModule out D)", "action": true, "method": "", "step": 29, "children": []}
+                ]}
+              ]},
+              {"token": "(write_moore_output TopModule in)", "action": false, "method": "m_moore_output_skip_input", "children": []}
+            ]},
+            {"token": "(write_moore_output TopModule areset)", "action": false, "method": "m_moore_output_skip_input", "children": []}
+          ]},
+          {"token": "(write_moore_output TopModule clk)", "action": false, "method": "m_moore_output_skip_input", "children": []}
+        ]}
+      ]},
+      {"token": "(write_module_end TopModule)", "action": true, "method": "", "step": 30, "children": []}
+    ]}
+  ]}
+]}
