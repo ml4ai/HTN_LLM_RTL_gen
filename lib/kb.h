@@ -270,6 +270,13 @@ class KnowledgeBase {
       get_bindings(std::string F, 
                   const std::vector<std::pair<std::string, std::string>>& variables) {
         std::vector<std::vector<std::pair<std::string,std::string>>> results;
+        //The model names each variable as it was declared, which is under its
+        //SMT name (expr::smt_var); the bindings go back under the caller's.
+        std::vector<std::pair<std::string, std::string>> declared;
+        declared.reserve(variables.size());
+        for (auto const& v : variables) {
+          declared.emplace_back(expr::smt_var(v.first),v.second);
+        }
         z3::context con;
         z3::solver s(con);
         s.from_string(F.c_str());
@@ -279,9 +286,12 @@ class KnowledgeBase {
           for (unsigned i = 0; i < m.size(); i++) {
             auto v = m[i];
             auto v_name = v.name().str();
-            auto index = find_var(bindings, v_name);
+            auto index = find_var(declared, v_name);
             if(index != -1) {
-              bindings[index].second = m.get_const_interp(v).to_string();
+              //The constructor's name rather than the value as printed: Z3
+              //prints an object that shares its name with a predicate as
+              //"(as name __Object__)".
+              bindings[index].second = m.get_const_interp(v).decl().name().str();
             }
           }
           results.push_back(bindings);
@@ -403,13 +413,17 @@ class KnowledgeBase {
             this->smt_state += "(declare-fun "+p.first+" () Bool)\n";
             int pid0 = this->predicate_id(p.first);
             if (pid0 >= 0 && !this->relation_of(pid0).empty()) {
-              this->smt_state += "(assert "+p.first+")\n";
+              this->smt_state += "(assert "+expr::smt_proposition(p.first)+")\n";
             }
             else {
-              this->smt_state += "(assert (not "+p.first+"))\n";
+              this->smt_state += "(assert (not "+expr::smt_proposition(p.first)+"))\n";
             }
             continue;
           }
+          //The quantified positions are named ?x_i and the objects qualified,
+          //as everywhere (expr.h, "Names in SMT text"). Bare, an object called
+          //x_0 was captured by the binder, and a tuple holding it read
+          //(= x_0 x_0) -- true of everything.
           int pid = this->predicate_id(p.first);
           if (pid >= 0) {
             if (!this->relation_of(pid).empty()) {
@@ -417,8 +431,8 @@ class KnowledgeBase {
               std::string pred_assert = "(assert (forall (";              std::string var_assert = "";
               for (size_t i = 0; i < p.second.size(); i++) {
                 this->smt_state += "__Object__ ";
-                pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                var_assert += " x_"+std::to_string(i);
+                pred_assert += "(?x_"+std::to_string(i)+" __Object__) ";
+                var_assert += " ?x_"+std::to_string(i);
               }
               pred_assert += ") (= ("+p.first+var_assert+") (or ";
               size_t ar = this->schema->arity[pid];
@@ -426,8 +440,8 @@ class KnowledgeBase {
               for (size_t off = 0; ar > 0 && off + ar <= rel.size(); off += ar) {
                 pred_assert += "(and ";
                 for (size_t j = 0; j < ar; j++) {
-                  pred_assert += "(= x_"+std::to_string(j)+" "+
-                                 this->schema->obj_name[rel[off+j]]+") ";
+                  pred_assert += "(= ?x_"+std::to_string(j)+" "+
+                                 expr::smt_object(this->schema->obj_name[rel[off+j]])+") ";
                 }
                 pred_assert += ") ";
               }
@@ -440,8 +454,8 @@ class KnowledgeBase {
               std::string pred_assert = "(assert (forall (";              std::string var_assert = "";
               for (size_t i = 0; i < p.second.size(); i++) {
                 this->smt_state += "__Object__ ";
-                pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-                var_assert += " x_"+std::to_string(i);
+                pred_assert += "(?x_"+std::to_string(i)+" __Object__) ";
+                var_assert += " ?x_"+std::to_string(i);
               }
               pred_assert += ") (not ("+p.first+var_assert+"))))\n";
               this->smt_state += ") Bool)\n";
@@ -453,8 +467,8 @@ class KnowledgeBase {
             std::string pred_assert = "(assert (forall (";            std::string var_assert = "";
             for (size_t i = 0; i < p.second.size(); i++) {
               this->smt_state += "__Object__ ";
-              pred_assert += "(x_"+std::to_string(i)+" __Object__) ";
-              var_assert += " x_"+std::to_string(i);
+              pred_assert += "(?x_"+std::to_string(i)+" __Object__) ";
+              var_assert += " ?x_"+std::to_string(i);
             }
             pred_assert += ") (not ("+p.first+var_assert+"))))\n";
             this->smt_state += ") Bool)\n";
@@ -586,14 +600,21 @@ class KnowledgeBase {
       //This returns {{{var1,val1},{var2,val2},...},...}
       //EX: expr = (and (A ?x) (or (B ?x y) (C z)))
       //params = {{"?x", "thing"}}
+      //A variable is written in expr with its '?', whichever way params
+      //spells it: each is declared as expr::smt_var of its name, so that it
+      //cannot be taken for an object, a type or a predicate of the same name.
+      //The bindings come back under the names params gave. An object that
+      //shares its name with a type or a predicate has to be written
+      //(as y __Object__), which is what expr::smt_object gives.
       std::vector<std::vector<std::pair<std::string,std::string>>>
       ask(std::string expr,
           std::vector<std::pair<std::string, std::string>>& params) {
         this->ensure_smt();
         std::string smt_expr = this->smt_state;
         for (auto const& p : params) {
-          smt_expr += "(declare-const "+p.first+" __Object__)\n";
-          smt_expr += "(assert ("+p.second+" "+p.first+"))\n";
+          std::string v = ::expr::smt_var(p.first);
+          smt_expr += "(declare-const "+v+" __Object__)\n";
+          smt_expr += "(assert ("+p.second+" "+v+"))\n";
         }
         if (expr != "") {
           smt_expr += "(assert "+expr+")\n";
@@ -611,8 +632,9 @@ class KnowledgeBase {
         this->ensure_smt();
         std::string smt_expr = this->smt_state;
         for (auto const& p : params) {
-          smt_expr += "(declare-const "+p.first+" __Object__)\n";
-          smt_expr += "(assert ("+p.second+" "+p.first+"))\n";
+          std::string v = ::expr::smt_var(p.first);
+          smt_expr += "(declare-const "+v+" __Object__)\n";
+          smt_expr += "(assert ("+p.second+" "+v+"))\n";
         }
         if (expr != "") {
           smt_expr += "(assert "+expr+")\n";
@@ -654,7 +676,9 @@ class KnowledgeBase {
           this->ensure_smt();
           z3::context dcon;
           z3::solver ds(dcon);
-          ds.from_string((this->smt_state+"(assert "+expr+")\n").c_str());
+          //Rendered from what was parsed rather than sent as written, so an
+          //object named like a predicate is qualified for Z3.
+          ds.from_string((this->smt_state+"(assert "+::expr::to_smt(it->second)+")\n").c_str());
           if (*direct != (ds.check() == z3::sat)) {
             throw std::logic_error("ground evaluator disagrees with Z3 on: "+expr);
           }

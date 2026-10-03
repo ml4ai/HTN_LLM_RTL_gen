@@ -109,7 +109,12 @@ state and plan rather than minimizing cost.
     listed tuples.
   * A **zero-arity predicate** is the degenerate case: there is nothing to
     quantify over, so it becomes a plain `Bool` constant asserted true or
-    negated, and is referenced by bare name rather than as `(p)` (§4.1 note 15).
+    negated, and is referenced as a constant, `(as p Bool)`, rather than as
+    `(p)` (§4.1 note 15).
+  * **Names.** The script has one namespace where HDDL has several, so a
+    variable is written under its `?` and an object qualified with its sort,
+    `(as s0 __Object__)`; neither can then be taken for the other, or for a
+    predicate or type of the same name (§8.28).
 * **Satisfiability and bindings.** A ground formula is checked with one Z3 call
   (`kb.h` 503–509; Z3: de Moura & Bjørner 2008). A formula with free parameters
   is solved by declaring each parameter as an `__Object__` constant constrained
@@ -3402,6 +3407,311 @@ would take, and look-ahead drops only proven dead ends; both are measured
 above and can be turned off. **Payoff:** 3.4–13× end to end on the shipped
 domains and 4–8× on the RTL domain; budgets become caps.
 
+### 8.27 Typed `exists` in preconditions — **done**
+
+*Written up with §8.28, from the code and its test; the change itself came
+first.*
+
+A typed quantifier is desugared for Z3: the binder ranges over `__Object__` and
+the type guards the body. The guard was an antecedent for both quantifiers,
+which is right under `forall` and wrong under `exists`.
+`(exists ((x __Object__)) (=> (thing x) body))` holds of any object that is
+*not* a `thing`, so in a problem with one object outside the quantified type
+every typed `(exists …)` was true and every `(not (exists …))` false. Under
+`exists` the guard is now a conjunct, `(and (and (thing x)) body)`, in
+`sentence_to_SMT` and in `expr::to_smt` alike.
+
+The direct evaluator now takes quantifiers too (`solve_quantified`): both are
+existence checks, like a negation, so they bind nothing outside themselves. A
+query whose scoping is not clear-cut still goes to Z3: a bound variable whose
+name is in use outside the quantifier, one the body never mentions, an untyped
+`forall` binder, or a body with a free variable not yet bound.
+
+`domains/exists_test.hddl` has two methods for one task, one requiring
+`(exists …)` and one `(not (exists …))`, and a problem with an object outside
+the type. Under the old encoding the second was never applicable and planning
+failed. `test_typed_exists_preconditions` plans it.
+
+**Depends on:** §8.4. **Risk:** low. **Payoff:** typed existential
+preconditions mean what they say.
+
+### 8.28 Names in the SMT text — **done; four more bugs found**
+
+The Z3 path could not be used on the RTL domain at all. HDDL keeps variables,
+objects, types and predicates apart: `?s0` is not `s0`, and an object may be
+called what a predicate is called. The SMT script has one namespace. It
+declares the objects as the constructors of `__Object__`, each predicate and
+each type as a function, a zero-arity predicate as a `Bool` constant and a
+query's variables as constants, and it declared them all under their bare
+names — the parser having dropped the one mark that set a variable apart, its
+`?`.
+
+| what shared a name | where | what happened |
+|---|---|---|
+| a parameter and an object | `?s0` in `rtl_domain.hddl`, `s0` in `fsm/fsm_problem.hddl` | Z3: `ambiguous constant reference … disambiguate s0` |
+| a parameter and a type or predicate | `?module` and the type `module` | the same, `… disambiguate module` |
+| an object and a predicate or type | the object and the predicate `sequence_detector` in `pilot/rtllm-2/sequence_detector.hddl` | the same |
+| a quantified variable and a constant in its body | `(exists (?idle - state) (… (not (= ?idle idle))))` | no error: the binder captured the constant, and the body read `(not (= idle idle))` |
+| an object and `x_0`, `x_1`, … | the names of the quantified positions in every predicate's definition | no error: a fact `(next x_0 s1)` was defined as `(and (= x_0 x_0) (= x_1 s1))`, true of every first argument |
+
+The default build did not show it, because the direct evaluator (§8.4) answers
+most queries from its own tables, where the kinds are separate. A query it
+declines falls back to Z3, and the differential build asks Z3 everything:
+
+    cmake .. -DCMAKE_CXX_FLAGS=-DHTN_DIFFERENTIAL_EVAL …
+    apps/planners/MCTS_planner -D rtl_designs/rtl_domain.hddl \
+        -P rtl_designs/fsm/fsm_problem.hddl -F simple -T 60000 -r 1 -s 1
+
+stopped with the first of those errors. So the flag that establishes the
+evaluator's correctness (§8.4) had nothing to say about the RTL domain.
+
+**Each kind now has a form the others cannot take** (`lib/expr.h`, "Names in
+SMT text"):
+
+| | written as | why it cannot clash |
+|---|---|---|
+| a variable | `?s0`, its HDDL spelling (`expr::smt_var`) | no name the grammar accepts contains a `?`, and SMT-LIB allows one in a symbol |
+| an object | `(as s0 __Object__)` (`expr::smt_object`) | the qualified form is how SMT-LIB picks one of several things sharing a name |
+| a zero-arity predicate | `(as done Bool)` (`expr::smt_proposition`) | likewise |
+| a predicate or type applied to arguments | `(next ?a ?b)`, unchanged | an application is not ambiguous with a constant |
+
+Everything that writes SMT text goes through those three functions:
+`sentence_to_SMT` and `decompose_constraint` in the loader, `expr::to_smt`, and
+`KnowledgeBase` for the declarations, the predicate definitions (whose
+positions are now `?x_0`, `?x_1`, …) and the differential check of a ground
+query. The `(= param value)` prefix that pins a task's arguments was built by
+hand at five sites in `typedefs.h`; it is one function now, `eval::pinned_smt`.
+Reading a model back, a variable is matched under its SMT name and returned
+under the caller's, and its value is taken from the constructor's name: Z3
+prints an object that shares a name as `(as name __Object__)`, so the printed
+value was no longer the object.
+
+`KnowledgeBase::ask(expr, params)` accepts its parameters spelled with or
+without the `?`, and `expr` writes them with it. A precondition that used to
+read `(and (at v l1) (road l1 l2))` now reads
+`(and (at ?v ?l1) (road ?l1 ?l2))`, and a constant in one reads
+`(as idle __Object__)`.
+
+**Four bugs came out of it.** The first two are in the default build, and were
+giving wrong answers there; each is fixed and has a test.
+
+* **The direct evaluator read a parameter pinned to the object of its own name
+  as not pinned.** §8.4 taught it Z3's reading of `(= room room)`: a name that
+  stands for itself is an unbound variable, to be enumerated. It took that
+  reading whenever name and value were spelled alike, which is also what `?s0`
+  pinned to the object `s0` looks like without the `?`. Decomposing
+  `(walk walker s0)` in the test domain gave sixteen bindings instead of four,
+  and the precondition `(next ?s0 ?next)` asked of `s0` and `x_0` held,
+  because some state does precede `x_0`. Z3 could not contradict it, since Z3
+  refused the query. The
+  name now stands for itself only when it is not an object (`eval::pins`,
+  shared with `pinned_smt` so the two engines cannot drift).
+* **A constant in a method's `:task` was ignored.** A method written
+  `:task (go home)` is for that task only. The evaluator skipped a pinned name
+  that was not a variable, so the method also decomposed `(go work)`: in six
+  seeds, two planned `(mark home) (flag)` for it. Z3, given
+  `(= home work)`, never did, and no shipped domain has a constant there, so
+  nothing had compared the two. The evaluator now answers such a query with no
+  bindings.
+* **A successor state kept its parent's SMT text.** `ActionDef::apply` copies
+  the state and writes the effects without refreshing the cached text, so if
+  Z3 had been asked about the parent, the copy went on answering from the
+  parent's facts. The search refreshes every state it keeps, which is why it
+  never showed; a direct caller, such as a test, got the stale one.
+  `apply_binding` now refreshes it.
+* **A predicate could take the name of a type.** Every type is already a
+  one-argument predicate (§8.17), so the two shared one relation and Z3 was
+  handed the function declared twice. Validation now rejects it, as it does a
+  predicate declared twice.
+
+**Tests.** `domains/name_clash_test.hddl` has every clash in the table above,
+and a precondition the evaluator leaves to Z3 (an `imply`), so the SMT path is
+taken in the default build too.
+* `test_kb_names` (`test_kb`) asks Z3 directly: variables named like an object,
+  a type and a predicate; objects named like a predicate, a type and a
+  zero-arity predicate; a fact holding the object `x_0`.
+* `test_names_do_not_clash` (`test_loader`) puts each query to both engines by
+  hand — the differential check, in the default build — and checks the text.
+  The same name in `test_MCTS_planner` plans the problem, which has one plan.
+* `test_constant_in_method_task` plans `(go work)` under six seeds.
+* `test_expr_ast_matches_smt` round-trips `exists_test`, `name_clash_test` and
+  `rtl_domain` as well, 563 conditions in all.
+
+Each was checked by breaking what it guards, in a copy of the tree. With
+`smt_var` returning the bare name, the three name tests fail with the message
+this section opened with. With `smt_object` returning it, they fail on
+`walker` and `state`. With `pins` comparing spellings, the head constant
+skipped and the binders bare, the engine comparison, the two plans and the
+`x_0` fact fail.
+
+**Checked.**
+* The differential build plans `fsm/fsm_problem.hddl` and seven of the eight
+  problems under `rtl_designs/pilot/` with no Z3 error and no disagreement
+  between the engines, and each returns the plan the default build returns
+  (42, 15, 42, 39, 16, 22, 30 and 31 steps). It is slow: 2.4 to 9 minutes for
+  the small ones and 43 minutes for each of the three fsm-sized ones, about
+  3,000 times the default build, because every enumeration of bindings is
+  repeated in Z3 with blocking clauses.
+* **The eighth, `Prob140_fsm_hdlc`, does not finish under the differential
+  build.** At `-T 60000` it stops with "exhausted its time limit before
+  evaluating any option at the root": one rollout does not fit in a minute.
+  With a larger limit it got through about 500 enumerations in 13 minutes,
+  and a plan of this problem asks 24 million precondition queries before any
+  enumeration is counted. §8.29 checks its preconditions alone, which is as
+  far as this problem can be checked.
+* `ctest` passes on the default build, all six suites.
+  `rtl_designs/check_sequence_detectors.py -j 8`: 134 configurations, 0
+  failed.
+
+**What this did not fix** is the same loss of the `?` outside the SMT text: a
+constant that shares a parameter's name in a subtask or an effect, which is
+§8.30. And
+the test domain's negated `exists` showed that the evaluator never answered
+one itself, which is §8.29.
+
+**Depends on:** §8.4, §8.17, §8.27. **Risk:** low. The default build's answers
+change only where they were wrong, and only for a parameter pinned to an object
+of its own name or a constant in a method's `:task`. **Payoff:** the Z3
+fallback and the differential build work on domains written the way RTL ones
+are, with objects and parameters named for what they are.
+
+### 8.29 Negated quantifiers without Z3 — **done: 3.1× on the one problem that uses them heavily**
+
+§8.27 gave the direct evaluator quantifiers, and it never used them under a
+negation. `solve_not` asks for its child to be ground, and `ground` counted
+the quantifier's own variable, which is unbound by construction. So every
+`(not (exists …))` was given up to Z3 before `solve_quantified` was reached —
+and that is the form a typed `exists` usually takes in a method precondition:
+"no rule for this state yet".
+
+**Evidence.** `rtl_designs/pilot/verilog-eval-v2/Prob140_fsm_hdlc.hddl` took
+50.6 s to plan where the other seven pilot problems and `fsm_problem.hddl`
+take 0.04–0.9 s. A build that logs each query handed to Z3 counted 2,280, all
+of two shapes, and none on any of the other eight:
+
+    (and (zero_run_state ?m ?z) (not (exists ((?x __Object__)) (and (and (fsm_state ?x)) (zero_rule ?s ?x)))))
+    (and (ones_next ?s ?t)      (not (exists ((?x __Object__)) (and (and (fsm_state ?x)) (one_rule ?s ?x)))))
+
+**The change** is in `ground`: a quantifier is ground when its body is,
+its own variables aside (`ground_except`, which `solve_quantified` already
+used). What `solve_quantified` cannot take is unchanged and still goes to Z3:
+a bound variable whose name is in use outside, one the body never mentions, an
+untyped `forall`, a quantifier nested in the body.
+
+| `Prob140_fsm_hdlc` | before | after |
+|---|---|---|
+| queries handed to Z3 | 2,280 | 0 |
+| time to plan | 50.6 s | 16.4 s |
+| plan | 58 steps | the same 58 steps |
+
+The 16.4 s that is left is rollouts, and does not depend on `-T`. The other
+eight RTL problems handed Z3 nothing before, so nothing changes for them:
+same plans, same times.
+
+**The differential build was not checking this path.** These queries are
+method preconditions, asked as "does any binding hold?" by the synthesised
+check (§2.3) through `eval::ask_any`. `-DHTN_DIFFERENTIAL_EVAL` compared the
+two engines in `solve_query_lazy`, which enumerates bindings, and nowhere
+else; the two sites that ask the boolean form called the evaluator and went to
+Z3 only when it declined. So moving 2,280 queries from Z3 to the evaluator
+would have moved them out of sight. Both sites now go through
+`eval::holds_query_lazy`, which compares the engines under the flag as
+`solve_query_lazy` does, and the differential build checks every method
+precondition it evaluates.
+
+**Tests.** `test_negated_quantifier_is_evaluated_directly` (`test_loader`)
+asks the evaluator for `exists_test`'s and `name_clash_test`'s negated
+`exists` and requires an answer rather than a refusal, the same answer Z3
+gives, and still a refusal for an `imply`. Checked by breaking it: with
+`ground` as it was, the test fails on the refusal, and the tests of §8.27 and
+§8.28 still pass — the planner was right before, and slow.
+
+**Checked,** with the comparison above in place.
+* The differential build plans `fsm/fsm_problem.hddl` and the seven smaller
+  pilot problems again, every method precondition now compared as well: no
+  disagreement, the same plans. The extra comparisons and a loaded machine
+  took the fsm-sized ones to two hours each.
+* `Prob140_fsm_hdlc` cannot finish under the full differential build (§8.28),
+  so it was run with only the boolean comparison compiled in. A complete plan
+  asks 24.1 million method-precondition queries, 10,954 of them a negated
+  `exists`. The run was stopped after ten and a half hours, at 9.7 million
+  compared, 9,332 of them a negated `exists`, with no disagreement.
+* `exists_test` and `name_clash_test` plan under the differential build, and
+  `test_parser`, `test_kb`, `test_loader`, `test_grapher` and the planner
+  tests of §8.27–§8.30 pass under it. `test_linkage` passed four runs in five
+  there: it plans with a 30 ms budget, which the differential build does not
+  always fit on a busy machine. The rest of `test_MCTS_planner` was not run
+  under the flag; it plans the RTL fsm twice, which is four hours.
+* `ctest` passes on the default build, all six suites, and
+  `check_sequence_detectors.py -j 8` reports 134 configurations, 0 failed.
+
+**Depends on:** §8.27, §8.28 (without it the differential build could not be
+run on the RTL domain). **Risk:** low. **Payoff:** 3.1× on `Prob140_fsm_hdlc`,
+and the same on any domain that guards a method with "there is none yet".
+
+### 8.30 A constant that shares a parameter's name — **done; wrong plans, silently**
+
+§8.28 separated the names in the SMT text. The planner's own grounding still
+identified a term by its bare name. A subtask's and an effect's arguments are
+stored as names — `task_def_of` and `pred_of` go through `term_name`, which
+gives `home` for the constant `home` and for the variable `?home` alike — and
+`bound_value` substitutes by name. So in a method or action with a parameter
+`?home`, the constant `home` was replaced by whatever the parameter was bound
+to. No error, in the default build:
+
+    (:method m :parameters (?home - place) :task (go ?home)
+      :ordered-subtasks (and (t1 (mark ?home)) (t2 (mark home)) (t3 (tie ?home))))
+    (:action tie :parameters (?home - place) :effect (linked ?home home))
+
+Decomposing `(go work)`:
+
+| | before | now |
+|---|---|---|
+| plan | `(mark work) (mark work) (tie work)` | `(mark work) (mark home) (tie work)` |
+| effect of `tie` | `(linked work work)` | `(linked work home)` |
+
+No shipped domain has such a pair. A domain's `:constants` would have to share
+a name with a parameter of a method or action that uses both, and a problem's
+objects cannot appear in a domain at all, so `?s0` beside the object `s0` was
+safe here. A problem's own `:htn`, which has both parameters and objects, was
+not: with `:parameters (?cafe - place)` and the subtask `(go cafe)`, five
+seeds in six planned for another place.
+
+**The loader now records which arguments are constants**, beside the lists
+(`ConstantArgs`, `typedefs.h`): for each effect, for each subtask and for a
+method's `:task`. The lists themselves are unchanged — names and types, as
+every caller expects — and a constant is simply never looked up:
+
+* `ActionDef::apply_binding` writes an effect's constant as itself, whatever
+  the binding or a `forall` holds under its name.
+* `MethodDef::apply_binding` passes a subtask's constant through. A method
+  with no constant in any subtask has no record and does no lookup for one,
+  which is most of them.
+* `MethodDef::bindings` compares a constant in `:task` with the task's
+  argument before asking anything, and does not pin it. §8.28 had made the
+  evaluator refuse a mismatch, but it could only tell a constant by its not
+  being a parameter's name. `(:task (pair home ?home))` read both arguments as
+  `?home`; it now requires `home` first and binds `?home` to the second.
+
+A method or effect built in code has no record, and every name in it is looked
+up as before; `check_bound_names` (§8.17) still guards that route.
+
+**Tests.** `test_constant_named_like_a_parameter` plans the domain above, with
+the `pair` method and a `forall` effect whose variable `?work` shares the
+constant `work`'s name, and checks the plan, the facts, what the loader
+recorded, `m_pair_home`'s bindings for three tasks, and the `:htn` case under
+six seeds. Checked by breaking it: with the record ignored, its checks fail.
+
+**Checked.** `scripts/benchmark --compare` against a build of the last commit:
+no semantic differences and no `rng_after` change on any of the eight
+configurations. The nine RTL problems return the plans they returned before.
+`check_sequence_detectors.py -j 8`: 134 configurations, 0 failed. All six test
+suites pass.
+
+**Depends on:** §8.17, §8.28. **Risk:** low: behaviour changes only where a
+constant and a parameter share a name. **Payoff:** the last place the `?` was
+lost.
+
 ---
 
 ## 9. Remaining work
@@ -3429,6 +3739,7 @@ what was left of performance (§8.24), followed by the evaluator's
 representation (§8.25). What remains below came out of those last two.
 §8.26, early commit and precondition look-ahead, came afterwards out of the
 first RTL domain; the heuristic question it raised is under "Not on this list".
+§8.27–§8.30 came out of the RTL domain as well.
 
 ---
 

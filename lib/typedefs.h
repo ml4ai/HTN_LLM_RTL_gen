@@ -23,6 +23,19 @@ using Args = std::vector<std::pair<std::string, std::string>>;
 using Preconds = std::string;
 using Pred = std::pair<std::string,Params>;
 using Predicates = std::vector<Pred>;
+//Which positions of an argument list were written as constants. An argument
+//list holds names -- a variable's without its '?' -- so ?home and the constant
+//home are stored alike, and grounding, which substitutes by name, replaced the
+//constant with the parameter's value (planner_doc.md 8.30). The loader records
+//the constants here, beside the list. Empty means none, or not recorded: a
+//list built in code has no record, and every name in it is then looked up, as
+//before.
+using ConstantArgs = std::vector<bool>;
+
+inline bool is_constant_arg(ConstantArgs const& constants, size_t i) {
+  return i < constants.size() && constants[i];
+}
+
 struct effect {
   std::string condition;
   bool remove;
@@ -31,12 +44,16 @@ struct effect {
   //The structured form of `condition`, kept so the condition can be evaluated
   //without a solver. Null when there is none.
   expr::Ptr condition_ast;
-  effect (std::string condition, bool remove, Pred pred, std::unordered_map<std::string,std::unordered_set<std::string>> forall, expr::Ptr condition_ast = nullptr) {
+  //The constants among pred's arguments.
+  ConstantArgs constants;
+  effect (std::string condition, bool remove, Pred pred, std::unordered_map<std::string,std::unordered_set<std::string>> forall, expr::Ptr condition_ast = nullptr,
+          ConstantArgs constants = {}) {
     this->condition = condition;
     this->remove = remove;
     this->pred = pred;
     this->forall = forall;
     this->condition_ast = condition_ast;
+    this->constants = std::move(constants);
     expr::number_variables(this->condition_ast);
   }
 };
@@ -386,13 +403,19 @@ class ActionDef {
       //binding that has it, and a constant as itself. Pointers, not copies,
       //handed to set_fact, which looks the ids up directly. This used to build
       //the fact as text for tell to parse back apart (8.24).
+      //A constant is never looked up: it may share its name with a parameter.
       std::vector<std::string const*> vals;
-      auto fact_of = [&vals](Pred const& pred, Args const& first, Args const* second) {
+      auto fact_of = [&vals](effect const& eff, Args const& first, Args const* second) {
         vals.clear();
-        for (auto const& p : pred.second) {
-          auto const* v = bound_value(p.first,first);
-          if (!v && second) {
-            v = bound_value(p.first,*second);
+        auto const& params = eff.pred.second;
+        for (size_t i = 0; i < params.size(); i++) {
+          auto const& p = params[i];
+          std::string const* v = nullptr;
+          if (!is_constant_arg(eff.constants,i)) {
+            v = bound_value(p.first,first);
+            if (!v && second) {
+              v = bound_value(p.first,*second);
+            }
           }
           vals.push_back(v ? v : &p.first);
         }
@@ -401,7 +424,7 @@ class ActionDef {
       for (auto const& e : this->effects) {
         if (e.forall.empty()) {
           if (e.condition == "__NONE__") {
-            new_kb.set_fact(e.pred.first,fact_of(e.pred,args,nullptr),e.remove,false);
+            new_kb.set_fact(e.pred.first,fact_of(e,args,nullptr),e.remove,false);
           }
           else {
             Args wc_fixed;
@@ -411,20 +434,13 @@ class ActionDef {
             }
             //The SMT text only if the evaluator declines and Z3 is asked.
             auto wc = [&]() {
-              if (args.empty()) {
-                return e.condition;
-              }
-              std::string w = "(and ";
-              for (size_t i = 0; i < args.size(); i++) {
-                w += "(= "+this->parameters[i].first+" "+args[i].second+") ";
-              }
-              return w + e.condition + ")";
+              return eval::pinned_smt(new_kb,this->parameters,wc_fixed,e.condition);
             };
             auto pass = eval::solve_query_lazy(new_kb,e.condition_ast,wc,
                                                this->parameters,wc_fixed,
                                                "conditional effect");
             if (!pass.empty()) {
-              new_kb.set_fact(e.pred.first,fact_of(e.pred,args,nullptr),e.remove,false);
+              new_kb.set_fact(e.pred.first,fact_of(e,args,nullptr),e.remove,false);
             }
           }
         }
@@ -440,7 +456,7 @@ class ActionDef {
             for (auto const& [var,types] : faparams) {
               params.push_back({var,"__Object__"});
               for (auto const& t : types) {
-                vt += " ("+t+" "+var+")";
+                vt += " ("+t+" "+expr::smt_var(var)+")";
                 vt_parts.push_back(expr::make_atom(t,{{var,true}}));
               }
             }
@@ -450,7 +466,7 @@ class ActionDef {
             auto bindings = eval::solve_query(new_kb,vt_ast,vt,params,Args{},
                                               "forall range");
             for (auto const& b : bindings) {
-              new_kb.set_fact(e.pred.first,fact_of(e.pred,b,&args),e.remove,false);
+              new_kb.set_fact(e.pred.first,fact_of(e,b,&args),e.remove,false);
             }
           }
           else {
@@ -460,7 +476,7 @@ class ActionDef {
             for (auto const& [var,types] : faparams) {
               params.push_back({var,"__Object__"});
               for (auto const& t : types) {
-                vt += " ("+t+" "+var+")";
+                vt += " ("+t+" "+expr::smt_var(var)+")";
                 vt_parts.push_back(expr::make_atom(t,{{var,true}}));
               }
             }
@@ -503,24 +519,22 @@ class ActionDef {
                 b_args.push_back(b_arg);
               }
               auto wc = [&]() {
-                if (b_args.empty()) {
-                  return e.condition;
-                }
-                std::string w = "(and ";
-                for (auto const& a : b_args) {
-                  w += "(= "+a.first+" "+a.second+") ";
-                }
-                return w + e.condition + ")";
+                return eval::pinned_smt(new_kb,condP,b_args,e.condition);
               };
               auto pass = eval::solve_query_lazy(new_kb,e.condition_ast,wc,condP,b_args,
                                                  "forall conditional effect");
               if (!pass.empty()) {
-                new_kb.set_fact(e.pred.first,fact_of(e.pred,b,&b_args),e.remove,false);
+                new_kb.set_fact(e.pred.first,fact_of(e,b,&b_args),e.remove,false);
               }
             }
           }
         }
       }
+      //new_kb began as a copy of kb, SMT text included, and the effects were
+      //written without refreshing it. If Z3 had been asked about kb, the copy
+      //would go on answering from kb's facts. The search refreshes every state
+      //it keeps; this is for a caller that does not.
+      new_kb.update_state();
       return new_kb;
     }
 
@@ -559,16 +573,11 @@ class ActionDef {
       for (size_t i = 0; i < args.size(); i++) {
         fixed.push_back({this->parameters[i].first,args[i].second});
       }
-      auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed,&this->slots);
-      if (direct) {
-        return *direct;
-      }
-      std::string pc = "(and ";
-      for (size_t i = 0; i < args.size(); i++) {
-        pc += "(= "+this->parameters[i].first+" "+args[i].second+") ";
-      }
-      pc += this->preconditions != "__NONE__" ? this->preconditions+")" : ")";
-      return kb.ask_any(pc,this->parameters);
+      auto pc_of = [&]() {
+        return eval::pinned_smt(kb,this->parameters,fixed,this->preconditions);
+      };
+      return eval::holds_query_lazy(kb,this->precondition_ast,pc_of,this->parameters,fixed,
+                                    this->head.c_str(),&this->slots);
     }
 
     bool is_artificial() {
@@ -599,31 +608,22 @@ class ActionDef {
                                std::to_string(args.size())+" arguments but declared with "+
                                std::to_string(this->parameters.size())+" parameters!");
       }
-      //The SMT text of the precondition with the arguments pinned. Built only
-      //if something needs it -- the Z3 fallback, or the differential build --
-      //which on the default build is almost never. It used to be built on every
-      //application, and it copies the whole precondition text each time.
-      auto pc_of = [&]() {
-        if (args.empty()) {
-          return this->preconditions;
-        }
-        std::string pc = "(and ";
-        for (size_t i = 0; i < args.size(); i++) {
-          pc += "(= "+this->parameters[i].first+" "+args[i].second+") ";
-        }
-        return pc + (this->preconditions != "__NONE__" ? this->preconditions+")" : ")");
-      };
-
-      std::vector<KnowledgeBase> new_states = {};
-
-      //What the `(= param value)` prefix of pc says, as an environment: the
-      //direct evaluator takes the pinned parameters as bindings rather than as
-      //conjuncts to re-derive.
+      //The arguments as an environment: the direct evaluator takes the pinned
+      //parameters as bindings rather than as conjuncts to re-derive.
       Args fixed;
       fixed.reserve(args.size());
       for (size_t i = 0; i < args.size(); i++) {
         fixed.push_back({this->parameters[i].first,args[i].second});
       }
+      //The SMT text of the precondition with the arguments pinned. Built only
+      //if something needs it -- the Z3 fallback, or the differential build --
+      //which on the default build is almost never. It used to be built on every
+      //application, and it copies the whole precondition text each time.
+      auto pc_of = [&]() {
+        return eval::pinned_smt(kb,this->parameters,fixed,this->preconditions);
+      };
+
+      std::vector<KnowledgeBase> new_states = {};
 
       //A synthesised method-precondition check has no effects and arrives with
       //every parameter already pinned by args, so at most one binding can
@@ -637,16 +637,8 @@ class ActionDef {
       //small-string buffer -- so building it was a heap allocation per check,
       //and HDDL timing puts one in front of every method.
       if (this->artificial) {
-        auto direct = eval::ask_any(kb,this->precondition_ast,this->parameters,fixed,&this->slots);
-        bool holds;
-        if (direct) {
-          holds = *direct;
-        }
-        else {
-          std::string pc = pc_of();
-          holds = (pc == "__NONE__" || kb.ask_any(pc,this->parameters));
-        }
-        if (holds) {
+        if (eval::holds_query_lazy(kb,this->precondition_ast,pc_of,this->parameters,fixed,
+                                   this->head.c_str(),&this->slots)) {
           new_states.push_back(kb);
         }
         return std::make_pair(task_token{},new_states);
@@ -685,6 +677,17 @@ class MethodDef {
     std::unordered_map<std::string,std::vector<std::string>> orderings;
 
   public:
+    //The constants among the arguments of the method's :task, and of each
+    //subtask that has any, by label. See ConstantArgs.
+    struct Constants {
+      ConstantArgs task;
+      std::unordered_map<std::string,ConstantArgs> subtasks;
+    };
+
+  private:
+    Constants constants;
+
+  public:
     MethodDef() {}
     MethodDef(std::string head, 
               TaskDef task, 
@@ -692,7 +695,8 @@ class MethodDef {
               Preconds preconditions, 
               TaskDefs subtasks, 
               std::unordered_map<std::string,std::vector<std::string>> orderings,
-              expr::Ptr precondition_ast = nullptr) {
+              expr::Ptr precondition_ast = nullptr,
+              Constants constants = {}) {
       this->head = head;
       this->task = task;
       this->parameters = parameters;
@@ -700,11 +704,21 @@ class MethodDef {
       this->subtasks = subtasks;
       this->orderings = orderings;
       this->precondition_ast = precondition_ast;
+      this->constants = std::move(constants);
       expr::number_variables(this->precondition_ast);
-      //Queried with the decomposed task's arguments pinned, in its order.
+      //Queried with the decomposed task's arguments pinned, in its order. A
+      //constant in :task pins nothing: bindings() compares it itself.
       std::vector<std::string> names;
-      for (auto const& p : this->task.second) names.push_back(p.first);
+      for (size_t k = 0; k < this->task.second.size(); k++) {
+        if (!is_constant_arg(this->constants.task,k)) {
+          names.push_back(this->task.second[k].first);
+        }
+      }
       this->slots = eval::slot_map(this->precondition_ast,this->parameters,names);
+    }
+
+    Constants const& get_constants() const {
+      return this->constants;
     }
 
     //Structured form of `preconditions`, which for a method is its
@@ -794,8 +808,20 @@ class MethodDef {
         Grounded_Task gt;
         gt.head = s.first;
         gt.args.reserve(s.second.size());
-        for (auto const& pt : s.second) {
-          auto const* val = bound_value(pt.first,args);
+        //Most methods pass no constants at all, and then nothing is looked up.
+        ConstantArgs const* consts = nullptr;
+        if (!this->constants.subtasks.empty()) {
+          auto c = this->constants.subtasks.find(id);
+          if (c != this->constants.subtasks.end()) {
+            consts = &c->second;
+          }
+        }
+        for (size_t k = 0; k < s.second.size(); k++) {
+          auto const& pt = s.second[k];
+          //A constant passes through as itself, whatever the binding holds
+          //under its name.
+          auto const* val = (consts && is_constant_arg(*consts,k)) ? nullptr
+                                                                   : bound_value(pt.first,args);
           gt.args.emplace_back(pt.first,val ? *val : pt.first);
         }
         int tid = tasks.add_node(std::move(gt));
@@ -858,23 +884,24 @@ class MethodDef {
       }
       //As in ActionDef::apply, the SMT text is built only if the Z3 fallback
       //or the differential build asks for it.
-      auto pc_of = [&]() {
-        if (args.empty()) {
-          return this->preconditions;
-        }
-        std::string pc = "(and ";
-        for (size_t k = 0; k < args.size(); k++) {
-          pc += "(= "+this->task.second[k].first+" "+args[k].second+") ";
-        }
-        return pc + (this->preconditions != "__NONE__" ? this->preconditions+")" : ")");
-      };
-      //As in ActionDef::apply: the `(= param value)` prefix becomes an
-      //environment rather than part of the formula.
+      //As in ActionDef::apply: the task's arguments as an environment. A
+      //constant in :task -- (:task (go home)) -- is not a parameter to pin but
+      //a condition on the task: a method for (go home) has no binding under
+      //which it decomposes (go work).
       Args fixed;
       fixed.reserve(args.size());
       for (size_t k = 0; k < args.size(); k++) {
+        if (is_constant_arg(this->constants.task,k)) {
+          if (args[k].second != this->task.second[k].first) {
+            return {};
+          }
+          continue;
+        }
         fixed.push_back({this->task.second[k].first,args[k].second});
       }
+      auto pc_of = [&]() {
+        return eval::pinned_smt(kb,this->parameters,fixed,this->preconditions);
+      };
       return eval::solve_query_lazy(kb,this->precondition_ast,pc_of,
                                     this->parameters,fixed,this->head.c_str(),
                                     &this->slots);

@@ -1,0 +1,11 @@
+; s0 -> state -> x_0 -> idle. Walking from s0 visits s0, state and x_0, and
+; stops there: only idle follows x_0. Every step pins ?s0 to an object, and the
+; first pins it to the object s0 -- its own name.
+(define (problem name_clash_test_problem)
+  (:domain name_clash_test)
+  (:objects walker - module s0 state x_0 - state)
+  (:htn
+    :parameters ()
+    :ordered-subtasks (and (t1 (walk walker s0))))
+  (:init (walker walker) (next s0 state) (next state x_0) (next x_0 idle))
+)

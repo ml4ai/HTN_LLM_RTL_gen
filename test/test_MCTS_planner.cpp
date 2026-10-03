@@ -244,6 +244,212 @@ BOOST_AUTO_TEST_CASE(test_zero_arity_predicates) {
 
 }// end of testing zero-arity predicates
 
+//Typed existential preconditions (planner_doc.md 8.27): (not (exists (?x -
+//thing) ...)) next to a conjunct binding another parameter, in a problem with
+//an object outside the type. The old SMT encoding read every typed exists as
+//true there, so m_none was never applicable and planning failed outright.
+BOOST_AUTO_TEST_CASE(test_typed_exists_preconditions) {
+    auto [domain,problem] = load(HTN_DOMAINS_DIR "/exists_test.hddl",
+                                 HTN_DOMAINS_DIR "/exists_test_problem.hddl");
+
+    auto results = cppMCTShop(domain,problem,scorers["simple"],300,1,sqrt(2.0),2022);
+    auto const& plan = results.t[results.end].plan;
+    std::vector<std::string> steps;
+    for (auto const& a : plan) {
+      if (a.find("__mprec_") == std::string::npos) {
+        steps.push_back(a.substr(0, a.rfind('_')));
+      }
+    }
+    BOOST_TEST(steps.size() == 2);
+    BOOST_TEST(std::count(steps.begin(), steps.end(), "(mark m1 a b)") == 1);
+    BOOST_TEST(std::count(steps.begin(), steps.end(), "(mark m1 c c)") == 1);
+
+}// end of testing typed exists
+
+//Names shared between kinds of thing (planner_doc.md 8.28): ?s0 beside an
+//object s0, ?module beside the type module, ?next beside the predicate next, a
+//quantified ?idle beside the constant idle, an object walker beside the
+//predicate walker and an object state beside the type state. visit's
+//precondition is an imply, so it goes to Z3 in every build, and Z3 used to
+//refuse it ("ambiguous constant reference ... disambiguate s0"); the direct
+//evaluator, for its part, read ?s0 pinned to s0 as free. The walk has one
+//plan.
+BOOST_AUTO_TEST_CASE(test_names_do_not_clash) {
+    auto [domain,problem] = load(HTN_DOMAINS_DIR "/name_clash_test.hddl",
+                                 HTN_DOMAINS_DIR "/name_clash_test_problem.hddl");
+
+    auto results = cppMCTShop(domain,problem,scorers["simple"],300,1,sqrt(2.0),2022);
+    std::vector<std::string> steps;
+    for (auto const& a : results.t[results.end].plan) {
+      if (a.find("__mprec_") == std::string::npos) {
+        steps.push_back(a.substr(0, a.rfind('_')));
+      }
+    }
+    std::vector<std::string> const expected =
+        {"(visit walker s0)", "(visit walker state)", "(visit walker x_0)"};
+    BOOST_TEST(steps == expected, boost::test_tools::per_element());
+
+}// end of testing shared names
+
+//A constant in a method's :task restricts what the method decomposes: m_home
+//is for (go home) only. The direct evaluator used to skip a pinned name that
+//was not a variable, so m_home also took (go work) -- two seeds in six
+//planned (mark home) (flag) for it. Z3, given (= home work), never did.
+BOOST_AUTO_TEST_CASE(test_constant_in_method_task) {
+    std::string const dom = R"(
+(define (domain head_const)
+  (:requirements :typing :hierarchy)
+  (:types place - object)
+  (:constants home work - place)
+  (:predicates (been ?p - place) (special))
+  (:task go :parameters (?p - place))
+  (:method m_home
+    :parameters ()
+    :task (go home)
+    :ordered-subtasks (and (t1 (mark home)) (t2 (flag))))
+  (:method m_any
+    :parameters (?p - place)
+    :task (go ?p)
+    :ordered-subtasks (and (t1 (mark ?p))))
+  (:action mark :parameters (?p - place) :precondition () :effect (been ?p))
+  (:action flag :parameters () :precondition () :effect (special))
+))";
+    std::string const prob = R"(
+(define (problem head_const_p)
+  (:domain head_const)
+  (:objects cafe - place)
+  (:htn :parameters () :ordered-subtasks (and (t1 (go work))))
+  (:init)
+))";
+    for (int seed = 1; seed <= 6; seed++) {
+        BOOST_TEST_CONTEXT("seed " << seed) {
+            auto [domain,problem] = load_hddl(dom, prob);
+            domain.narration = nullptr;
+            auto results = cppMCTShop(domain,problem,scorers["simple"],50,1,sqrt(2.0),seed);
+            std::vector<std::string> steps;
+            for (auto const& a : results.t[results.end].plan) {
+                steps.push_back(a.substr(0, a.rfind('_')));
+            }
+            std::vector<std::string> const expected = {"(mark work)"};
+            BOOST_TEST(steps == expected, boost::test_tools::per_element());
+        }
+    }
+}// end of testing a constant in a method's task
+
+//A constant that shares a parameter's name (planner_doc.md 8.30). Argument
+//lists hold names, a variable's without its '?', so ?home and the constant
+//home were stored alike and grounding, which substitutes by name, replaced the
+//constant with the parameter's value: decomposing (go work), the subtask
+//(mark home) became (mark work), the effect (linked ?home home) wrote
+//(linked work work), and a :task (pair home ?home) read both of its arguments
+//as the one parameter. The loader now records which arguments are constants.
+BOOST_AUTO_TEST_CASE(test_constant_named_like_a_parameter) {
+    std::string const dom = R"(
+(define (domain shared_names)
+  (:requirements :typing :hierarchy :universal-preconditions :conditional-effects)
+  (:types place - object)
+  (:constants home work - place)
+  (:predicates (been ?p - place) (linked ?a ?b - place) (near ?a ?b - place))
+  (:task go :parameters (?home - place))
+  (:task pair :parameters (?a ?b - place))
+  (:method m_go
+    :parameters (?home - place)
+    :task (go ?home)
+    :ordered-subtasks (and (t1 (mark ?home)) (t2 (mark home)) (t3 (tie ?home))
+                           (t4 (pair home ?home))))
+  (:method m_pair_home
+    :parameters (?home - place)
+    :task (pair home ?home)
+    :ordered-subtasks (and (t1 (survey ?home))))
+  (:action mark :parameters (?p - place) :precondition () :effect (been ?p))
+  (:action tie :parameters (?home - place) :precondition () :effect (linked ?home home))
+  (:action survey :parameters (?p - place) :precondition ()
+    :effect (forall (?work - place) (near ?work work)))
+))";
+    std::string const prob = R"(
+(define (problem shared_names_p)
+  (:domain shared_names)
+  (:objects cafe - place)
+  (:htn :parameters () :ordered-subtasks (and (t1 (go work))))
+  (:init)
+))";
+    auto [domain,problem] = load_hddl(dom, prob);
+    domain.narration = nullptr;
+
+    //What the loader recorded: t2's argument and t4's first are constants.
+    auto& m_go = domain.methods["go"].front();
+    auto const& consts = m_go.get_constants();
+    BOOST_TEST(consts.task.empty());
+    BOOST_TEST_REQUIRE(consts.subtasks.contains("t2"));
+    BOOST_TEST_REQUIRE(consts.subtasks.contains("t4"));
+    BOOST_TEST(!consts.subtasks.contains("t1"));
+    BOOST_TEST((consts.subtasks.at("t2") == ConstantArgs{true}));
+    BOOST_TEST((consts.subtasks.at("t4") == ConstantArgs{true,false}));
+
+    auto results = cppMCTShop(domain,problem,scorers["simple"],50,1,sqrt(2.0),2022);
+    std::vector<std::string> steps;
+    for (auto const& a : results.t[results.end].plan) {
+        steps.push_back(a.substr(0, a.rfind('_')));
+    }
+    std::vector<std::string> const expected =
+        {"(mark work)", "(mark home)", "(tie work)", "(survey work)"};
+    BOOST_TEST(steps == expected, boost::test_tools::per_element());
+
+    auto& end_state = results.t[results.end].state;
+    BOOST_TEST(end_state.get_facts("been").contains("(been home)"));
+    BOOST_TEST(end_state.get_facts("been").contains("(been work)"));
+    //The effect's constant is home, and the forall's is work, whatever the
+    //parameter and the quantified variable of those names are bound to.
+    auto linked = end_state.get_facts("linked");
+    BOOST_TEST(linked.size() == 1u);
+    BOOST_TEST(linked.contains("(linked work home)"));
+    auto near = end_state.get_facts("near");
+    BOOST_TEST(near.size() == 3u);
+    for (auto const* place : {"home", "work", "cafe"}) {
+        BOOST_TEST(near.contains(std::string("(near ")+place+" work)"));
+    }
+
+    //(:task (pair home ?home)): the first argument must be home, and the
+    //second is what ?home is bound to.
+    auto& m_pair = domain.methods["pair"].front();
+    BOOST_TEST((m_pair.get_constants().task == ConstantArgs{true,false}));
+    KnowledgeBase kb(domain.predicates,problem.objects,domain.typetree);
+    Args from_home = {{"a","home"},{"b","work"}};
+    auto bound = m_pair.bindings(kb,from_home);
+    BOOST_TEST_REQUIRE(bound.size() == 1u);
+    BOOST_TEST(return_value("home",bound[0]) == "work");
+    Args from_work = {{"a","work"},{"b","work"}};
+    BOOST_TEST(m_pair.bindings(kb,from_work).empty());
+    Args home_home = {{"a","home"},{"b","home"}};
+    BOOST_TEST(m_pair.bindings(kb,home_home).size() == 1u);
+
+    //A problem's :htn has parameters and objects both. With a parameter ?cafe,
+    //the task (go cafe) is still for the object cafe; it used to be for
+    //whatever ?cafe was bound to, and five seeds in six planned another place.
+    std::string const prob_htn = R"(
+(define (problem shared_names_htn)
+  (:domain shared_names)
+  (:objects cafe - place)
+  (:htn :parameters (?cafe - place) :ordered-subtasks (and (t1 (go cafe))))
+  (:init)
+))";
+    for (int seed = 1; seed <= 6; seed++) {
+        BOOST_TEST_CONTEXT("seed " << seed) {
+            auto [d,p] = load_hddl(dom, prob_htn);
+            d.narration = nullptr;
+            auto r = cppMCTShop(d,p,scorers["simple"],50,1,sqrt(2.0),seed);
+            std::vector<std::string> plan;
+            for (auto const& a : r.t[r.end].plan) {
+                plan.push_back(a.substr(0, a.rfind('_')));
+            }
+            std::vector<std::string> const want =
+                {"(mark cafe)", "(mark home)", "(tie cafe)", "(survey cafe)"};
+            BOOST_TEST(plan == want, boost::test_tools::per_element());
+        }
+    }
+
+}// end of testing a constant named like a parameter
+
 
 
 //Method-precondition semantics (planner_doc.md 8.16). Under HDDL's compiled

@@ -1,0 +1,30 @@
+; Typed existential preconditions (planner_doc.md 8.27). go(?m ?s) has two
+; methods: m_some when ?s has a rule, m_none when it has none -- the latter
+; written with (not (exists ...)) beside a conjunct that binds another
+; parameter. The problem has an object outside the quantified type, which is
+; what exposed the old encoding: (exists ((x __Object__)) (=> (thing x) ...))
+; held of that object, so every (not (exists ...)) was false.
+(define (domain exists_test)
+  (:requirements :typing :hierarchy :negative-preconditions
+                 :existential-preconditions :method-preconditions)
+  (:types mod thing - object)
+  (:predicates (rule ?s ?t - thing) (home ?m - mod ?z - thing) (went ?s ?z - thing))
+  (:task go :parameters (?m - mod ?s - thing))
+
+  (:method m_none
+    :parameters (?m - mod ?s ?z - thing)
+    :task (go ?m ?s)
+    :precondition (and (home ?m ?z) (not (exists (?x - thing) (rule ?s ?x))))
+    :ordered-subtasks (and (t1 (mark ?m ?s ?z))))
+
+  (:method m_some
+    :parameters (?m - mod ?s ?t - thing)
+    :task (go ?m ?s)
+    :precondition (and (rule ?s ?t) (exists (?x - thing) (rule ?s ?x)))
+    :ordered-subtasks (and (t1 (mark ?m ?s ?t))))
+
+  (:action mark
+    :parameters (?m - mod ?s ?z - thing)
+    :precondition ()
+    :effect (went ?s ?z))
+)

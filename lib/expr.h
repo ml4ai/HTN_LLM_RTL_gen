@@ -19,9 +19,9 @@
 // It is deliberately not the parser's AST. Owning a small type here keeps the
 // evaluator independent of Spirit's variant layout and of position-tracking
 // state it has no use for, and lets the loader record things the SMT text
-// cannot express -- most importantly, whether an argument is a variable or a
-// constant, which the string spells identically and which the current engine
-// only recovers from which names it declared.
+// did not express -- most importantly, whether an argument is a variable or a
+// constant, which the string spelled identically until planner_doc.md 8.28
+// (see "Names in SMT text" below).
 //
 // A null `Ptr` is the IR's "__NONE__": the sentence was absent, or every part
 // of it was. `to_smt` renders that back as the literal string "__NONE__", the
@@ -42,7 +42,8 @@ enum class Kind {
 
 // An argument position. Variable names are stored as the parser produces them,
 // which is *without* the leading '?': the grammar consumes it. Constants are
-// object names.
+// object names. The two can therefore be spelled alike -- ?s0 and s0 -- and
+// only is_variable tells them apart.
 struct Term {
   std::string name;
   bool is_variable = false;
@@ -145,6 +146,51 @@ inline Ptr make_quantified(std::string quantifier,
   return n;
 }
 
+// Names in SMT text.
+//
+// The encoding declares everything in one script: the objects as the
+// constructors of __Object__, each predicate and each type as a function, a
+// zero-arity predicate as a Bool constant, and a query's variables as
+// constants. HDDL keeps those apart; a script does not, and the parser drops
+// the one mark that told a variable from the rest, its '?'. Written under
+// their bare names, a parameter ?s0 beside an object s0, a parameter ?module
+// beside the type module, and an object sequence_detector beside a predicate
+// sequence_detector were each two declarations of one name. Z3 refused the
+// query ("ambiguous constant reference"), or, where a quantifier bound the
+// name, silently read the object as the bound variable (planner_doc.md 8.28).
+//
+// So each kind is written in a form the others cannot take:
+//
+//   a variable   under its HDDL spelling, '?' included. No name the grammar
+//                accepts contains a '?', and SMT-LIB allows one in a symbol.
+//   an object    qualified with its sort, (as s0 __Object__), which is how
+//                SMT-LIB picks one of several things sharing a name.
+//   a zero-arity predicate   likewise, (as done Bool).
+//
+// A predicate or type applied to arguments needs nothing: an application is
+// not ambiguous with a constant. Everything that writes SMT text goes through
+// these -- the loader (sentence_to_SMT, decompose_constraint), to_smt below,
+// the pinned arguments (eval::pinned_smt), and KnowledgeBase's declarations,
+// fact definitions and reading back of a model.
+
+// A name already spelled with its '?' is left as it is, so a caller of
+// KnowledgeBase::ask may write its parameters either way.
+inline std::string smt_var(std::string const& name) {
+  return !name.empty() && name[0] == '?' ? name : "?"+name;
+}
+
+inline std::string smt_object(std::string const& name) {
+  return "(as "+name+" __Object__)";
+}
+
+inline std::string smt_proposition(std::string const& predicate) {
+  return "(as "+predicate+" Bool)";
+}
+
+inline std::string smt_term(Term const& t) {
+  return t.is_variable ? smt_var(t.name) : smt_object(t.name);
+}
+
 // Renders back to the SMT-LIB text the loader would have produced. This exists
 // to prove the IR is faithful: `test_loader` asserts that every precondition
 // and effect condition in every shipped domain renders back to the string
@@ -156,21 +202,21 @@ inline std::string to_smt(Ptr const& e) {
   }
   switch (e->kind) {
     case Kind::Atom: {
-      //A zero-arity predicate is referenced by bare name; SMT-LIB has no
+      //A zero-arity predicate is referenced as a constant; SMT-LIB has no
       //nullary application.
       if (e->args.empty()) {
-        return e->predicate;
+        return smt_proposition(e->predicate);
       }
       std::string s = "("+e->predicate;
       for (auto const& a : e->args) {
-        s += " "+a.name;
+        s += " "+smt_term(a);
       }
       return s+")";
     }
     case Kind::Equals:
-      return "(= "+e->args[0].name+" "+e->args[1].name+")";
+      return "(= "+smt_term(e->args[0])+" "+smt_term(e->args[1])+")";
     case Kind::NotEquals:
-      return "(not (= "+e->args[0].name+" "+e->args[1].name+"))";
+      return "(not (= "+smt_term(e->args[0])+" "+smt_term(e->args[1])+"))";
     case Kind::Not: {
       std::string inner = to_smt(e->children[0]);
       if (inner == "__NONE__") {
@@ -212,13 +258,15 @@ inline std::string to_smt(Ptr const& e) {
         return "__NONE__";
       }
       //Typed quantification is desugared the way the loader desugars it: the
-      //binder ranges over __Object__ and the types become an antecedent.
+      //binder ranges over __Object__ and the types guard the body, as an
+      //antecedent under forall and a conjunct under exists (planner_doc.md 8.27).
       std::string qs = "("+e->quantifier+" (";
-      std::string t_imply = "(=> (and";
+      std::string t_imply = e->kind == Kind::Exists ? "(and (and" : "(=> (and";
       for (auto const& b : e->bound) {
-        qs += "("+b.name+" __Object__) ";
+        std::string v = smt_var(b.name);
+        qs += "("+v+" __Object__) ";
         for (auto const& t : b.types) {
-          t_imply += " ("+t+" "+b.name+")";
+          t_imply += " ("+t+" "+v+")";
         }
       }
       qs += ") ";

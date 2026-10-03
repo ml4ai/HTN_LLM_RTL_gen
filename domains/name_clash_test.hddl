@@ -1,0 +1,46 @@
+; Names shared between kinds of thing (planner_doc.md 8.28). HDDL keeps
+; variables, objects, types and predicates apart; the SMT encoding declared
+; them all in one script under their bare names, the parser having dropped a
+; variable's '?'. Here
+;
+;   ?s0      is named like the object s0,
+;   ?module  like the type module,
+;   ?next    like the predicate next,
+;   ?idle    like the constant idle, which the same condition also names,
+;
+; and the problem adds an object walker beside the predicate walker, an object
+; state beside the type state, and an object x_0, the name the encoding gave
+; the first quantified position of every predicate's definition.
+;
+; visit's precondition is an imply, which the direct evaluator leaves to Z3,
+; so the SMT path is taken in every build and not only the differential one.
+; Z3 used to refuse it: "ambiguous constant reference ... disambiguate s0".
+(define (domain name_clash_test)
+  (:requirements :typing :hierarchy :negative-preconditions :disjunctive-preconditions
+                 :existential-preconditions :equality :method-preconditions)
+  (:types module state - object)
+  (:constants idle - state)
+  (:predicates (next ?a ?b - state) (visited ?m - module ?s - state)
+               (ready ?m - module) (walker ?m - module))
+
+  (:task walk :parameters (?module - module ?s0 - state))
+
+  (:method m_step
+    :parameters (?module - module ?s0 ?next - state)
+    :task (walk ?module ?s0)
+    :precondition (and (walker ?module) (next ?s0 ?next) (not (= ?next idle)))
+    :ordered-subtasks (and (t1 (visit ?module ?s0)) (t2 (walk ?module ?next))))
+
+  ; Stops where nothing follows but idle. ?idle is the bound variable and idle
+  ; the constant: under one name, the disequality compared ?idle with itself.
+  (:method m_stop
+    :parameters (?module - module ?s0 - state)
+    :task (walk ?module ?s0)
+    :precondition (not (exists (?idle - state) (and (next ?s0 ?idle) (not (= ?idle idle)))))
+    :ordered-subtasks (and (t1 (visit ?module ?s0))))
+
+  (:action visit
+    :parameters (?module - module ?s0 - state)
+    :precondition (imply (visited ?module ?s0) (ready ?module))
+    :effect (visited ?module ?s0))
+)

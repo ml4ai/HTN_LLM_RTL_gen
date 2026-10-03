@@ -797,6 +797,15 @@ public:
         report(w, "predicate " + p.predicate + " is declared twice");
         continue;
       }
+      //Every type is also a one-argument predicate, true of that type's
+      //objects (KnowledgeBase::initialize). A predicate of the same name
+      //would be a second definition of it: the two shared one relation, and
+      //Z3 was handed the function declared twice.
+      if (parents.contains(p.predicate)) {
+        report(w, "predicate " + p.predicate + " has the name of a type, and every type is "
+                  "already a one-argument predicate true of its objects; rename one of them");
+        continue;
+      }
       predicates[p.predicate] = types_of(parameters(p.variables,w));
       pred_decl[p.predicate] = w;
     }

@@ -48,17 +48,20 @@ inline bool supported(expr::Ptr const& e) {
     case expr::Kind::Not:
     case expr::Kind::And:
     case expr::Kind::Or:
+    case expr::Kind::Forall:
+    case expr::Kind::Exists:
+      //A quantifier is evaluated as an existence check (solve_quantified),
+      //and gives the query to Z3 at run time when its scoping is unclear.
       for (auto const& c : e->children) {
         if (!supported(c)) {
           return false;
         }
       }
+      if (e->kind == expr::Kind::Forall || e->kind == expr::Kind::Exists) {
+        return !e->bound.empty() && !e->children.empty() && e->children[0];
+      }
       return true;
     case expr::Kind::Imply:
-    case expr::Kind::Forall:
-    case expr::Kind::Exists:
-      //Deliberately unsupported. No shipped domain uses them, and getting
-      //quantifier scoping right is not worth guessing at -- Z3 already does it.
       return false;
   }
   return false;
@@ -91,6 +94,8 @@ struct Search {
   bool abort = false;
   //An existence check (a negation's, or ask_any's) has its witness: unwind.
   bool halt = false;
+  //The query has no answer whatever the expression says: see prepare.
+  bool none = false;
 
   bool stop() const { return abort || halt; }
 };
@@ -121,7 +126,29 @@ inline std::string const* text_of(Search& s, expr::Term const& t) {
   return t.is_variable ? s.text[t.slot] : &t.name;
 }
 
+inline int slot_named(expr::Node const& e, std::string const& name);
+inline bool ground_except(Search& s, expr::Node const& e, std::vector<int> const& own);
+
+//Is everything under `e` bound? A quantifier's own variables do not count:
+//they are bound inside it, and are unbound outside by construction. Counting
+//them made (not (exists ...)) never ground, so solve_not gave every one to Z3
+//before solve_quantified was reached (planner_doc.md 8.29). What
+//solve_quantified itself cannot take -- its variable already in use outside,
+//or a quantifier nested in its body -- it still gives up on.
 inline bool ground(Search& s, expr::Node const& e) {
+  if (e.kind == expr::Kind::Forall || e.kind == expr::Kind::Exists) {
+    if (e.children.empty() || !e.children[0]) {
+      return true;
+    }
+    std::vector<int> own;
+    for (auto const& b : e.bound) {
+      int slot = slot_named(*e.children[0], b.name);
+      if (slot >= 0) {
+        own.push_back(slot);
+      }
+    }
+    return ground_except(s, *e.children[0], own);
+  }
   for (auto const& a : e.args) {
     if (a.is_variable && s.val[a.slot] == kUnbound) {
       return false;
@@ -256,6 +283,120 @@ inline void solve_not(Search& s, expr::Node const& e, Cont const& k) {
   }
 }
 
+//The slot of the variable `name` among the terms under `e`, or -1.
+inline int slot_named(expr::Node const& e, std::string const& name) {
+  for (auto const& t : e.args) {
+    if (t.is_variable && t.name == name) {
+      return t.slot;
+    }
+  }
+  for (auto const& c : e.children) {
+    if (c) {
+      int s = slot_named(*c, name);
+      if (s >= 0) return s;
+    }
+  }
+  return -1;
+}
+
+//Is everything under `e` bound, the quantifier's own variables aside?
+inline bool ground_except(Search& s, expr::Node const& e, std::vector<int> const& own) {
+  for (auto const& a : e.args) {
+    if (a.is_variable && s.val[a.slot] == kUnbound &&
+        std::find(own.begin(), own.end(), a.slot) == own.end()) {
+      return false;
+    }
+  }
+  for (auto const& c : e.children) {
+    if (c && !ground_except(s, *c, own)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+//(exists (?x - T) body) holds when some binding of the body's ?x is of type
+//T; (forall (?x - T) body) when every object of type T satisfies the body.
+//Both are existence checks, like a negation, so they bind nothing outside:
+//the rest of the expression must already be bound, and the quantifier's own
+//variables must be free on entry. Variables are numbered by name across the
+//whole expression, so a free one would mean the same name is in use outside
+//the quantifier; that, and a bound variable the body never mentions, go to Z3.
+//A type is the unary atom the knowledge base keeps for it, as in the SMT
+//encoding (expr::to_smt): a conjunct under exists, an antecedent under forall.
+inline void solve_quantified(Search& s, expr::Node const& e, Cont const& k) {
+  expr::Node const& body = *e.children[0];
+  std::vector<int> own;
+  std::vector<expr::Ptr> types;
+  for (auto const& b : e.bound) {
+    int slot = slot_named(body, b.name);
+    if (slot < 0 || s.val[slot] != kUnbound) {
+      s.abort = true;
+      return;
+    }
+    own.push_back(slot);
+    for (auto const& t : b.types) {
+      expr::Term v{b.name, true};
+      v.slot = slot;
+      types.push_back(expr::make_atom(t, {v}));
+    }
+  }
+  if (!ground_except(s, body, own)) {
+    s.abort = true;
+    return;
+  }
+  bool found = false;
+  if (e.kind == expr::Kind::Exists) {
+    //The body binds the variables, then their types are checked.
+    auto typed = [&] {
+      auto rest = [&] { found = true; s.halt = true; };
+      Cont r(rest);
+      std::function<void(size_t)> each = [&](size_t i) {
+        if (i == types.size()) { r(); return; }
+        auto next = [&] { each(i + 1); };
+        Cont n(next);
+        solve_atom(s, *types[i], n);
+      };
+      each(0);
+    };
+    Cont t(typed);
+    solve(s, body, t);
+    s.halt = false;
+    if (!s.abort && found) {
+      k();
+    }
+    return;
+  }
+  //forall: look for an object of the types that fails the body.
+  auto check = [&] {
+    bool holds = false;
+    auto witness = [&] { holds = true; s.halt = true; };
+    Cont w(witness);
+    solve(s, body, w);
+    s.halt = false;
+    if (!s.abort && !holds) {
+      found = true;            //a counterexample
+      s.halt = true;
+    }
+  };
+  Cont c(check);
+  std::function<void(size_t)> each = [&](size_t i) {
+    if (i == types.size()) { c(); return; }
+    auto next = [&] { each(i + 1); };
+    Cont n(next);
+    solve_atom(s, *types[i], n);
+  };
+  if (types.empty()) {
+    s.abort = true;            //an untyped binder would range over every object
+    return;
+  }
+  each(0);
+  s.halt = false;
+  if (!s.abort && !found) {
+    k();
+  }
+}
+
 //Positive atoms and equalities are taken first, so that they bind variables
 //before a negation or disequality needs them: `pos` runs over the children
 //twice, taking in the first pass the ones that bind and in the second the
@@ -294,6 +435,10 @@ inline void solve(Search& s, expr::Node const& e, Cont const& k) {
       return;
     case expr::Kind::Not:
       solve_not(s, e, k);
+      return;
+    case expr::Kind::Exists:
+    case expr::Kind::Forall:
+      solve_quantified(s, e, k);
       return;
     case expr::Kind::And:
       solve_and(s, e, 0, k);
@@ -375,6 +520,45 @@ inline SlotMap slot_map(expr::Ptr const& e, Binding const& params,
   return m;
 }
 
+//Does pinning `name` to `value` pin it at all? A parameter "pinned" to its own
+//name is not pinned. When a method's subtask mentions a name the method does
+//not bind, MethodDef::apply_binding falls back to using the *name* as its
+//value, so the grounded task carries `room` where an object should be, and
+//the variable is left free to be enumerated (planner_doc.md 8.4).
+//
+//That reading used to be taken whenever the two were spelled the same, which
+//is also what a parameter ?s0 pinned to an object s0 looks like once the
+//parser has dropped the '?'. That one is pinned, and leaving it free answered
+//the query for every object of its type instead (planner_doc.md 8.28). So the
+//name stands for itself only when it is not an object.
+inline bool pins(KnowledgeBase const& kb, std::string const& name, std::string const& value) {
+  return name != value || kb.object_id(value) >= 0;
+}
+
+//The SMT text of `body` -- a precondition or an effect condition, possibly
+//"__NONE__" -- with `fixed` pinned: what `fixed` is to the direct evaluator,
+//written as a prefix of (= ?param value) conjuncts for Z3, in the forms
+//expr.h reserves for a variable and an object. Each site that asks a query
+//used to build this itself, under bare names.
+//
+//A pinned name that is not one of `params` is a constant in a method's :task,
+//and is compared as the object it is.
+inline std::string pinned_smt(KnowledgeBase const& kb, Binding const& params,
+                              Binding const& fixed, std::string const& body) {
+  std::string pinned;
+  for (auto const& [name,value] : fixed) {
+    if (!pins(kb,name,value)) {
+      continue;
+    }
+    pinned += "(= "+(find_var(params,name) >= 0 ? expr::smt_var(name) : expr::smt_object(name))+
+              " "+expr::smt_object(value)+") ";
+  }
+  if (pinned.empty()) {
+    return body;
+  }
+  return "(and "+pinned+(body != "__NONE__" ? body : "")+")";
+}
+
 namespace detail {
 
 //Sets up a search: sizes the binding array and binds what `fixed` pins, using
@@ -393,15 +577,22 @@ inline SlotMap const& prepare(Search& s, expr::Ptr const& e, Binding const& para
   s.text.assign(map->total, nullptr);
   for (size_t i = 0; i < fixed.size(); i++) {
     auto const& [name,value] = fixed[i];
-    //A parameter "pinned" to its own name is not pinned at all. When a
-    //method's subtask mentions a parameter the method does not bind,
-    //MethodDef::apply_binding falls back to using the parameter's *name* as
-    //its value, so the grounded task carries `room` where an object should
-    //be. The string path then emits `(= room room)`, which Z3 reads as a
-    //tautology and ignores, leaving the variable free to be enumerated.
-    //Reproduce Z3's reading. (planner_doc.md 4.2 has the rest.)
     int slot = map->fixed_slot[i];
-    if (slot < 0 || name == value) {
+    if (slot < 0) {
+      //Not a variable of the expression and not a parameter. What is left is
+      //a constant in a method's :task -- (:task (go home)) -- which the task
+      //being decomposed has to match: (go work) is not that method's to
+      //decompose. pinned_smt writes the same thing as an equality of objects.
+      //This used to be skipped, and the method applied to any argument. A
+      //loaded method no longer gets here: the loader records its constants
+      //and MethodDef::bindings compares them first (planner_doc.md 8.30).
+      //This is for a method built in code, which has no such record.
+      if (s.kb.object_id(name) >= 0 && name != value) {
+        s.none = true;
+      }
+      continue;
+    }
+    if (!pins(s.kb,name,value)) {
       continue;
     }
     //A value that names no object keeps its text: every atom then fails on
@@ -438,6 +629,9 @@ inline std::optional<std::vector<Binding>> ask(KnowledgeBase& kb,
   detail::Search s{kb, {}, {}};
   SlotMap scratch;
   auto const& prep = detail::prepare(s, e, params, fixed, map, scratch);
+  if (s.none) {
+    return std::vector<Binding>{};
+  }
 
   //Each result as its values' object ids, with the text of one that names no
   //object. Duplicates are dropped and the first occurrence kept, in place:
@@ -529,6 +723,9 @@ inline std::optional<bool> ask_any(KnowledgeBase& kb,
   detail::Search s{kb, {}, {}};
   SlotMap scratch;
   auto const& prep = detail::prepare(s, e, params, fixed, map, scratch);
+  if (s.none) {
+    return false;
+  }
   bool any = false;
   auto each = [&] {
     for (size_t i = 0; i < params.size(); i++) {
@@ -629,6 +826,44 @@ inline std::vector<Binding> solve_query_lazy(KnowledgeBase& kb,
     return kb.ask("",mutable_params);
   }
   return kb.ask(smt,mutable_params);
+}
+
+//The boolean form: is there any binding at all? What a synthesised
+//method-precondition check asks, with every parameter pinned. The two sites
+//that ask it called eval::ask_any themselves and went to Z3 only when it
+//declined, so the differential build compared nothing here -- and this is
+//where a method's precondition is decided (planner_doc.md 8.29).
+template <class SmtFn>
+inline bool holds_query_lazy(KnowledgeBase& kb,
+                             expr::Ptr const& ast,
+                             SmtFn&& smt_of,
+                             Binding const& params,
+                             Binding const& fixed,
+                             char const* what,
+                             SlotMap const* map = nullptr) {
+  auto direct = ask_any(kb,ast,params,fixed,map);
+  //An absent condition still asks that each parameter's type has an object.
+  auto reference = [&]() {
+    std::string smt = smt_of();
+    Binding mutable_params = params;
+    return kb.ask_any(smt != "__NONE__" ? smt : "",mutable_params);
+  };
+
+#ifdef HTN_DIFFERENTIAL_EVAL
+  if (direct) {
+    bool z3 = reference();
+    if (*direct != z3) {
+      throw std::logic_error(std::string("evaluator disagrees with Z3 on ")+what+
+                             "\n  query: "+smt_of()+
+                             "\n  direct: "+(*direct ? "holds" : "does not hold")+
+                             "\n  z3:     "+(z3 ? "holds" : "does not hold"));
+    }
+  }
+#else
+  (void)what;
+#endif
+
+  return direct ? *direct : reference();
 }
 
 //The eager form, for callers that have the text anyway -- the effect paths,

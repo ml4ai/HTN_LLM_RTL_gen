@@ -53,6 +53,32 @@ inline std::string const& term_name(Term const& t) {
   return t.which() == 1 ? boost::get<Variable>(t).name : boost::get<Constant>(t).name;
 }
 
+//A term as SMT text, in the forms expr.h reserves: a variable under its '?',
+//a constant qualified as an object. Neither can be taken for the other, or
+//for a type or predicate of the same name.
+inline std::string smt_term(Term const& t) {
+  return t.which() == 1 ? expr::smt_var(boost::get<Variable>(t).name)
+                        : expr::smt_object(boost::get<Constant>(t).name);
+}
+
+//Which of a list of terms are constants, for the planner's argument lists,
+//which keep only the names (typedefs.h, ConstantArgs). Empty if none is.
+template <class Terms>
+inline ConstantArgs constants_among(Terms const& terms) {
+  ConstantArgs constants(terms.size(),false);
+  bool any = false;
+  for (size_t i = 0; i < terms.size(); i++) {
+    if (terms[i].which() == 0) {
+      constants[i] = true;
+      any = true;
+    }
+  }
+  if (!any) {
+    constants.clear();
+  }
+  return constants;
+}
+
 //Every (either ...) type used in a parameter or quantifier list, collected so
 //each can be added to the type tree before anything refers to it.
 using EitherTypes = std::map<std::string,std::vector<std::string>>;
@@ -221,19 +247,14 @@ inline std::string sentence_to_SMT(Sentence const& sentence, Ptypes const& ptype
     auto s = boost::get<Literal<Term>>(sentence);
     //A zero-arity predicate is a propositional atom, declared as a plain Bool
     //constant by KnowledgeBase::update_state. SMT-LIB has no nullary
-    //application, so it has to be referenced by bare name: "(done)" is
+    //application, so it has to be referenced as a constant: "(done)" is
     //rejected as a function application with its arguments missing.
     if (s.args.empty()) {
-      return s.predicate;
+      return expr::smt_proposition(s.predicate);
     }
     std::string lt = "("+s.predicate;
     for (auto const& a : s.args) {
-      if (a.which() == 0) {
-        lt += " "+boost::get<Constant>(a).name;
-      }
-      else {
-        lt += " "+boost::get<Variable>(a).name;
-      }
+      lt += " "+smt_term(a);
     }
     return lt + ")";
   }
@@ -278,22 +299,29 @@ inline std::string sentence_to_SMT(Sentence const& sentence, Ptypes const& ptype
   if (sentence.which() == 5) {
     auto s = boost::get<QuantifiedSentence>(sentence);
     std::string qs = "("+s.quantifier + " (";
-    std::string t_imply = "(=> (and";
+    //The binder ranges over __Object__, so the types guard the body: as an
+    //antecedent under forall, but as a conjunct under exists. (=> types body)
+    //under exists holds of any object outside the types, which made every
+    //typed (exists ...) true whenever such an object existed (planner_doc.md
+    //8.27).
+    std::string t_imply = s.quantifier == "exists" ? "(and (and" : "(=> (and";
     if (s.variables.explicitly_typed_lists.empty() && s.variables.implicitly_typed_list.empty()) {
       return "__NONE__";
     }
     for (auto const& t : s.variables.explicitly_typed_lists) {
       std::string type = type_name_of(t.type);
       for (auto const& e : t.entries) {
-        qs += "("+e.name+" __Object__) ";
-        t_imply += " ("+type+" "+e.name+")";
+        std::string v = expr::smt_var(e.name);
+        qs += "("+v+" __Object__) ";
+        t_imply += " ("+type+" "+v+")";
       }
     }
     for (auto const& it : s.variables.implicitly_typed_list) {
-      qs += "("+it.name+" __Object__) ";
+      std::string v = expr::smt_var(it.name);
+      qs += "("+v+" __Object__) ";
       auto inferred_types = type_inference(s.sentence,ptypes,it.name);
       for (auto const& t : inferred_types) {
-        t_imply += " ("+t+" "+it.name+")";
+        t_imply += " ("+t+" "+v+")";
       }
     }
     qs += ") ";
@@ -307,39 +335,11 @@ inline std::string sentence_to_SMT(Sentence const& sentence, Ptypes const& ptype
   }
   if (sentence.which() == 6) {
     auto s = boost::get<EqualsSentence>(sentence);
-    std::string l;
-    std::string r;
-    if (s.lhs.which() == 0) {
-      l = boost::get<Constant>(s.lhs).name;
-    }
-    else {
-      l = boost::get<Variable>(s.lhs).name;
-    }
-    if (s.rhs.which() == 0) {
-      r = boost::get<Constant>(s.rhs).name;
-    }
-    else {
-      r = boost::get<Variable>(s.rhs).name;
-    }
-    return "(= "+l+" "+r+")";
+    return "(= "+smt_term(s.lhs)+" "+smt_term(s.rhs)+")";
   }
   if (sentence.which() == 7) {
     auto s = boost::get<NotEqualsSentence>(sentence);
-    std::string l;
-    std::string r;
-    if (s.lhs.which() == 0) {
-      l = boost::get<Constant>(s.lhs).name;
-    }
-    else {
-      l = boost::get<Variable>(s.lhs).name;
-    }
-    if (s.rhs.which() == 0) {
-      r = boost::get<Constant>(s.rhs).name;
-    }
-    else {
-      r = boost::get<Variable>(s.rhs).name;
-    }
-    return "(not (= "+l+" "+r+"))";
+    return "(not (= "+smt_term(s.lhs)+" "+smt_term(s.rhs)+"))";
   }
   return "__NONE__";
 }
@@ -523,21 +523,21 @@ inline Effects decompose_ceffects(CEffect const& ceffect, Ptypes const& ptypes) 
       auto p = boost::get<PEffect>(e.cond_effect);
       auto sentSMT = sentence_to_SMT(e.gd, ptypes);
       auto sentAST = sentence_to_expr(e.gd, ptypes);
-      effects.push_back(effect(sentSMT,p.is_negative,pred_of(p,ptypes),{},sentAST));
+      effects.push_back(effect(sentSMT,p.is_negative,pred_of(p,ptypes),{},sentAST,constants_among(p.args)));
     }
     else {
       auto vp = boost::get<std::vector<PEffect>>(e.cond_effect);
       auto sentSMT = sentence_to_SMT(e.gd, ptypes);
       auto sentAST = sentence_to_expr(e.gd, ptypes);
       for (auto const& p : vp) {
-        effects.push_back(effect(sentSMT,p.is_negative,pred_of(p,ptypes),{},sentAST));
+        effects.push_back(effect(sentSMT,p.is_negative,pred_of(p,ptypes),{},sentAST,constants_among(p.args)));
       }
     }
     return effects;
   }
   if (ceffect.which() == 2) {
     auto p = boost::get<PEffect>(ceffect);
-    effects.push_back(effect("__NONE__",p.is_negative,pred_of(p,ptypes),{},nullptr));
+    effects.push_back(effect("__NONE__",p.is_negative,pred_of(p,ptypes),{},nullptr,constants_among(p.args)));
     return effects;
   }
   return effects;
@@ -551,39 +551,11 @@ inline std::string decompose_constraint(Constraint const& constraint) {
   }
   if (which_constraint(constraint) == 1) {
     auto s = boost::get<EqualsSentence>(constraint);
-    std::string l;
-    std::string r;
-    if (s.lhs.which() == 0) {
-      l = boost::get<Constant>(s.lhs).name;
-    }
-    else {
-      l = boost::get<Variable>(s.lhs).name;
-    }
-    if (s.rhs.which() == 0) {
-      r = boost::get<Constant>(s.rhs).name;
-    }
-    else {
-      r = boost::get<Variable>(s.rhs).name;
-    }
-    return "(= "+l+" "+r+")";
+    return "(= "+smt_term(s.lhs)+" "+smt_term(s.rhs)+")";
   }
   if (which_constraint(constraint) == 2) {
     auto s = boost::get<NotEqualsSentence>(constraint);
-    std::string l;
-    std::string r;
-    if (s.lhs.which() == 0) {
-      l = boost::get<Constant>(s.lhs).name;
-    }
-    else {
-      l = boost::get<Variable>(s.lhs).name;
-    }
-    if (s.rhs.which() == 0) {
-      r = boost::get<Constant>(s.rhs).name;
-    }
-    else {
-      r = boost::get<Variable>(s.rhs).name;
-    }
-    return "(not (= "+l+" "+r+"))";
+    return "(not (= "+smt_term(s.lhs)+" "+smt_term(s.rhs)+"))";
   }
   return "__NONE__";
 }
@@ -686,7 +658,10 @@ inline TaskDef task_def_of(MTask const& st, Tasktypes const& ttypes) {
 //The subtasks of a network, each with its id. One written without an id gets
 //__taskN__, N counting only the unnamed ones, so orderings -- which name ids
 //-- cannot refer to it.
-inline std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks const& subtasks, Tasktypes const& ttypes) {
+//`constants` receives, for each subtask with a constant among its arguments,
+//which ones they are.
+inline std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks const& subtasks, Tasktypes const& ttypes,
+                                                       std::unordered_map<std::string,ConstantArgs>& constants) {
   std::vector<SubTask> listed;
   if (which_subtasks(subtasks) == 1) {
     listed.push_back(boost::get<SubTask>(subtasks));
@@ -697,14 +672,15 @@ inline std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks const& subtasks,
   std::vector<std::pair<ID,TaskDef>> subs;
   int unnamed = 0;
   for (auto const& s : listed) {
-    if (which_subtask(s) == 0) {
-      subs.emplace_back("__task"+std::to_string(unnamed++)+"__",
-                        task_def_of(boost::get<MTask>(s),ttypes));
+    bool const has_id = which_subtask(s) != 0;
+    MTask const& task = has_id ? boost::get<SubTaskWithId>(s).subtask : boost::get<MTask>(s);
+    ID id = has_id ? boost::get<SubTaskWithId>(s).id
+                   : "__task"+std::to_string(unnamed++)+"__";
+    auto consts = constants_among(task.parameters);
+    if (!consts.empty()) {
+      constants[id] = std::move(consts);
     }
-    else {
-      auto const& sbtid = boost::get<SubTaskWithId>(s);
-      subs.emplace_back(sbtid.id,task_def_of(sbtid.subtask,ttypes));
-    }
+    subs.emplace_back(std::move(id),task_def_of(task,ttypes));
   }
   return subs;
 }
@@ -715,11 +691,12 @@ inline std::vector<std::pair<ID,TaskDef>> get_subtasks(SubTasks const& subtasks,
 //past the end of an empty list, the guard went into the method's copy only.
 //A problem whose :htn was empty and ordered still crashed the loader (8.21).
 inline void network_of(TaskNetwork const& tn, Tasktypes const& ttypes, TaskDefs& subtasks,
-                       std::unordered_map<std::string,std::vector<std::string>>& orderings) {
+                       std::unordered_map<std::string,std::vector<std::string>>& orderings,
+                       std::unordered_map<std::string,ConstantArgs>& constants) {
   if (!tn.subtasks) {
     return;
   }
-  auto sts = get_subtasks(tn.subtasks->subtasks,ttypes);
+  auto sts = get_subtasks(tn.subtasks->subtasks,ttypes,constants);
   for (auto const& st : sts) {
     subtasks[st.first] = st.second;
     orderings[st.first] = {};
@@ -877,7 +854,11 @@ inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain c
      
     TaskDefs subtasks;
     std::unordered_map<std::string,std::vector<std::string>> orderings;
-    network_of(m.task_network,ttypes,subtasks,orderings);
+    //Which arguments of :task and of the subtasks are constants, which the
+    //lists themselves, holding names alone, do not say.
+    MethodDef::Constants constant_args;
+    constant_args.task = constants_among(m.task.parameters);
+    network_of(m.task_network,ttypes,subtasks,orderings,constant_args.subtasks);
 
     if (state_pre != "__NONE__") {
       //One artificial action per method carrying a precondition, taking the
@@ -904,7 +885,7 @@ inline std::pair<DomainDef,std::pair<Ptypes,Tasktypes>> createDomainDef(Domain c
       orderings[pre_id] = before;
     }
 
-    methods[m.task.name].push_back(MethodDef(m.name,task,params,preconditions,subtasks,orderings,precondition_ast));
+    methods[m.task.name].push_back(MethodDef(m.name,task,params,preconditions,subtasks,orderings,precondition_ast,constant_args));
   }
   auto DD = DomainDef(dom.name,typetree,predicates,constants,actions,methods);
   return std::make_pair(DD,std::make_pair(ptypes,ttypes));
@@ -938,6 +919,7 @@ inline ProblemDef createProblemDef(Problem const& prob, Ptypes const& ptypes, Ta
   expr::Ptr precondition_ast = nullptr;
   TaskDefs subtasks;
   std::unordered_map<std::string,std::vector<std::string>> orderings;
+  MethodDef::Constants constants;
   if (m_name == "") {
     m_name = ":c";
   }
@@ -954,9 +936,9 @@ inline ProblemDef createProblemDef(Problem const& prob, Ptypes const& ptypes, Ta
         precondition_ast = constraints_to_expr(*prob.problem_htn.task_network.constraints);
       }
     }
-    network_of(prob.problem_htn.task_network,ttypes,subtasks,orderings);
+    network_of(prob.problem_htn.task_network,ttypes,subtasks,orderings,constants.subtasks);
   }
-  MethodDef initM = MethodDef(m_name,task,params,preconditions,subtasks,orderings,precondition_ast);
+  MethodDef initM = MethodDef(m_name,task,params,preconditions,subtasks,orderings,precondition_ast,constants);
 
   std::vector<std::string> initF;
   for (auto const& i : prob.init) {

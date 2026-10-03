@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(test_domain_loading) {
     // The precondition now lives on the synthesised action ...
     BOOST_TEST(transport_domain.actions.contains("__mprec_m_deliver_ordering_0"));
     BOOST_TEST(transport_domain.actions.at("__mprec_m_deliver_ordering_0").get_preconditions()
-               == "(and (at p l1))");
+               == "(and (at ?p ?l1))");
     BOOST_TEST(transport_domain.actions.at("__mprec_m_deliver_ordering_0").is_artificial());
 
     // ... which is a subtask of the method, ordered ahead of every other one.
@@ -88,7 +88,10 @@ BOOST_AUTO_TEST_CASE(test_domain_loading) {
 
     // Test parsing action precondition
     auto actprec = transport_domain.actions.at("drive").get_preconditions();
-    BOOST_TEST(actprec == "(and (at v l1) (road l1 l2))");
+    // A variable keeps its '?' in the SMT text, which is what keeps it apart
+    // from an object or a type of the same name (planner_doc.md 8.28); the
+    // parameter list above holds the bare names.
+    BOOST_TEST(actprec == "(and (at ?v ?l1) (road ?l1 ?l2))");
 
     // Test parsing action effect
     
@@ -266,6 +269,9 @@ BOOST_AUTO_TEST_CASE(test_expr_ast_matches_smt) {
       HTN_DOMAINS_DIR "/transport_mutex.hddl",
       HTN_DOMAINS_DIR "/transport_mutex_left.hddl",
       HTN_DOMAINS_DIR "/transport_insert.hddl",
+      HTN_DOMAINS_DIR "/exists_test.hddl",
+      HTN_DOMAINS_DIR "/name_clash_test.hddl",
+      HTN_DOMAINS_DIR "/../rtl_designs/rtl_domain.hddl",
     };
 
     int checked = 0;
@@ -302,6 +308,165 @@ BOOST_AUTO_TEST_CASE(test_expr_ast_matches_smt) {
               << std::endl;
 
 }// end of testing the expression IR
+
+//Names shared between kinds of thing (planner_doc.md 8.28). name_clash_test
+//has parameters ?s0 and ?next beside an object s0 and a predicate next,
+//?module beside the type module, a quantified ?idle beside the constant idle,
+//an object walker beside the predicate walker and an object state beside the
+//type state. The parser drops the '?', and two things then took one name for
+//another: the SMT text, which Z3 refused or misread, and the direct evaluator,
+//which read a parameter pinned to the object of its own name as not pinned at
+//all. Both engines are asked here, in the default build, and must give the one
+//answer.
+BOOST_AUTO_TEST_CASE(test_names_do_not_clash) {
+    auto [domain,problem] = load(HTN_DOMAINS_DIR "/name_clash_test.hddl",
+                                 HTN_DOMAINS_DIR "/name_clash_test_problem.hddl");
+    KnowledgeBase kb(domain.predicates,problem.objects,domain.typetree);
+    for (auto const& f : problem.initF) {
+        kb.tell(f,false,false);
+    }
+    kb.update_state();
+
+    //In the text a variable has its '?' and a constant is qualified as an
+    //object, in atoms, equalities, binders and type guards alike.
+    auto& visit = domain.actions.at("visit");
+    auto& step = domain.actions.at("__mprec_m_step");
+    auto& stop = domain.actions.at("__mprec_m_stop");
+    BOOST_TEST(visit.get_preconditions() == "(=> (visited ?module ?s0) (ready ?module))");
+    BOOST_TEST(step.get_preconditions() ==
+               "(and (walker ?module) (next ?s0 ?next) (not (= ?next (as idle __Object__))))");
+    BOOST_TEST(stop.get_preconditions() ==
+               "(not (exists ((?idle __Object__) ) (and (and (state ?idle)) "
+               "(and (next ?s0 ?idle) (not (= ?idle (as idle __Object__)))))))");
+
+    std::vector<std::string> const states = {"s0", "state", "x_0", "idle"};
+    auto follows = [](std::string const& a, std::string const& b) {
+        return (a == "s0" && b == "state") || (a == "state" && b == "x_0") ||
+               (a == "x_0" && b == "idle");
+    };
+
+    //m_step's precondition, which the direct evaluator answers, for every pair
+    //of states -- (s0, state) pins ?s0 to s0 -- and the same query put to Z3.
+    auto step_params = step.get_parameters();
+    for (auto const& s : states) {
+        for (auto const& n : states) {
+            BOOST_TEST_CONTEXT("step " << s << " " << n) {
+                Args args = {{"module","walker"},{"s0",s},{"next",n}};
+                bool expected = follows(s,n) && n != "idle";
+                BOOST_TEST(step.holds(kb,args) == expected);
+                std::string smt = eval::pinned_smt(kb,step_params,args,step.get_preconditions());
+                BOOST_TEST(kb.ask_any(smt,step_params) == expected);
+                auto direct = eval::ask(kb,step.get_precondition_ast(),step_params,args);
+                BOOST_TEST_REQUIRE(direct.has_value());
+                BOOST_TEST(eval::canonical(*direct) == eval::canonical(kb.ask(smt,step_params)));
+            }
+        }
+    }
+
+    //m_stop's, a negated exists: nothing but idle follows x_0, and nothing at
+    //all follows idle. Both engines again; under one name for ?idle and idle,
+    //Z3 found it true of every state.
+    auto stop_params = stop.get_parameters();
+    for (auto const& s : states) {
+        BOOST_TEST_CONTEXT("stop " << s) {
+            Args args = {{"module","walker"},{"s0",s}};
+            bool expected = (s == "x_0" || s == "idle");
+            BOOST_TEST(stop.holds(kb,args) == expected);
+            std::string smt = eval::pinned_smt(kb,stop_params,args,stop.get_preconditions());
+            BOOST_TEST(kb.ask_any(smt,stop_params) == expected);
+        }
+    }
+
+    //Decomposing (walk walker s0) leaves only ?next to choose: four bindings, one
+    //per state, each with ?s0 still s0. Read as unpinned, ?s0 ranged over the
+    //states as well, and there were sixteen.
+    for (auto& m : domain.methods["walk"]) {
+        if (m.get_head() != "m_step") {
+            continue;
+        }
+        Args task_args = {{"module","walker"},{"s0","s0"}};
+        auto bindings = m.bindings(kb,task_args);
+        BOOST_TEST(bindings.size() == states.size());
+        for (auto const& b : bindings) {
+            BOOST_TEST(return_value("module",b) == "walker");
+            BOOST_TEST(return_value("s0",b) == "s0");
+        }
+    }
+
+    //visit, whose imply only Z3 answers: applicable once, and not again until
+    //the module is ready.
+    Args visit_args = {{"module","walker"},{"s0","s0"}};
+    auto first = visit.apply(kb,visit_args);
+    BOOST_TEST(first.first == "(visit walker s0)");
+    BOOST_TEST_REQUIRE(first.second.size() == 1u);
+    BOOST_TEST(first.second[0].get_facts("visited").contains("(visited walker s0)"));
+    BOOST_TEST(visit.apply(first.second[0],visit_args).second.empty());
+}
+
+
+//A negated quantifier is answered by the direct evaluator (planner_doc.md
+//8.29). solve_not asked for its child to be ground, and the quantifier's own
+//variable never is, so every (not (exists ...)) was handed to Z3: about 2,300
+//solver calls and 34 of the 51 seconds the pilot problem Prob140_fsm_hdlc took
+//to plan. nullopt is the evaluator declining a query; it must not, and its
+//answer must be Z3's.
+BOOST_AUTO_TEST_CASE(test_negated_quantifier_is_evaluated_directly) {
+    {
+        auto [domain,problem] = load(HTN_DOMAINS_DIR "/exists_test.hddl",
+                                     HTN_DOMAINS_DIR "/exists_test_problem.hddl");
+        KnowledgeBase kb(domain.predicates,problem.objects,domain.typetree);
+        for (auto const& f : problem.initF) {
+            kb.tell(f,false,false);
+        }
+        kb.update_state();
+        //(and (home ?m ?z) (not (exists (?x - thing) (rule ?s ?x)))), with
+        //(home m1 c) and (rule a b): a has a rule, b and c have none.
+        auto& none = domain.actions.at("__mprec_m_none");
+        auto params = none.get_parameters();
+        for (std::string s : {"a", "b", "c"}) {
+            BOOST_TEST_CONTEXT("exists_test " << s) {
+                Args args = {{"m","m1"},{"s",s},{"z","c"}};
+                bool expected = (s != "a");
+                auto direct = eval::ask_any(kb,none.get_precondition_ast(),params,args);
+                BOOST_TEST_REQUIRE(direct.has_value());
+                BOOST_TEST(*direct == expected);
+                std::string smt = eval::pinned_smt(kb,params,args,none.get_preconditions());
+                BOOST_TEST(kb.ask_any(smt,params) == expected);
+                //And as a query for bindings, ?z left to the precondition.
+                Args open = {{"m","m1"},{"s",s}};
+                auto bindings = eval::ask(kb,none.get_precondition_ast(),params,open);
+                BOOST_TEST_REQUIRE(bindings.has_value());
+                BOOST_TEST(eval::canonical(*bindings) ==
+                           eval::canonical(kb.ask(eval::pinned_smt(kb,params,open,none.get_preconditions()),params)));
+                BOOST_TEST(bindings->size() == (expected ? 1u : 0u));
+            }
+        }
+    }
+    {
+        auto [domain,problem] = load(HTN_DOMAINS_DIR "/name_clash_test.hddl",
+                                     HTN_DOMAINS_DIR "/name_clash_test_problem.hddl");
+        KnowledgeBase kb(domain.predicates,problem.objects,domain.typetree);
+        for (auto const& f : problem.initF) {
+            kb.tell(f,false,false);
+        }
+        kb.update_state();
+        //The body here has a negation of its own, over the bound variable.
+        auto& stop = domain.actions.at("__mprec_m_stop");
+        auto params = stop.get_parameters();
+        for (std::string s : {"s0", "state", "x_0", "idle"}) {
+            BOOST_TEST_CONTEXT("name_clash_test " << s) {
+                Args args = {{"module","walker"},{"s0",s}};
+                auto direct = eval::ask_any(kb,stop.get_precondition_ast(),params,args);
+                BOOST_TEST_REQUIRE(direct.has_value());
+                BOOST_TEST(*direct == (s == "x_0" || s == "idle"));
+            }
+        }
+        //An imply is still outside what the evaluator takes.
+        auto& visit = domain.actions.at("visit");
+        Args args = {{"module","walker"},{"s0","s0"}};
+        BOOST_TEST(!eval::ask_any(kb,visit.get_precondition_ast(),visit.get_parameters(),args).has_value());
+    }
+}
 
 
 //planner_doc.md 9.1: the loader validates a domain and problem before building
@@ -429,6 +594,10 @@ BOOST_AUTO_TEST_CASE(test_validation_further_checks) {
                "action drive is declared twice");
     expect_one(replaced(D, ":task (get_to ?v ?l)\n", ":task (drive ?v ?l ?l)\n"), P,
                "names action drive; a method decomposes a compound task");
+    //A type is already a one-argument predicate (planner_doc.md 8.28).
+    expect_one(replaced(D, "(road ?arg0 - location ?arg1 - location)",
+                           "(road ?arg0 - location ?arg1 - location)\n\t\t(vehicle ?arg0 - location)"), P,
+               "predicate vehicle has the name of a type");
     expect_one(D, replaced(P, "(:domain  domain)", "(:domain  transport)"),
                "the problem is for domain transport, but the domain loaded is domain");
 
@@ -462,6 +631,8 @@ BOOST_AUTO_TEST_CASE(test_shipped_domains_validate) {
       {"d18", "problem_gather_wake_evacuate"},
       {"forall_test", "forall_test_problem"},
       {"atom_test", "atom_test_problem"},
+      {"exists_test", "exists_test_problem"},
+      {"name_clash_test", "name_clash_test_problem"},
     };
     for (auto const& d : {"transport_original", "transport_common", "transport_mutex",
                           "transport_mutex_left", "transport_insert"}) {

@@ -1,0 +1,9 @@
+; a has a rule (to b), c has none: go a must use m_some, go c m_none.
+(define (problem exists_test_problem)
+  (:domain exists_test)
+  (:objects m1 - mod a b c - thing)
+  (:htn
+    :parameters ()
+    :ordered-subtasks (and (t1 (go m1 a)) (t2 (go m1 c))))
+  (:init (rule a b) (home m1 c))
+)
