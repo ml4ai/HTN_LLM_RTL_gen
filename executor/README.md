@@ -151,6 +151,42 @@ Sampled output is reproducible **per seed, under a fixed configuration**. It is
 not bit-identical across batch sizes, because GPU kernels are not
 batch-invariant. The greedy line is the bit-exact one.
 
+### Conversations (micro-prompting)
+
+A request may hold a conversation whose user turns are fixed in advance:
+
+    {"system": "...", "turns": ["...", "..."], "intermediate_max_new_tokens": 512}
+
+Turn k is sent after the reply to turn k − 1, with the conversation so far.
+Each reply is fed back exactly as generated; nothing reads one. The reply to
+the last turn is the sample (`sample_XX.response.txt`), and every turn with its
+reply is kept beside it (`sample_XX.turns.json`).
+
+- **Caps:** an intermediate reply may run to `intermediate_max_new_tokens`, the
+  final one to the config's `max_new_tokens`. A reply cut off at its cap is fed
+  back as it stands.
+- **Sampling:** as above. Each sample keeps its sampler through all the turns.
+  With `--greedy` it is one greedy conversation.
+- **Batching:** the samples share the first turn's prompt and then diverge, so
+  each sequence tracks the tokens in its own cache, and a new turn decodes only
+  what the conversation's prompt adds.
+- **Memory:** every reply has to be reserved at its cap, so fewer conversations
+  fit at a time than single replies do: 5 to 13 for the plans in
+  `rtl_designs/pilot/`, not 20.
+
+A one-turn greedy conversation reproduces `--greedy` on the same request byte
+for byte.
+
+### Many requests, one model load
+
+`executor_sample --batch LIST.json` runs a list of requests,
+`[{"request": ..., "out_dir": ...}, ...]`, in one process. Each gets a fresh
+context, so the output is what one invocation per request would give; only the
+35 GB model load is shared.
+
+A greedy prompt longer than `n_batch` (2,048 tokens) is decoded in pieces. It
+used to be refused.
+
 ## Things that are easy to get wrong
 
 - **The Metal backend is a loadable module in the env's `bin/`, not in `lib/`.**

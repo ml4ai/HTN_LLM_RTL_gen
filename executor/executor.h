@@ -225,10 +225,6 @@ public:
                                std::to_string(max_new) + " that exceeds n_ctx " +
                                std::to_string(n_ctx));
     }
-    if (n > cx["n_batch"].get<int>()) {
-      throw std::runtime_error("prompt is " + std::to_string(n) + " tokens, more than n_batch " +
-                               std::to_string(cx["n_batch"].get<int>()));
-    }
 
     auto cp = llama_context_default_params();
     cp.n_ctx = n_ctx;
@@ -252,12 +248,24 @@ public:
     Reply r;
     r.prompt_tokens = n;
     r.finish_reason = "length";
-    llama_batch batch = llama_batch_get_one(toks.data(), toks.size());
     auto t0 = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point first;
     std::vector<char> piece(256);
     llama_token t;
+    llama_batch batch;
     try {
+      //A prompt longer than n_batch goes in n_batch at a time; the last piece
+      //is the batch the first token is sampled from. A plan with its task
+      //tree can run past n_batch, which used to be refused.
+      size_t const n_batch = cx["n_batch"].get<size_t>();
+      size_t off = 0;
+      while (toks.size() - off > n_batch) {
+        if (llama_decode(ctx, llama_batch_get_one(toks.data() + off, n_batch))) {
+          throw std::runtime_error("llama_decode failed on the prompt");
+        }
+        off += n_batch;
+      }
+      batch = llama_batch_get_one(toks.data() + off, toks.size() - off);
       for (; r.generated_tokens < max_new; r.generated_tokens++) {
         if (llama_decode(ctx, batch)) {
           throw std::runtime_error("llama_decode failed");
@@ -480,6 +488,292 @@ public:
         r.decode_seconds = decode_s;
         //Aggregate over the batch: what the batch achieved, not one sequence.
         r.decode_tok_s = decode_s > 0 ? generated_total / decode_s : 0.0;
+      }
+      done += P;
+      if (on_done) {
+        on_done(done, n);
+      }
+    }
+    return out;
+  }
+
+  //The prompt for a whole conversation so far -- (role, text) messages -- in
+  //the model's chat template, ending where the assistant's next reply begins.
+  std::string format_chat(std::vector<std::pair<std::string, std::string>> const& msgs) const {
+    std::vector<llama_chat_message> m;
+    size_t total = 0;
+    for (auto const& [role, text] : msgs) {
+      m.push_back({role.c_str(), text.c_str()});
+      total += text.size();
+    }
+    char const* tmpl = llama_model_chat_template(model_, nullptr);
+    std::vector<char> buf(total + 1024 + 64 * msgs.size());
+    int len = llama_chat_apply_template(tmpl, m.data(), m.size(), true, buf.data(), buf.size());
+    if (len > (int)buf.size()) {
+      buf.resize(len);
+      len = llama_chat_apply_template(tmpl, m.data(), m.size(), true, buf.data(), buf.size());
+    }
+    if (len < 0) {
+      throw std::runtime_error("could not apply the model's chat template");
+    }
+    return std::string(buf.data(), len);
+  }
+
+  //A conversation of several user turns, fixed in advance: micro-prompting
+  //(LLM_RTL_code_generation.md 8.6.2). Turn k is sent after the reply to turn
+  //k - 1, with every earlier turn and reply before it, and each reply is fed
+  //back exactly as generated: nothing here reads one. Returns, for each of the
+  //`n` samples, its reply to every turn; the last is the measured one.
+  //
+  //Sampled like generate_samples (sample i seeded base_seed + i, its sampler
+  //carried through the turns), or one greedy conversation if `greedy`. An
+  //intermediate reply may run to `intermediate_cap` tokens and the final one
+  //to max_new_tokens; a reply cut off at its cap is fed back as it stands.
+  //
+  //The samples of a batch are sequences of one context, as in
+  //generate_samples. They share the first turn's prompt and then diverge, so
+  //each keeps its own record of the tokens in its cache; a new turn decodes
+  //only what the conversation's prompt adds to that record. Where re-tokenizing
+  //a reply gives different tokens than were sampled, the cache is cut back to
+  //the common prefix and the rest decoded again.
+  std::vector<std::vector<Reply>> converse(std::string const& sys,
+                                           std::vector<std::string> const& turns, int n,
+                                           bool greedy, int intermediate_cap,
+                                           std::function<void(int, int)> const& on_done = {}) {
+    if (turns.empty()) {
+      throw std::runtime_error("a conversation needs at least one turn");
+    }
+    json const& ls = cfg_.at("ladder_sampling");
+    float const temperature = ls["temperature"];
+    float const top_p = ls["top_p"];
+    uint32_t const base_seed = ls["base_seed"];
+    int const parallel = greedy ? 1 : ls["parallel_sequences"].get<int>();
+    bool const kv_unified = ls.value("kv_unified", false);
+    json const& cx = cfg_["context"];
+    int const max_new = cfg_["generation"]["max_new_tokens"];
+    int const n_batch = cx["n_batch"];
+    int const K = (int)turns.size();
+    const llama_vocab* vocab = llama_model_get_vocab(model_);
+    auto cap_of = [&](int t) { return t == K - 1 ? max_new : intermediate_cap; };
+
+    std::vector<llama_token> const toks0 = tokenize(format_chat({{"system", sys}, {"user", turns[0]}}));
+    int const n_prompt = (int)toks0.size();
+    //What one sequence can add to the shared first prompt: every reply at its
+    //cap, every later turn, the template's tokens around each, and some slack
+    //for a reply that re-tokenizes longer than it was sampled.
+    int per_seq_extra = 64;
+    for (int t = 0; t < K; t++) {
+      per_seq_extra += cap_of(t);
+      if (t > 0) {
+        per_seq_extra += (int)tokenize(turns[t]).size() + 16;
+      }
+    }
+    int const max_cells = ls.value("max_context_tokens", 1 << 30);
+    int cap = kv_unified ? std::min(parallel, (max_cells - n_prompt) / per_seq_extra)
+                         : std::min(parallel, max_cells / (n_prompt + per_seq_extra));
+    if (cap < 1) {
+      throw std::runtime_error("a conversation of " + std::to_string(n_prompt + per_seq_extra) +
+                               " tokens does not fit max_context_tokens " + std::to_string(max_cells));
+    }
+
+    std::vector<std::vector<Reply>> out(n, std::vector<Reply>(K));
+    int done = 0;
+    for (int first = 0; first < n; first += cap) {
+      int const P = std::min(cap, n - first);
+      int const capacity = std::max(n_batch, P);
+
+      auto cp = llama_context_default_params();
+      cp.n_seq_max = P;
+      cp.kv_unified = kv_unified;
+      cp.n_ctx = kv_unified ? n_prompt + P * per_seq_extra : P * (n_prompt + per_seq_extra);
+      cp.n_batch = capacity;
+      cp.n_ubatch = cx["n_ubatch"];
+      cp.n_threads = cx["n_threads"];
+      cp.n_threads_batch = cx["n_threads_batch"];
+      cp.flash_attn_type = flash_attn(cx["flash_attn"]);
+      cp.type_k = kv_type(cx["type_k"]);
+      cp.type_v = kv_type(cx["type_v"]);
+      cp.offload_kqv = cx["offload_kqv"];
+      llama_context* ctx = llama_init_from_model(model_, cp);
+      if (!ctx) {
+        throw std::runtime_error("could not create a context for " + std::to_string(P) +
+                                 " conversations of " + std::to_string(n_prompt + per_seq_extra) + " tokens");
+      }
+      llama_batch batch = llama_batch_init(capacity, 0, P);
+      std::vector<llama_sampler*> smpl(P, nullptr);
+      struct Cleanup {
+        llama_context* c; llama_batch* b; std::vector<llama_sampler*>* s;
+        ~Cleanup() {
+          for (auto* x : *s) if (x) llama_sampler_free(x);
+          llama_batch_free(*b);
+          llama_free(c);
+        }
+      } cleanup{ctx, &batch, &smpl};
+
+      if ((int)llama_n_ctx_seq(ctx) < n_prompt + per_seq_extra) {
+        throw std::runtime_error("each sequence got " + std::to_string(llama_n_ctx_seq(ctx)) +
+                                 " tokens of context, fewer than the " +
+                                 std::to_string(n_prompt + per_seq_extra) + " needed");
+      }
+      for (int s = 0; s < P; s++) {
+        smpl[s] = llama_sampler_chain_init(llama_sampler_chain_default_params());
+        uint32_t seed = 0;
+        if (greedy) {
+          llama_sampler_chain_add(smpl[s], llama_sampler_init_greedy());
+        }
+        else {
+          seed = base_seed + (uint32_t)(first + s);
+          llama_sampler_chain_add(smpl[s], llama_sampler_init_temp(temperature));
+          llama_sampler_chain_add(smpl[s], llama_sampler_init_top_p(top_p, 1));
+          llama_sampler_chain_add(smpl[s], llama_sampler_init_dist(seed));
+        }
+        for (int t = 0; t < K; t++) {
+          out[first + s][t].seed = seed;
+          out[first + s][t].finish_reason = "length";
+        }
+      }
+
+      llama_memory_t mem = llama_get_memory(ctx);
+      //Per sequence: the tokens its cache holds, the conversation so far, and
+      //the token sampled from its last logits, not yet looked at.
+      std::vector<std::vector<llama_token>> cached(P);
+      std::vector<std::vector<std::pair<std::string, std::string>>> history(
+          P, {{"system", sys}});
+      std::vector<llama_token> next(P);
+      std::vector<int> idx(P, 0);
+      std::vector<char> piece(256);
+
+      for (int t = 0; t < K; t++) {
+        auto t0 = std::chrono::steady_clock::now();
+        for (int s = 0; s < P; s++) {
+          history[s].push_back({"user", turns[t]});
+        }
+        if (t == 0) {
+          //The first prompt is the same for all: once into sequence 0, in
+          //chunks, then shared, and every sequence samples from its last logits.
+          int last_idx = 0;
+          for (int i = 0; i < n_prompt; i += n_batch) {
+            batch.n_tokens = 0;
+            int const end = std::min(n_prompt, i + n_batch);
+            for (int j = i; j < end; j++) {
+              batch_add(batch, toks0[j], j, 0, j == n_prompt - 1);
+            }
+            if (llama_decode(ctx, batch)) {
+              throw std::runtime_error("llama_decode failed on the first prompt");
+            }
+            last_idx = batch.n_tokens - 1;
+          }
+          for (int s = 0; s < P; s++) {
+            if (s > 0) {
+              llama_memory_seq_cp(mem, 0, s, -1, -1);
+            }
+            cached[s] = toks0;
+            next[s] = llama_sampler_sample(smpl[s], ctx, last_idx);
+          }
+        }
+        else {
+          //Each sequence decodes what its conversation's prompt adds to its
+          //cache. A sequence samples as soon as the batch holding its last
+          //token is decoded: the next decode overwrites the logits.
+          batch.n_tokens = 0;
+          std::vector<std::pair<int, int>> ends;
+          auto flush = [&] {
+            if (batch.n_tokens == 0) {
+              return;
+            }
+            if (llama_decode(ctx, batch)) {
+              throw std::runtime_error("llama_decode failed on turn " + std::to_string(t + 1));
+            }
+            for (auto const& [s, i] : ends) {
+              next[s] = llama_sampler_sample(smpl[s], ctx, i);
+            }
+            ends.clear();
+            batch.n_tokens = 0;
+          };
+          for (int s = 0; s < P; s++) {
+            std::vector<llama_token> target = tokenize(format_chat(history[s]));
+            size_t p = 0;
+            while (p < cached[s].size() && p < target.size() && cached[s][p] == target[p]) {
+              p++;
+            }
+            if (p >= target.size()) {
+              p = target.size() - 1;   //always decode something: the logits are needed
+            }
+            if (p < cached[s].size()) {
+              llama_memory_seq_rm(mem, s, (llama_pos)p, -1);
+            }
+            for (size_t j = p; j < target.size(); j++) {
+              bool const last = j + 1 == target.size();
+              batch_add(batch, target[j], (llama_pos)j, s, last);
+              if (last) {
+                ends.push_back({s, batch.n_tokens - 1});
+              }
+              if (batch.n_tokens == capacity) {
+                flush();
+              }
+            }
+            cached[s] = std::move(target);
+          }
+          flush();
+        }
+        auto first_tok = std::chrono::steady_clock::now();
+
+        //Generate this turn's replies, one token of every unfinished sequence
+        //per decode.
+        int const reply_cap = cap_of(t);
+        std::vector<bool> active(P, true);
+        int generated_total = 0;
+        for (int s = 0; s < P; s++) {
+          out[first + s][t].prompt_tokens = (int)cached[s].size();
+        }
+        for (;;) {
+          batch.n_tokens = 0;
+          for (int s = 0; s < P; s++) {
+            if (!active[s]) continue;
+            Reply& r = out[first + s][t];
+            llama_token const tok = next[s];
+            if (llama_vocab_is_eog(vocab, tok)) {
+              r.finish_reason = "stop";
+              active[s] = false;
+              continue;
+            }
+            int k = llama_token_to_piece(vocab, tok, piece.data(), piece.size(), 0, true);
+            if (k < 0) {
+              piece.resize(-k);
+              k = llama_token_to_piece(vocab, tok, piece.data(), piece.size(), 0, true);
+            }
+            r.text.append(piece.data(), k);
+            r.generated_tokens++;
+            generated_total++;
+            if (r.generated_tokens >= reply_cap) {
+              active[s] = false;
+              continue;
+            }
+            idx[s] = batch.n_tokens;
+            batch_add(batch, tok, (llama_pos)cached[s].size(), s, true);
+            cached[s].push_back(tok);
+          }
+          if (batch.n_tokens == 0) {
+            break;
+          }
+          if (llama_decode(ctx, batch)) {
+            throw std::runtime_error("llama_decode failed while generating turn " + std::to_string(t + 1));
+          }
+          for (int s = 0; s < P; s++) {
+            if (active[s]) {
+              next[s] = llama_sampler_sample(smpl[s], ctx, idx[s]);
+            }
+          }
+        }
+        double const prompt_s = std::chrono::duration<double>(first_tok - t0).count();
+        double const decode_s = seconds_since(first_tok);
+        for (int s = 0; s < P; s++) {
+          Reply& r = out[first + s][t];
+          r.prompt_seconds = prompt_s;
+          r.decode_seconds = decode_s;
+          r.decode_tok_s = decode_s > 0 ? generated_total / decode_s : 0.0;
+          history[s].push_back({"assistant", r.text});
+        }
       }
       done += P;
       if (on_done) {
