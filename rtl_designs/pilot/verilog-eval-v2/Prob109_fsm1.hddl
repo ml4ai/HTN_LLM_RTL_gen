@@ -1,0 +1,55 @@
+; VerilogEval v2 Prob109_fsm1, restated as facts for rtl_designs/rtl_domain.hddl.
+; Hand-written for the P-series pilot (LLM_RTL_code_generation.md 8.6.5).
+;
+;   "a Moore machine with the diagram described below"
+;        -> (table_fsm ...) (moore ...), the diagram as (table_next ...)
+;   "B (1) --0--> A", "B (1) --1--> B", "A (0) --0--> B", "A (0) --1--> A"
+;        -> the four transitions; "(1)" is the output in B: (asserted_in out B)
+;   "It should asynchronously reset into state B if reset if high"
+;        -> (reset_async areset) (reset_polarity areset active_high)
+;           (initial_state TopModule B)
+;   "implement a module named TopModule"; the ports, in the order given;
+;   the states, in the order the diagram lists them
+
+(define (problem fsm1_moore)
+  (:domain rtl_fsm)
+  (:objects
+    TopModule - module
+    clk areset in out - port
+    B A - fsm_state
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module TopModule))
+  )
+  (:init
+    ; interface
+    (first_port TopModule clk)
+    (next_port clk areset)
+    (next_port areset in)
+    (next_port in out)
+    (last_port TopModule out)
+    (input_port clk)
+    (input_port areset)
+    (input_port in)
+    (output_port out)
+    (data_input_of TopModule in)
+    (clock_of TopModule clk)
+    (reset_of TopModule areset)
+    (reset_async areset)
+    (reset_polarity areset active_high)
+
+    ; behaviour
+    (table_fsm TopModule)
+    (moore TopModule)
+    (initial_state TopModule B)
+    (first_listed TopModule B)
+    (listed_after B A)
+    (last_listed TopModule A)
+    (table_next B zero A)
+    (table_next B one B)
+    (table_next A zero B)
+    (table_next A one A)
+    (asserted_in out B)
+  )
+)

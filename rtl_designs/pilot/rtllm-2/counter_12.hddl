@@ -1,0 +1,50 @@
+; RTLLM 2.0 counter_12, restated as facts for rtl_designs/rtl_domain.hddl.
+; Hand-written for the P-series pilot (LLM_RTL_code_generation.md 8.6.5).
+;
+;   "counting from 4'b0000 to 4'd11"; "If it is [4'd11], the counter wraps
+;    around and resets to 0" -> (wrap_counter ...) (count_min n0) (count_max n11)
+;   "The counting can be controlled by the input signal valid_count ... the
+;    count is paused if valid_count is 0" -> (enable_of ... valid_count)
+;   "out: 4-bit output representing the current count value"
+;        -> (count_output ... out) (port_width out bits4)
+;   "rst_n: Reset signal (active low)"; "resets to 0 when the reset signal
+;    (rst_n) is active" -> (reset_polarity rst_n active_low). The description
+;    does not say whether the reset is synchronous, so no (reset_async ...).
+;   "Module name: counter_12"; the ports, in the order given
+
+(define (problem counter_12_wrap)
+  (:domain rtl_fsm)
+  (:objects
+    counter_12 - module
+    rst_n clk valid_count out - port
+    bits4 - width
+    n0 n11 - value
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module counter_12))
+  )
+  (:init
+    ; interface
+    (first_port counter_12 rst_n)
+    (next_port rst_n clk)
+    (next_port clk valid_count)
+    (next_port valid_count out)
+    (last_port counter_12 out)
+    (input_port rst_n)
+    (input_port clk)
+    (input_port valid_count)
+    (output_port out)
+    (port_width out bits4)
+    (clock_of counter_12 clk)
+    (reset_of counter_12 rst_n)
+    (reset_polarity rst_n active_low)
+
+    ; behaviour
+    (wrap_counter counter_12)
+    (count_output counter_12 out)
+    (enable_of counter_12 valid_count)
+    (count_min counter_12 n0)
+    (count_max counter_12 n11)
+  )
+)

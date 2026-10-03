@@ -1,0 +1,58 @@
+; VerilogEval v2 Prob129_ece241_2013_q8, restated as facts for
+; rtl_designs/rtl_domain.hddl. Hand-written for the P-series pilot
+; (LLM_RTL_code_generation.md 8.6.5).
+;
+; The transition table is not here -- the planner derives it.
+;
+;   "a Mealy-type finite state machine that recognizes the sequence "101" on
+;    an input signal named x" -> (sequence_detector ...) (mealy ...), one state
+;    per pattern bit; "You may only have 3 states" is met by that
+;   "output signal, z, that is asserted to logic-1 when the "101" sequence is
+;    detected" -> (detect_output_of TopModule z)
+;   "negative edge triggered asynchronous reset" (port aresetn)
+;        -> (reset_async aresetn) (reset_polarity aresetn active_low)
+;   "Your FSM should recognize overlapping sequences" -> (overlapping ...)
+;   "implement a module named TopModule"; the ports, in the order given
+
+(define (problem ece241_2013_q8_101)
+  (:domain rtl_fsm)
+  (:objects
+    TopModule - module
+    clk aresetn x z - port
+    s0 s1 s2 - fsm_state
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module TopModule))
+  )
+  (:init
+    ; interface
+    (first_port TopModule clk)
+    (next_port clk aresetn)
+    (next_port aresetn x)
+    (next_port x z)
+    (last_port TopModule z)
+    (input_port clk)
+    (input_port aresetn)
+    (input_port x)
+    (output_port z)
+    (data_input_of TopModule x)
+    (clock_of TopModule clk)
+    (reset_of TopModule aresetn)
+    (detect_output_of TopModule z)
+    (reset_async aresetn)
+    (reset_polarity aresetn active_low)
+
+    ; behaviour: detect 1 0 1, overlapping, Mealy
+    (sequence_detector TopModule)
+    (mealy TopModule)
+    (overlapping TopModule)
+    (initial_state TopModule s0)
+    (last_state TopModule s2)
+    (next_prefix s0 s1)
+    (next_prefix s1 s2)
+    (expects s0 one)
+    (expects s1 zero)
+    (expects s2 one)
+  )
+)

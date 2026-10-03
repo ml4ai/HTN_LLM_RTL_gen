@@ -14,10 +14,12 @@
 //  * colour by the top-level task each node serves, or by the object of a
 //    chosen type in its arguments (the agent, say), or none;
 //  * a caption naming the run and saying what each mark means;
-//  * PNG, SVG (with a tooltip on each node), PDF or DOT, by file extension.
+//  * PNG, SVG (with a tooltip on each node), PDF or DOT, by file extension;
+//    or JSON, the same visible tree as data for other programs (no layout).
 #include <graphviz/gvc.h>
 #include <algorithm>
 #include <climits>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <set>
@@ -87,8 +89,23 @@ inline std::string format_of(std::string const& filename) {
   std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
   if (ext == "png" || ext == "svg" || ext == "pdf") return ext;
   if (ext == "dot" || ext == "gv") return "dot";
+  if (ext == "json") return "json";
   throw std::invalid_argument("graph file " + filename +
-                              ": use a .png, .svg, .pdf, .dot or .gv extension");
+                              ": use a .png, .svg, .pdf, .dot, .gv or .json extension");
+}
+
+inline std::string json_string(std::string const& s) {
+  std::string out = "\"";
+  for (char c : s) {
+    switch (c) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n"; break;
+      case '\t': out += "\\t"; break;
+      default: out += c;
+    }
+  }
+  return out + "\"";
 }
 
 //Fill and line colours; a node's group indexes both.
@@ -158,6 +175,40 @@ inline void generate_graph(std::vector<std::string>& plan,
     for (int c : cs) walk(c);
   };
   for (int r : roots) walk(r);
+
+  //JSON: the visible tree with children in plan order, each node with its
+  //task token, the method that decomposed it ("" for an action) and, for an
+  //action, its 1-based plan step.
+  if (format == "json") {
+    std::ofstream out(filename);
+    if (!out) {
+      throw std::runtime_error("cannot write " + filename);
+    }
+    std::function<void(int,int)> emit = [&](int id, int depth) {
+      auto const& tn = t.at(id);
+      std::string pad(2 * depth, ' ');
+      bool action = is_action(id);
+      std::string method = !action && !tn.method.empty() && tn.method[0] != ':' ? tn.method : "";
+      out << pad << "{\"token\": " << json_string(tn.token)
+          << ", \"action\": " << (action ? "true" : "false")
+          << ", \"method\": " << json_string(method);
+      if (step.contains(id)) out << ", \"step\": " << step[id];
+      out << ", \"children\": [";
+      auto const& cs = kids[id];
+      for (size_t i = 0; i < cs.size(); i++) {
+        out << (i ? ",\n" : "\n");
+        emit(cs[i], depth + 1);
+      }
+      out << (cs.empty() ? "" : "\n" + pad) << "]}";
+    };
+    out << "{\"title\": " << json_string(opts.title) << ",\n \"roots\": [\n";
+    for (size_t i = 0; i < roots.size(); i++) {
+      if (i) out << ",\n";
+      emit(roots[i], 1);
+    }
+    out << "\n]}\n";
+    return;
+  }
 
   //Colour groups.
   std::map<std::string,int> group_of_key;

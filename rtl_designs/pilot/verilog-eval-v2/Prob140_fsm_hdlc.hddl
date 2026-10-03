@@ -1,0 +1,89 @@
+; VerilogEval v2 Prob140_fsm_hdlc, restated as facts for
+; rtl_designs/rtl_domain.hddl. Hand-written for the P-series pilot
+; (LLM_RTL_code_generation.md 8.6.5).
+;
+; The transition table is not here -- the planner derives it from the run of
+; 1s and the three rules that end one.
+;
+;   "Create a Moore-type finite state machine to recognize these three
+;    sequences" -> (run_classifier ...) (moore ...)
+;   "(1) 0111110: Signal a bit needs to be discarded (disc)"
+;        -> after a 0 and five 1s (S5), a 0 completes it: (zero_rule S5 SDISC)
+;   "(2) 01111110: Flag the beginning/end of a frame (flag)"
+;        -> after six 1s (S6), a 0 completes it: (zero_rule S6 SFLAG)
+;   "(3) 01111111...: Error (7 or more 1s) (err)"
+;        -> after six 1s, a seventh 1 completes it, (one_rule S6 SERR), and
+;           further 1s keep it, (holds_on_one SERR)
+;   S0 .. S6: "previous input 0" followed by 0 .. 6 consecutive 1s,
+;        (ones_next S_k S_k+1)
+;   "When the FSM is reset, it should be in a state that behaves as though the
+;    previous input were 0" -> (initial_state ... S0) (zero_run_state ... S0)
+;   "The reset signal is active high synchronous"
+;        -> (reset_polarity reset active_high), no (reset_async ...)
+;   "The output signals should be asserted for a complete cycle beginning on
+;    the clock cycle after the condition occurs" -> each output is 1 in its
+;    sequence's state: (asserted_in disc SDISC) ...
+;   "implement a module named TopModule"; the ports, in the order given
+
+(define (problem fsm_hdlc)
+  (:domain rtl_fsm)
+  (:objects
+    TopModule - module
+    clk reset in disc flag err - port
+    S0 S1 S2 S3 S4 S5 S6 SERR SDISC SFLAG - fsm_state
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module TopModule))
+  )
+  (:init
+    ; interface
+    (first_port TopModule clk)
+    (next_port clk reset)
+    (next_port reset in)
+    (next_port in disc)
+    (next_port disc flag)
+    (next_port flag err)
+    (last_port TopModule err)
+    (input_port clk)
+    (input_port reset)
+    (input_port in)
+    (output_port disc)
+    (output_port flag)
+    (output_port err)
+    (data_input_of TopModule in)
+    (clock_of TopModule clk)
+    (reset_of TopModule reset)
+    (reset_polarity reset active_high)
+
+    ; behaviour
+    (run_classifier TopModule)
+    (moore TopModule)
+    (initial_state TopModule S0)
+    (zero_run_state TopModule S0)
+    (first_listed TopModule S0)
+    (listed_after S0 S1)
+    (listed_after S1 S2)
+    (listed_after S2 S3)
+    (listed_after S3 S4)
+    (listed_after S4 S5)
+    (listed_after S5 S6)
+    (listed_after S6 SERR)
+    (listed_after SERR SDISC)
+    (listed_after SDISC SFLAG)
+    (last_listed TopModule SFLAG)
+    (ones_next S0 S1)
+    (ones_next S1 S2)
+    (ones_next S2 S3)
+    (ones_next S3 S4)
+    (ones_next S4 S5)
+    (ones_next S5 S6)
+    (zero_rule S5 SDISC)
+    (zero_rule S6 SFLAG)
+    (one_rule S6 SERR)
+    (holds_on_one SERR)
+    (asserted_in disc SDISC)
+    (asserted_in flag SFLAG)
+    (asserted_in err SERR)
+  )
+)

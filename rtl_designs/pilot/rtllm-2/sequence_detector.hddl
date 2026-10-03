@@ -1,0 +1,63 @@
+; RTLLM 2.0 sequence_detector, restated as facts for rtl_designs/rtl_domain.hddl.
+; Hand-written for the P-series pilot (LLM_RTL_code_generation.md 8.6.5).
+;
+; The transition table is not here -- the planner derives it.
+;
+;   "detect a specific 4-bit binary sequence 1001"
+;        -> (sequence_detector sequence_detector), one state per pattern bit
+;   "S4: The fourth and final bit ... is detected, and the output
+;    sequence_detected is set high"
+;        -> (moore ...): the output comes from a state, S4, the accepting state
+;   "IDLE ... S1 ... S2 ... S3 ... S4" -> the state names
+;   "On each clock cycle, the detector checks for a match of the specific
+;    sequence" -> (overlapping ...): a match is looked for at every bit
+;   "rst_n: Active-low reset"; "When rst_n is low, the state machine returns to
+;    the IDLE state" -> (reset_polarity rst_n active_low). The description
+;    does not say whether the reset is synchronous, so no (reset_async ...).
+;   "Module name: sequence_detector"; the ports, in the order given
+
+(define (problem sequence_detector_1001)
+  (:domain rtl_fsm)
+  (:objects
+    sequence_detector - module
+    clk rst_n data_in sequence_detected - port
+    IDLE S1 S2 S3 S4 - fsm_state
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module sequence_detector))
+  )
+  (:init
+    ; interface
+    (first_port sequence_detector clk)
+    (next_port clk rst_n)
+    (next_port rst_n data_in)
+    (next_port data_in sequence_detected)
+    (last_port sequence_detector sequence_detected)
+    (input_port clk)
+    (input_port rst_n)
+    (input_port data_in)
+    (output_port sequence_detected)
+    (data_input_of sequence_detector data_in)
+    (clock_of sequence_detector clk)
+    (reset_of sequence_detector rst_n)
+    (detect_output_of sequence_detector sequence_detected)
+    (reset_polarity rst_n active_low)
+
+    ; behaviour: detect 1 0 0 1, overlapping, Moore
+    (sequence_detector sequence_detector)
+    (moore sequence_detector)
+    (overlapping sequence_detector)
+    (initial_state sequence_detector IDLE)
+    (last_state sequence_detector S4)
+    (accept_state sequence_detector S4)
+    (next_prefix IDLE S1)
+    (next_prefix S1 S2)
+    (next_prefix S2 S3)
+    (next_prefix S3 S4)
+    (expects IDLE one)
+    (expects S1 zero)
+    (expects S2 zero)
+    (expects S3 one)
+  )
+)

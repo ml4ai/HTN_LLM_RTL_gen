@@ -1,0 +1,55 @@
+; RTLLM 2.0 signal_generator, restated as facts for rtl_designs/rtl_domain.hddl.
+; Hand-written for the P-series pilot (LLM_RTL_code_generation.md 8.6.5).
+;
+;   "Triangle Wave signal generator ... incrementing and decrementing a 5-bit
+;    signal named "wave"" -> (triangle_generator ...), (port_width wave bits5)
+;   "The waveform cycles between 0 and 31" -> (count_min ... n0) (count_max ... n31)
+;   "a register, state, used to control the state of the waveform generation"
+;        -> (direction_register ... state); one bit holds its two values
+;   "If the state is 0, the waveform (wave) is incremented by 1"; "If the state
+;    is 1, the waveform is decremented by 1" -> (rising_code n0) (falling_code n1)
+;   "posedge clk ... or the negative edge of the reset signal (negedge rst_n)"
+;        -> (reset_async rst_n) (reset_polarity rst_n active_low)
+;   "On reset ... the state register is cleared to 0, and the wave register is
+;    cleared to 0" -> the reset values are the rising code and the minimum
+;   "Module name: signal_generator"; the ports, in the order given
+
+(define (problem signal_generator_triangle)
+  (:domain rtl_fsm)
+  (:objects
+    signal_generator - module
+    clk rst_n wave - port
+    state - register
+    bits1 bits5 - width
+    n0 n1 n31 - value
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module signal_generator))
+  )
+  (:init
+    ; interface
+    (first_port signal_generator clk)
+    (next_port clk rst_n)
+    (next_port rst_n wave)
+    (last_port signal_generator wave)
+    (input_port clk)
+    (input_port rst_n)
+    (output_port wave)
+    (port_width wave bits5)
+    (clock_of signal_generator clk)
+    (reset_of signal_generator rst_n)
+    (reset_async rst_n)
+    (reset_polarity rst_n active_low)
+
+    ; behaviour
+    (triangle_generator signal_generator)
+    (wave_output signal_generator wave)
+    (direction_register signal_generator state)
+    (register_width state bits1)
+    (rising_code signal_generator n0)
+    (falling_code signal_generator n1)
+    (count_min signal_generator n0)
+    (count_max signal_generator n31)
+  )
+)

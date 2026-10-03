@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
       ("score_fun,F",po::value<std::string>(),"name of score function (string), default = delivery_one")
       ("seed,s", po::value<int>(),"Random Seed (int)")
       ("graph,g",po::bool_switch()->default_value(false),"Draws the task hierarchy behind the returned plan, default = false")
-      ("graph_file,f",po::value<std::string>(), "File for the graph (string); its extension picks the format: .png, .svg (with a tooltip per node), .pdf, or .dot. Default = <problem name>.png")
+      ("graph_file,f",po::value<std::string>(), "File for the graph (string); its extension picks the format: .png, .svg (with a tooltip per node), .pdf, .dot, or .json (the tree as data, no drawing). Default = <problem name>.png")
       ("graph_colour",po::value<std::string>(), "How the graph colours its nodes (string): top (default; by the top-level task each serves), none, or a type name, to colour by the object of that type a task involves (e.g. player)")
     ;
 
