@@ -13,7 +13,8 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | File | What it is |
 |---|---|
 | `eval_config.json` | Every evaluation setting, pinned: tool paths and versions, flags, timeouts, benchmark commits, ladder |
-| `rtl_eval.py` | The command-line driver: `selftest`, `generate`, `evaluate`, `report`, `compare` |
+| `rtl_eval.py` | The command-line driver: `selftest`, `generate`, `evaluate`, `report`, `breakdown`, `compare` |
+| `pseries.py` | The P-series: the 32 ways of presenting a planner's plan to the executor, on the pilot problems (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
 | `passk.py` | The estimator, ladders, the syntax/conditional split, bootstrap, McNemar |
@@ -81,6 +82,44 @@ single sequence. A problem takes about 10 s to 4 minutes, depending on its
 longest reply. A full sampled run of both benchmarks is roughly 6–8 hours, so
 run it overnight *(estimate, from the smoke runs)*. The greedy line takes about
 an hour per benchmark.
+
+## The P-series: presenting a plan
+
+`pseries.py` builds the arms that put an HTN plan in front of the executor,
+for the eight pilot problems of `rtl_designs/pilot/` (four from each
+benchmark). An arm is one level of each of four factors, named
+`p-<format>-<delivery>-<tree>-<description>`:
+
+| Factor | Levels |
+|---|---|
+| Format | `s0` the plan's s-expressions as emitted · `s1` with named arguments · `s2` s1 plus a schema saying what each action means · `nl` one sentence per step |
+| Delivery | `single` one prompt · `micro` a conversation, one turn per top-level part of the plan and a last turn asking for the module |
+| Tree | `notree` · `tree` the task tree behind the plan, as an outline |
+| Description | `desc` the design description, then the plan · `nodesc` the plan alone |
+
+That is 32 arms. Each run directory is an ordinary one, `eval/runs/pseries/<arm>`
+(and `eval/runs/pseries_greedy/<arm>`), so `evaluate`, `report` and `compare`
+work on it.
+
+    $PY eval/pseries.py show p-s2-single-tree-desc rtllm-2 fsm   # print one prompt
+    $PY eval/pseries.py build      # write every arm's requests and run.json
+    $PY eval/pseries.py generate   # run the executor on what is not done; resumes
+    $PY eval/pseries.py evaluate   # evaluate and report, per arm
+    $PY eval/pseries.py summary    # all arms beside the direct and rules-on baselines
+
+- **`--greedy`** on any of them does the greedy line.
+- **`--arms A B …` or `--delivery single|micro`** does part of the factorial.
+- **The frame is the benchmark's own,** so its code extraction applies:
+  VerilogEval's template with the plan where its optional rules go, and RTLLM's
+  description followed by the plan.
+- **The plans are saved ones** (`rtl_designs/check_pilot.py` writes and checks
+  them); nothing here runs the planner. `run.json` records the hash of every
+  file a prompt is built from.
+- **Micro-prompting** follows the single-pass policy: each reply is fed back
+  as generated, nothing checks one, and only the last reply is evaluated.
+- **Time** (32B executor): about 7 minutes for a single-prompt request of 20
+  samples on an FSM problem, and 17 for a micro-prompt one. The whole
+  factorial, sampled and greedy, is about two days.
 
 ## What each check means
 
