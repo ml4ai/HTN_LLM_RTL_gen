@@ -97,6 +97,15 @@ MICRO_INTRO = ("The plan has {k} parts, and I will give you one part at a time. 
 PART_HEAD = "Part {i} of {k} ({title}):"
 PART_TREE_HEAD = "Task tree behind this part:"
 MICRO_FINAL = "That was the whole plan. Now write the complete module, following the plan."
+# Amended after the first greedy lines (LLM_RTL_code_generation.md 8.6.6). In a
+# conversation the executor answers each part in a Markdown fence, and kept the
+# fence in its final answer, inside [BEGIN]..[DONE]: 56 of 64 VerilogEval
+# micro-prompt replies, none of the single-prompt ones. VerilogEval's
+# extraction takes what is between the markers as it stands, so those failed to
+# compile whatever the code. RTLLM's extraction reads fenced blocks, and its
+# final turn is unchanged.
+VE_MICRO_PLAIN = ("Put the code between the markers as plain text: no Markdown code fences, "
+                  "so no line of backticks.")
 RTLLM_CLOSE = "Give me the complete code."
 
 
@@ -332,7 +341,8 @@ def build_request(arm, bench, problem, domain, steps, top):
             body += ["", PART_TREE_HEAD] + render_tree(part["nodes"])
         text = "\n".join(body)
         turns.append(("\nQuestion:\n" + text) if (ve and i == 1) else text)
-    turns.append(MICRO_FINAL + "\n" + no_explain + "\nAnswer:\n" if ve else MICRO_FINAL + " " + RTLLM_CLOSE)
+    turns.append(MICRO_FINAL + "\n" + no_explain + VE_MICRO_PLAIN + "\n\nAnswer:\n" if ve
+                 else MICRO_FINAL + " " + RTLLM_CLOSE)
     return {"system": problem.system, "turns": turns, "intermediate_max_new_tokens": INTERMEDIATE_MAX_NEW_TOKENS}
 
 
