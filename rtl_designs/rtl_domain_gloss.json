@@ -1,5 +1,5 @@
 {
-  "note": "One sentence per action of rtl_domain.hddl, with {parameter} placeholders named as the action's parameters. Hand-written for the P-series pilot (LLM_RTL_code_generation.md 8.6). The plan formats read it two ways: the NL format fills in a step's arguments, and the S2 schema fills in the parameter names, giving the action's meaning in general. No sentence contains Verilog text.",
+  "note": "One sentence per action of rtl_domain.hddl, with {parameter} placeholders named as the action's parameters. Hand-written for the P-series pilot (LLM_RTL_code_generation.md 8.6). The plan formats read it two ways: the NL format fills in a step's arguments, and the S2 schema fills in the parameter names, giving the action's meaning in general. No sentence contains Verilog text, with one deliberate exception: write_state_param names the idiom, a parameter and not an enum. In the pilot the executor declared states as an enum in 87% of its unplanned FSM replies and a quarter of those failed to compile, mostly from a width too small for the number of states; under a plan that said only 'a named constant', three-quarters of the replies that still used an enum failed (LLM_RTL_code_generation.md 8.6.6).",
   "legend": "zero and one are the bit values 0 and 1. active_high and active_low are reset polarities. bitsN is a width of N bits. nN is the number N.",
   "actions": {
     "analyze_choose_three_block_fsm": "Build {module} as a Mealy state machine in three blocks: a clocked state register, combinational next-state logic, and combinational output logic that depends on the current state and the input.",
@@ -30,7 +30,7 @@
     "write_output_decl": "Declare {port} as a 1-bit output that a continuous assignment drives.",
     "write_output_reg_vector_decl": "Declare {port} as a {width}-bit output of type reg, because it is assigned inside an always block.",
     "analyze_choose_state_encoding": "Encode the states as binary numbers in the order they are declared, starting with {first_state} as 0, using just enough bits for all of them.",
-    "write_state_param": "Declare a named constant for state {state}, with the next unused binary code.",
+    "write_state_param": "Declare a parameter (not an enum) for state {state}, with the next unused binary code.",
     "write_state_regs": "Declare two registers as wide as the state codes: one for the current state and one for the next state.",
     "write_state_register_async": "Write the state register: an always block triggered by the rising edge of {clock} and, asynchronously, by the {polarity} reset {reset}. While {reset} is active the current state becomes {reset_state}; otherwise it takes the next state.",
     "write_state_register_sync": "Write the state register: an always block triggered only by the rising edge of {clock}, so that the {polarity} reset {reset} is synchronous. If {reset} is active the current state becomes {reset_state}; otherwise it takes the next state.",

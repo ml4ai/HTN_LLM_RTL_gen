@@ -28,6 +28,8 @@ An arm is one level of each of four factors, named p-<format>-<delivery>-
 
 Each takes --greedy for the greedy line, which lives beside the sampled runs,
 and build, generate and evaluate take --arms or --delivery to do part of them.
+--tag NAME (before the command) puts a run in eval/runs/pseries_NAME, apart
+from the pilot's, which is how a changed sentence or prompt is tried.
 An arm's run directory is an ordinary rtl_eval.py one (eval/runs/pseries/<arm>),
 so evaluate, report, breakdown and compare all work on it.
 
@@ -579,6 +581,8 @@ def cmd_summary(args, pilot):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--config", default=os.path.join(HERE, "eval_config.json"))
+    ap.add_argument("--tag", help="keep this run apart from the pilot's: eval/runs/pseries_<tag> "
+                                  "(and pseries_greedy_<tag>), e.g. after changing a sentence")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("show")
     s.add_argument("arm")
@@ -594,6 +598,9 @@ def main():
             s.add_argument("--jobs", type=int, default=8)
     args = ap.parse_args()
     args.config = os.path.abspath(args.config)
+    if args.tag:
+        for mode in RUNS:
+            RUNS[mode] += "_" + args.tag
     pilot = Pilot(args.config)
     {"show": cmd_show, "build": cmd_build, "generate": cmd_generate,
      "evaluate": cmd_evaluate, "summary": cmd_summary}[args.cmd](args, pilot)
