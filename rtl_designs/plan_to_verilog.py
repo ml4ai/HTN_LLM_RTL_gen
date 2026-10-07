@@ -9,13 +9,11 @@ instruction instead.
     MCTS_planner -D rtl_domain.hddl -P fsm/fsm_problem.hddl -F simple ... \
         | python plan_to_verilog.py > fsm.v
 
-analyze_* steps produce no code. The two choices they leave to the writer are
-fixed here the way the domain's comments state them: states are numbered in
-the order they are declared, in binary with just enough bits, and the state
-registers are called ST_cr and ST_nt.
+analyze_* steps produce no code. The one choice the plan leaves to the writer
+is fixed here: the state registers are called ST_cr and ST_nt. The state
+codes and their width are the plan's own (state_encoding.py computes them).
 """
 
-import math
 import re
 import sys
 
@@ -62,9 +60,6 @@ def render(steps):
         """`value` as a literal sized for the port or register `target`."""
         return f"{widths[target]}'d{number(value)}"
 
-    states = [a[1] for n, a in steps if n == "write_state_param"]
-    width = max(1, math.ceil(math.log2(len(states)))) if states else 1
-    code = {s: i for i, s in enumerate(states)}
     bit = {"zero": "0", "one": "1"}
 
     out = []
@@ -85,9 +80,9 @@ def render(steps):
         elif name == "write_register_decl":
             out.append(f"reg [{widths[a[1]] - 1}:0] {a[1]};")
         elif name == "write_state_param":
-            out.append(f"parameter {a[1]} = {width}'d{code[a[1]]};")
+            out.append(f"parameter {a[1]} = {number(a[3])}'d{number(a[2])};")
         elif name == "write_state_regs":
-            out.append(f"reg [{width - 1}:0] {CUR}, {NXT};")
+            out.append(f"reg [{number(a[1]) - 1}:0] {CUR}, {NXT};")
         elif name in ("write_state_register_async", "write_state_register_sync"):
             _, clk, rst, pol, s0 = a
             edge = "posedge" if pol == "active_high" else "negedge"

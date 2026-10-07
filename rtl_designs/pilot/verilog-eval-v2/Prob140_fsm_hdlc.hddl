@@ -31,6 +31,9 @@
     TopModule - module
     clk reset in disc flag err - port
     S0 S1 S2 S3 S4 S5 S6 SERR SDISC SFLAG - fsm_state
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    n0 n1 n2 n3 n4 n5 n6 n7 n8 n9 - value
+    bits4 - width
   )
   (:htn
     :parameters ()
@@ -85,5 +88,17 @@
     (asserted_in disc SDISC)
     (asserted_in flag SFLAG)
     (asserted_in err SERR)
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    (state_width TopModule bits4)
+    (state_code S0 n0)
+    (state_code S1 n1)
+    (state_code S2 n2)
+    (state_code S3 n3)
+    (state_code S4 n4)
+    (state_code S5 n5)
+    (state_code S6 n6)
+    (state_code SERR n7)
+    (state_code SDISC n8)
+    (state_code SFLAG n9)
   )
 )

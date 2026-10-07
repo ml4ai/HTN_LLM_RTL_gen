@@ -126,23 +126,23 @@
         ]}
       ]},
       {"token": "(write_state_declarations sequence_detector)", "action": false, "method": "m_write_state_declarations", "children": [
-        {"token": "(analyze_choose_state_encoding sequence_detector IDLE)", "action": true, "method": "", "step": 22, "children": []},
+        {"token": "(analyze_choose_state_encoding sequence_detector IDLE bits3)", "action": true, "method": "", "step": 22, "children": []},
         {"token": "(declare_states_from sequence_detector IDLE)", "action": false, "method": "m_declare_states_more", "children": [
-          {"token": "(write_state_param sequence_detector IDLE)", "action": true, "method": "", "step": 23, "children": []},
+          {"token": "(write_state_param sequence_detector IDLE n0 bits3)", "action": true, "method": "", "step": 23, "children": []},
           {"token": "(declare_states_from sequence_detector S1)", "action": false, "method": "m_declare_states_more", "children": [
-            {"token": "(write_state_param sequence_detector S1)", "action": true, "method": "", "step": 24, "children": []},
+            {"token": "(write_state_param sequence_detector S1 n1 bits3)", "action": true, "method": "", "step": 24, "children": []},
             {"token": "(declare_states_from sequence_detector S2)", "action": false, "method": "m_declare_states_more", "children": [
-              {"token": "(write_state_param sequence_detector S2)", "action": true, "method": "", "step": 25, "children": []},
+              {"token": "(write_state_param sequence_detector S2 n2 bits3)", "action": true, "method": "", "step": 25, "children": []},
               {"token": "(declare_states_from sequence_detector S3)", "action": false, "method": "m_declare_states_more", "children": [
-                {"token": "(write_state_param sequence_detector S3)", "action": true, "method": "", "step": 26, "children": []},
+                {"token": "(write_state_param sequence_detector S3 n3 bits3)", "action": true, "method": "", "step": 26, "children": []},
                 {"token": "(declare_states_from sequence_detector S4)", "action": false, "method": "m_declare_states_last", "children": [
-                  {"token": "(write_state_param sequence_detector S4)", "action": true, "method": "", "step": 27, "children": []}
+                  {"token": "(write_state_param sequence_detector S4 n4 bits3)", "action": true, "method": "", "step": 27, "children": []}
                 ]}
               ]}
             ]}
           ]}
         ]},
-        {"token": "(write_state_regs sequence_detector)", "action": true, "method": "", "step": 28, "children": []}
+        {"token": "(write_state_regs sequence_detector bits3)", "action": true, "method": "", "step": 28, "children": []}
       ]},
       {"token": "(write_state_register sequence_detector)", "action": false, "method": "m_state_register_sync", "children": [
         {"token": "(write_state_register_sync sequence_detector clk rst_n active_low IDLE)", "action": true, "method": "", "step": 29, "children": []}

@@ -22,6 +22,9 @@
     sequence_detector - module
     clk rst_n data_in sequence_detected - port
     IDLE S1 S2 S3 S4 - fsm_state
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    n0 n1 n2 n3 n4 - value
+    bits3 - width
   )
   (:htn
     :parameters ()
@@ -59,5 +62,12 @@
     (expects S1 zero)
     (expects S2 zero)
     (expects S3 one)
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    (state_width sequence_detector bits3)
+    (state_code IDLE n0)
+    (state_code S1 n1)
+    (state_code S2 n2)
+    (state_code S3 n3)
+    (state_code S4 n4)
   )
 )

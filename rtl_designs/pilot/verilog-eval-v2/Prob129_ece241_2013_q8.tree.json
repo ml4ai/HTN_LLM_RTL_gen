@@ -81,17 +81,17 @@
         ]}
       ]},
       {"token": "(write_state_declarations TopModule)", "action": false, "method": "m_write_state_declarations", "children": [
-        {"token": "(analyze_choose_state_encoding TopModule s0)", "action": true, "method": "", "step": 15, "children": []},
+        {"token": "(analyze_choose_state_encoding TopModule s0 bits2)", "action": true, "method": "", "step": 15, "children": []},
         {"token": "(declare_states_from TopModule s0)", "action": false, "method": "m_declare_states_more", "children": [
-          {"token": "(write_state_param TopModule s0)", "action": true, "method": "", "step": 16, "children": []},
+          {"token": "(write_state_param TopModule s0 n0 bits2)", "action": true, "method": "", "step": 16, "children": []},
           {"token": "(declare_states_from TopModule s1)", "action": false, "method": "m_declare_states_more", "children": [
-            {"token": "(write_state_param TopModule s1)", "action": true, "method": "", "step": 17, "children": []},
+            {"token": "(write_state_param TopModule s1 n1 bits2)", "action": true, "method": "", "step": 17, "children": []},
             {"token": "(declare_states_from TopModule s2)", "action": false, "method": "m_declare_states_last", "children": [
-              {"token": "(write_state_param TopModule s2)", "action": true, "method": "", "step": 18, "children": []}
+              {"token": "(write_state_param TopModule s2 n2 bits2)", "action": true, "method": "", "step": 18, "children": []}
             ]}
           ]}
         ]},
-        {"token": "(write_state_regs TopModule)", "action": true, "method": "", "step": 19, "children": []}
+        {"token": "(write_state_regs TopModule bits2)", "action": true, "method": "", "step": 19, "children": []}
       ]},
       {"token": "(write_state_register TopModule)", "action": false, "method": "m_state_register_async", "children": [
         {"token": "(write_state_register_async TopModule clk aresetn active_low s0)", "action": true, "method": "", "step": 20, "children": []}

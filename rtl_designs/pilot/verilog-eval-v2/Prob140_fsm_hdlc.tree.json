@@ -119,27 +119,27 @@
         ]}
       ]},
       {"token": "(write_state_declarations TopModule)", "action": false, "method": "m_write_state_declarations_listed", "children": [
-        {"token": "(analyze_choose_state_encoding TopModule S0)", "action": true, "method": "", "step": 29, "children": []},
+        {"token": "(analyze_choose_state_encoding TopModule S0 bits4)", "action": true, "method": "", "step": 29, "children": []},
         {"token": "(declare_states_from TopModule S0)", "action": false, "method": "m_declare_states_listed_more", "children": [
-          {"token": "(write_state_param TopModule S0)", "action": true, "method": "", "step": 30, "children": []},
+          {"token": "(write_state_param TopModule S0 n0 bits4)", "action": true, "method": "", "step": 30, "children": []},
           {"token": "(declare_states_from TopModule S1)", "action": false, "method": "m_declare_states_listed_more", "children": [
-            {"token": "(write_state_param TopModule S1)", "action": true, "method": "", "step": 31, "children": []},
+            {"token": "(write_state_param TopModule S1 n1 bits4)", "action": true, "method": "", "step": 31, "children": []},
             {"token": "(declare_states_from TopModule S2)", "action": false, "method": "m_declare_states_listed_more", "children": [
-              {"token": "(write_state_param TopModule S2)", "action": true, "method": "", "step": 32, "children": []},
+              {"token": "(write_state_param TopModule S2 n2 bits4)", "action": true, "method": "", "step": 32, "children": []},
               {"token": "(declare_states_from TopModule S3)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                {"token": "(write_state_param TopModule S3)", "action": true, "method": "", "step": 33, "children": []},
+                {"token": "(write_state_param TopModule S3 n3 bits4)", "action": true, "method": "", "step": 33, "children": []},
                 {"token": "(declare_states_from TopModule S4)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                  {"token": "(write_state_param TopModule S4)", "action": true, "method": "", "step": 34, "children": []},
+                  {"token": "(write_state_param TopModule S4 n4 bits4)", "action": true, "method": "", "step": 34, "children": []},
                   {"token": "(declare_states_from TopModule S5)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                    {"token": "(write_state_param TopModule S5)", "action": true, "method": "", "step": 35, "children": []},
+                    {"token": "(write_state_param TopModule S5 n5 bits4)", "action": true, "method": "", "step": 35, "children": []},
                     {"token": "(declare_states_from TopModule S6)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                      {"token": "(write_state_param TopModule S6)", "action": true, "method": "", "step": 36, "children": []},
+                      {"token": "(write_state_param TopModule S6 n6 bits4)", "action": true, "method": "", "step": 36, "children": []},
                       {"token": "(declare_states_from TopModule SERR)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                        {"token": "(write_state_param TopModule SERR)", "action": true, "method": "", "step": 37, "children": []},
+                        {"token": "(write_state_param TopModule SERR n7 bits4)", "action": true, "method": "", "step": 37, "children": []},
                         {"token": "(declare_states_from TopModule SDISC)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                          {"token": "(write_state_param TopModule SDISC)", "action": true, "method": "", "step": 38, "children": []},
+                          {"token": "(write_state_param TopModule SDISC n8 bits4)", "action": true, "method": "", "step": 38, "children": []},
                           {"token": "(declare_states_from TopModule SFLAG)", "action": false, "method": "m_declare_states_listed_last", "children": [
-                            {"token": "(write_state_param TopModule SFLAG)", "action": true, "method": "", "step": 39, "children": []}
+                            {"token": "(write_state_param TopModule SFLAG n9 bits4)", "action": true, "method": "", "step": 39, "children": []}
                           ]}
                         ]}
                       ]}
@@ -150,7 +150,7 @@
             ]}
           ]}
         ]},
-        {"token": "(write_state_regs TopModule)", "action": true, "method": "", "step": 40, "children": []}
+        {"token": "(write_state_regs TopModule bits4)", "action": true, "method": "", "step": 40, "children": []}
       ]},
       {"token": "(write_state_register TopModule)", "action": false, "method": "m_state_register_sync", "children": [
         {"token": "(write_state_register_sync TopModule clk reset active_high S0)", "action": true, "method": "", "step": 41, "children": []}

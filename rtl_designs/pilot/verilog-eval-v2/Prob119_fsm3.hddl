@@ -17,6 +17,9 @@
     TopModule - module
     clk areset in out - port
     A B C D - fsm_state
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    n0 n1 n2 n3 - value
+    bits2 - width
   )
   (:htn
     :parameters ()
@@ -57,5 +60,11 @@
     (table_next D zero C)
     (table_next D one B)
     (asserted_in out D)
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    (state_width TopModule bits2)
+    (state_code A n0)
+    (state_code B n1)
+    (state_code C n2)
+    (state_code D n3)
   )
 )

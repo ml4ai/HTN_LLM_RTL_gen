@@ -447,6 +447,8 @@ def cmd_generate(args, pilot):
     jobs = []
     for arm in selected_arms(args):
         for bench, pid, _ in pilot.problems:
+            if args.pids and pid not in args.pids:
+                continue
             pd = os.path.join(run_dir(mode, arm), bench, pid)
             req, gen = os.path.join(pd, "request.json"), os.path.join(pd, "gen.json")
             if not os.path.exists(req):
@@ -594,6 +596,8 @@ def main():
         if name != "summary":
             s.add_argument("--arms", nargs="*", help="default: all 32")
             s.add_argument("--delivery", choices=DELIVERIES, help="only the arms with this delivery")
+        if name == "generate":
+            s.add_argument("--pids", nargs="*", help="only these problems (default: all eight)")
         if name == "evaluate":
             s.add_argument("--jobs", type=int, default=8)
     args = ap.parse_args()

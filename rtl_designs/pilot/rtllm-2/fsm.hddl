@@ -25,6 +25,9 @@
     fsm - module
     IN CLK RST MATCH - port
     s0 s1 s2 s3 s4 - fsm_state
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    n0 n1 n2 n3 n4 - value
+    bits3 - width
   )
   (:htn
     :parameters ()
@@ -64,5 +67,12 @@
     (expects s2 zero)
     (expects s3 one)
     (expects s4 one)
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    (state_width fsm bits3)
+    (state_code s0 n0)
+    (state_code s1 n1)
+    (state_code s2 n2)
+    (state_code s3 n3)
+    (state_code s4 n4)
   )
 )

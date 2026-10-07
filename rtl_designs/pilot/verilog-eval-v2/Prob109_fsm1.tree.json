@@ -37,14 +37,14 @@
         ]}
       ]},
       {"token": "(write_state_declarations TopModule)", "action": false, "method": "m_write_state_declarations_listed", "children": [
-        {"token": "(analyze_choose_state_encoding TopModule B)", "action": true, "method": "", "step": 11, "children": []},
+        {"token": "(analyze_choose_state_encoding TopModule B bits1)", "action": true, "method": "", "step": 11, "children": []},
         {"token": "(declare_states_from TopModule B)", "action": false, "method": "m_declare_states_listed_more", "children": [
-          {"token": "(write_state_param TopModule B)", "action": true, "method": "", "step": 12, "children": []},
+          {"token": "(write_state_param TopModule B n0 bits1)", "action": true, "method": "", "step": 12, "children": []},
           {"token": "(declare_states_from TopModule A)", "action": false, "method": "m_declare_states_listed_last", "children": [
-            {"token": "(write_state_param TopModule A)", "action": true, "method": "", "step": 13, "children": []}
+            {"token": "(write_state_param TopModule A n1 bits1)", "action": true, "method": "", "step": 13, "children": []}
           ]}
         ]},
-        {"token": "(write_state_regs TopModule)", "action": true, "method": "", "step": 14, "children": []}
+        {"token": "(write_state_regs TopModule bits1)", "action": true, "method": "", "step": 14, "children": []}
       ]},
       {"token": "(write_state_register TopModule)", "action": false, "method": "m_state_register_async", "children": [
         {"token": "(write_state_register_async TopModule clk areset active_high B)", "action": true, "method": "", "step": 15, "children": []}

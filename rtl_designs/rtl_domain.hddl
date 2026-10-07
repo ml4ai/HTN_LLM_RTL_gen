@@ -122,6 +122,13 @@
     (last_listed ?m - module ?s - fsm_state)
     (table_next ?s - fsm_state ?b - bitval ?t - fsm_state)
     (asserted_in ?o - port ?s - fsm_state)
+
+    ; ---- given: the state encoding of an FSM. Arithmetic, so not the
+    ; planner's to derive: state k in declaration order has code k, and the
+    ; width is the smallest that holds the highest code. Whatever writes the
+    ; problem file computes both (rtl_designs/state_encoding.py) ----
+    (state_code ?s - fsm_state ?c - value)
+    (state_width ?m - module ?w - width)
     (zero_run_state ?m - module ?s - fsm_state)
     (ones_next ?s ?t - fsm_state)
     (zero_rule ?s ?t - fsm_state)
@@ -949,85 +956,86 @@
   ; ---- state encoding and state registers ----
 
   (:method m_write_state_declarations
-    :parameters (?m - module ?s0 - fsm_state)
+    :parameters (?m - module ?s0 - fsm_state ?w - width)
     :task (write_state_declarations ?m)
-    :precondition (and (sequence_detector ?m) (initial_state ?m ?s0))
+    :precondition (and (sequence_detector ?m) (initial_state ?m ?s0) (state_width ?m ?w))
     :ordered-subtasks (and
-      (t1 (analyze_choose_state_encoding ?m ?s0))
+      (t1 (analyze_choose_state_encoding ?m ?s0 ?w))
       (t2 (declare_states_from ?m ?s0))
-      (t3 (write_state_regs ?m))
+      (t3 (write_state_regs ?m ?w))
     )
   )
 
   (:method m_write_state_declarations_listed
-    :parameters (?m - module ?s - fsm_state)
+    :parameters (?m - module ?s - fsm_state ?w - width)
     :task (write_state_declarations ?m)
-    :precondition (first_listed ?m ?s)
+    :precondition (and (first_listed ?m ?s) (state_width ?m ?w))
     :ordered-subtasks (and
-      (t1 (analyze_choose_state_encoding ?m ?s))
+      (t1 (analyze_choose_state_encoding ?m ?s ?w))
       (t2 (declare_states_from ?m ?s))
-      (t3 (write_state_regs ?m))
+      (t3 (write_state_regs ?m ?w))
     )
   )
 
   (:method m_declare_states_more
-    :parameters (?m - module ?s ?t - fsm_state)
+    :parameters (?m - module ?s ?t - fsm_state ?c - value ?w - width)
     :task (declare_states_from ?m ?s)
-    :precondition (next_prefix ?s ?t)
+    :precondition (and (next_prefix ?s ?t) (state_code ?s ?c) (state_width ?m ?w))
     :ordered-subtasks (and
-      (t1 (write_state_param ?m ?s))
+      (t1 (write_state_param ?m ?s ?c ?w))
       (t2 (declare_states_from ?m ?t))
     )
   )
 
   (:method m_declare_states_last
-    :parameters (?m - module ?s - fsm_state)
+    :parameters (?m - module ?s - fsm_state ?c - value ?w - width)
     :task (declare_states_from ?m ?s)
-    :precondition (last_state ?m ?s)
+    :precondition (and (last_state ?m ?s) (state_code ?s ?c) (state_width ?m ?w))
     :ordered-subtasks (and
-      (t1 (write_state_param ?m ?s))
+      (t1 (write_state_param ?m ?s ?c ?w))
     )
   )
 
   (:method m_declare_states_listed_more
-    :parameters (?m - module ?s ?t - fsm_state)
+    :parameters (?m - module ?s ?t - fsm_state ?c - value ?w - width)
     :task (declare_states_from ?m ?s)
-    :precondition (listed_after ?s ?t)
+    :precondition (and (listed_after ?s ?t) (state_code ?s ?c) (state_width ?m ?w))
     :ordered-subtasks (and
-      (t1 (write_state_param ?m ?s))
+      (t1 (write_state_param ?m ?s ?c ?w))
       (t2 (declare_states_from ?m ?t))
     )
   )
 
   (:method m_declare_states_listed_last
-    :parameters (?m - module ?s - fsm_state)
+    :parameters (?m - module ?s - fsm_state ?c - value ?w - width)
     :task (declare_states_from ?m ?s)
-    :precondition (last_listed ?m ?s)
+    :precondition (and (last_listed ?m ?s) (state_code ?s ?c) (state_width ?m ?w))
     :ordered-subtasks (and
-      (t1 (write_state_param ?m ?s))
+      (t1 (write_state_param ?m ?s ?c ?w))
     )
   )
 
   ; Encode the states in binary, numbered in declaration order starting from
-  ; ?first_state, with just enough bits to number them all.
+  ; ?first_state, in ?width bits: enough to number them all.
   (:action analyze_choose_state_encoding
-    :parameters (?module - module ?first_state - fsm_state)
-    :precondition (architecture_chosen ?module)
+    :parameters (?module - module ?first_state - fsm_state ?width - width)
+    :precondition (and (architecture_chosen ?module) (state_width ?module ?width))
     :effect ()
   )
 
-  ; `parameter <state> = <its index, in binary>;`
+  ; `parameter <state> = <width>'d<code>;`
   (:action write_state_param
-    :parameters (?module - module ?state - fsm_state)
+    :parameters (?module - module ?state - fsm_state ?code - value ?width - width)
     :precondition (and (architecture_chosen ?module) (not (state_declared ?state))
+                       (state_code ?state ?code) (state_width ?module ?width)
                        (transition_known ?state zero) (transition_known ?state one))
     :effect (state_declared ?state)
   )
 
-  ; `reg [W-1:0] ST_cr, ST_nt;` -- current and next state, W as chosen above.
+  ; `reg [<width>-1:0] ST_cr, ST_nt;` -- current and next state.
   (:action write_state_regs
-    :parameters (?module - module)
-    :precondition (architecture_chosen ?module)
+    :parameters (?module - module ?width - width)
+    :precondition (and (architecture_chosen ?module) (state_width ?module ?width))
     :effect ()
   )
 

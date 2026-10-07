@@ -12,12 +12,13 @@ and each plan step is left in symbolic form.
 | `rtl_domain.hddl` | The domain: how to design and write six families of small sequential designs (below). It began as the Mealy sequence detector |
 | `fsm/design_description.txt` | The spec (given) |
 | `fsm/fsm_problem.hddl` | The spec restated as facts: the hand-done translation step |
-| `fsm/fsm_plan.txt` | The plan the planner returns: 43 symbolic steps |
+| `fsm/fsm_plan.txt` | The plan the planner returns: 42 symbolic steps |
 | `fsm/fsm_plan.svg` | The task hierarchy behind that plan (open in a browser; hover for details) |
 | `plan_to_verilog.py` | A check, not a pipeline stage: one fixed template per step |
 | `check_sequence_detectors.py` | Plans, renders and simulates many patterns and variants against a Python model |
 | `fsm/fsm_from_plan.v` | What those templates produce from the plan. Passes `fsm/testbench.v` |
 | `rtl_domain_gloss.json` | One sentence per action, used to present a plan to an LLM (`eval/pseries.py`) |
+| `state_encoding.py` | Computes an FSM's state width and codes and writes them into a problem file as facts. Counting is arithmetic, not planning, so the planner is given it |
 | `pilot/` | Eight benchmark problems restated as facts, with their saved plans and task trees (below) |
 | `check_pilot.py` | Plans the pilot problems, renders each plan and runs the benchmark's own testbench on it |
 

@@ -125,23 +125,23 @@
         ]}
       ]},
       {"token": "(write_state_declarations fsm)", "action": false, "method": "m_write_state_declarations", "children": [
-        {"token": "(analyze_choose_state_encoding fsm s0)", "action": true, "method": "", "step": 21, "children": []},
+        {"token": "(analyze_choose_state_encoding fsm s0 bits3)", "action": true, "method": "", "step": 21, "children": []},
         {"token": "(declare_states_from fsm s0)", "action": false, "method": "m_declare_states_more", "children": [
-          {"token": "(write_state_param fsm s0)", "action": true, "method": "", "step": 22, "children": []},
+          {"token": "(write_state_param fsm s0 n0 bits3)", "action": true, "method": "", "step": 22, "children": []},
           {"token": "(declare_states_from fsm s1)", "action": false, "method": "m_declare_states_more", "children": [
-            {"token": "(write_state_param fsm s1)", "action": true, "method": "", "step": 23, "children": []},
+            {"token": "(write_state_param fsm s1 n1 bits3)", "action": true, "method": "", "step": 23, "children": []},
             {"token": "(declare_states_from fsm s2)", "action": false, "method": "m_declare_states_more", "children": [
-              {"token": "(write_state_param fsm s2)", "action": true, "method": "", "step": 24, "children": []},
+              {"token": "(write_state_param fsm s2 n2 bits3)", "action": true, "method": "", "step": 24, "children": []},
               {"token": "(declare_states_from fsm s3)", "action": false, "method": "m_declare_states_more", "children": [
-                {"token": "(write_state_param fsm s3)", "action": true, "method": "", "step": 25, "children": []},
+                {"token": "(write_state_param fsm s3 n3 bits3)", "action": true, "method": "", "step": 25, "children": []},
                 {"token": "(declare_states_from fsm s4)", "action": false, "method": "m_declare_states_last", "children": [
-                  {"token": "(write_state_param fsm s4)", "action": true, "method": "", "step": 26, "children": []}
+                  {"token": "(write_state_param fsm s4 n4 bits3)", "action": true, "method": "", "step": 26, "children": []}
                 ]}
               ]}
             ]}
           ]}
         ]},
-        {"token": "(write_state_regs fsm)", "action": true, "method": "", "step": 27, "children": []}
+        {"token": "(write_state_regs fsm bits3)", "action": true, "method": "", "step": 27, "children": []}
       ]},
       {"token": "(write_state_register fsm)", "action": false, "method": "m_state_register_async", "children": [
         {"token": "(write_state_register_async fsm CLK RST active_high s0)", "action": true, "method": "", "step": 28, "children": []}

@@ -20,6 +20,9 @@
     TopModule - module
     clk aresetn x z - port
     s0 s1 s2 - fsm_state
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    n0 n1 n2 - value
+    bits2 - width
   )
   (:htn
     :parameters ()
@@ -54,5 +57,10 @@
     (expects s0 one)
     (expects s1 zero)
     (expects s2 one)
+    ; state encoding, computed by rtl_designs/state_encoding.py
+    (state_width TopModule bits2)
+    (state_code s0 n0)
+    (state_code s1 n1)
+    (state_code s2 n2)
   )
 )

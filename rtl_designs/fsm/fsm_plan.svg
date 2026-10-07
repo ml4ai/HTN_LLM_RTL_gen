@@ -10,8 +10,8 @@
 <title>plan</title>
 <polygon fill="white" stroke="none" points="-4,4 -4,-1032 6851.12,-1032 6851.12,4 -4,4"/>
 <text xml:space="preserve" text-anchor="start" x="3318.19" y="-1009.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="16.00">fsm_10011 (domain rtl_fsm)</text>
-<text xml:space="preserve" text-anchor="start" x="3169.31" y="-998.55" font-family="Helvetica,sans-Serif" font-size="11.00">score function simple = 1 · precondition mode at_start · seed 1 · &#45;T 10 ms · 42 actions · 74 compound tasks</text>
-<text xml:space="preserve" text-anchor="start" x="3038.44" y="-989.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">rounded box = compound task, with the method that decomposed it · square box = action, numbered in plan order · grey = decomposition · red = plan order · blue dashed = ordering constraint</text>
+<text xml:space="preserve" text-anchor="start" x="3169.31" y="-998.55" font-family="Helvetica,sans-Serif" font-size="11.00">score function simple = 1 · precondition mode at_start · seed 1 · &#45;T 25 ms · 42 actions · 74 compound tasks</text>
+<text xml:space="preserve" text-anchor="start" x="2990.44" y="-989.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">rounded box = compound task, with the method that decomposed it · square box = action, numbered in plan order · grey = decomposition · red = plan order · blue dashed = ordering constraint · colour = top&#45;level task</text>
 <!-- n0 -->
 <g id="node1" class="node">
 <title>n0</title>
@@ -26,7 +26,7 @@
 <g id="node2" class="node">
 <title>n1</title>
 <g id="a_node2"><a xlink:title="(implement_module fsm) &#160;by m_implement_mealy_sequence_detector">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4583.88,-916C4583.88,-916 4408.38,-916 4408.38,-916 4402.38,-916 4396.38,-910 4396.38,-904 4396.38,-904 4396.38,-881 4396.38,-881 4396.38,-875 4402.38,-869 4408.38,-869 4408.38,-869 4583.88,-869 4583.88,-869 4589.88,-869 4595.88,-875 4595.88,-881 4595.88,-881 4595.88,-904 4595.88,-904 4595.88,-910 4589.88,-916 4583.88,-916"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4583.88,-916C4583.88,-916 4408.38,-916 4408.38,-916 4402.38,-916 4396.38,-910 4396.38,-904 4396.38,-904 4396.38,-881 4396.38,-881 4396.38,-875 4402.38,-869 4408.38,-869 4408.38,-869 4583.88,-869 4583.88,-869 4589.88,-869 4595.88,-875 4595.88,-881 4595.88,-881 4595.88,-904 4595.88,-904 4595.88,-910 4589.88,-916 4583.88,-916"/>
 <text xml:space="preserve" text-anchor="start" x="4446.25" y="-901.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">implement_module</text>
 <text xml:space="preserve" text-anchor="start" x="4487.88" y="-887.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
 <text xml:space="preserve" text-anchor="start" x="4405.38" y="-876.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_implement_mealy_sequence_detector</text>
@@ -43,7 +43,7 @@
 <g id="node3" class="node">
 <title>n10</title>
 <g id="a_node3"><a xlink:title="step 1: (analyze_choose_three_block_fsm fsm)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="194.25,-47 0,-47 0,0 194.25,0 194.25,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="194.25,-47 0,-47 0,0 194.25,0 194.25,-47"/>
 <text xml:space="preserve" text-anchor="start" x="9" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 1</text>
 <text xml:space="preserve" text-anchor="start" x="9" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_choose_three_block_fsm</text>
 <text xml:space="preserve" text-anchor="start" x="88.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
@@ -60,7 +60,7 @@
 <g id="node4" class="node">
 <title>n9</title>
 <g id="a_node4"><a xlink:title="(design_state_machine fsm) &#160;by m_design_sequence_fsm">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2323,-837C2323,-837 2211.25,-837 2211.25,-837 2205.25,-837 2199.25,-831 2199.25,-825 2199.25,-825 2199.25,-802 2199.25,-802 2199.25,-796 2205.25,-790 2211.25,-790 2211.25,-790 2323,-790 2323,-790 2329,-790 2335,-796 2335,-802 2335,-802 2335,-825 2335,-825 2335,-831 2329,-837 2323,-837"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2323,-837C2323,-837 2211.25,-837 2211.25,-837 2205.25,-837 2199.25,-831 2199.25,-825 2199.25,-825 2199.25,-802 2199.25,-802 2199.25,-796 2205.25,-790 2211.25,-790 2211.25,-790 2323,-790 2323,-790 2329,-790 2335,-796 2335,-802 2335,-802 2335,-825 2335,-825 2335,-831 2329,-837 2323,-837"/>
 <text xml:space="preserve" text-anchor="start" x="2208.62" y="-822.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">design_state_machine</text>
 <text xml:space="preserve" text-anchor="start" x="2258.88" y="-808.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
 <text xml:space="preserve" text-anchor="start" x="2208.25" y="-797.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_design_sequence_fsm</text>
@@ -77,7 +77,7 @@
 <g id="node66" class="node">
 <title>n6</title>
 <g id="a_node66"><a xlink:title="(write_interface fsm) &#160;by m_write_interface">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3429.5,-521C3429.5,-521 3350.75,-521 3350.75,-521 3344.75,-521 3338.75,-515 3338.75,-509 3338.75,-509 3338.75,-486 3338.75,-486 3338.75,-480 3344.75,-474 3350.75,-474 3350.75,-474 3429.5,-474 3429.5,-474 3435.5,-474 3441.5,-480 3441.5,-486 3441.5,-486 3441.5,-509 3441.5,-509 3441.5,-515 3435.5,-521 3429.5,-521"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3429.5,-521C3429.5,-521 3350.75,-521 3350.75,-521 3344.75,-521 3338.75,-515 3338.75,-509 3338.75,-509 3338.75,-486 3338.75,-486 3338.75,-480 3344.75,-474 3350.75,-474 3350.75,-474 3429.5,-474 3429.5,-474 3435.5,-474 3441.5,-480 3441.5,-486 3441.5,-486 3441.5,-509 3441.5,-509 3441.5,-515 3435.5,-521 3429.5,-521"/>
 <text xml:space="preserve" text-anchor="start" x="3351.5" y="-506.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_interface</text>
 <text xml:space="preserve" text-anchor="start" x="3381.88" y="-492.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
 <text xml:space="preserve" text-anchor="start" x="3347.75" y="-481.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_write_interface</text>
@@ -94,7 +94,7 @@
 <g id="node80" class="node">
 <title>n4</title>
 <g id="a_node80"><a xlink:title="(write_state_declarations fsm) &#160;by m_write_state_declarations">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4231.88,-521C4231.88,-521 4110.38,-521 4110.38,-521 4104.38,-521 4098.38,-515 4098.38,-509 4098.38,-509 4098.38,-486 4098.38,-486 4098.38,-480 4104.38,-474 4110.38,-474 4110.38,-474 4231.88,-474 4231.88,-474 4237.88,-474 4243.88,-480 4243.88,-486 4243.88,-486 4243.88,-509 4243.88,-509 4243.88,-515 4237.88,-521 4231.88,-521"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4231.88,-521C4231.88,-521 4110.38,-521 4110.38,-521 4104.38,-521 4098.38,-515 4098.38,-509 4098.38,-509 4098.38,-486 4098.38,-486 4098.38,-480 4104.38,-474 4110.38,-474 4110.38,-474 4231.88,-474 4231.88,-474 4237.88,-474 4243.88,-480 4243.88,-486 4243.88,-486 4243.88,-509 4243.88,-509 4243.88,-515 4237.88,-521 4231.88,-521"/>
 <text xml:space="preserve" text-anchor="start" x="4107.38" y="-506.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_declarations</text>
 <text xml:space="preserve" text-anchor="start" x="4162.88" y="-492.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
 <text xml:space="preserve" text-anchor="start" x="4108.88" y="-481.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_write_state_declarations</text>
@@ -111,7 +111,7 @@
 <g id="node93" class="node">
 <title>n7</title>
 <g id="a_node93"><a xlink:title="(write_state_register fsm) &#160;by m_state_register_async">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4733.88,-758C4733.88,-758 4630.38,-758 4630.38,-758 4624.38,-758 4618.38,-752 4618.38,-746 4618.38,-746 4618.38,-723 4618.38,-723 4618.38,-717 4624.38,-711 4630.38,-711 4630.38,-711 4733.88,-711 4733.88,-711 4739.88,-711 4745.88,-717 4745.88,-723 4745.88,-723 4745.88,-746 4745.88,-746 4745.88,-752 4739.88,-758 4733.88,-758"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4733.88,-758C4733.88,-758 4630.38,-758 4630.38,-758 4624.38,-758 4618.38,-752 4618.38,-746 4618.38,-746 4618.38,-723 4618.38,-723 4618.38,-717 4624.38,-711 4630.38,-711 4630.38,-711 4733.88,-711 4733.88,-711 4739.88,-711 4745.88,-717 4745.88,-723 4745.88,-723 4745.88,-746 4745.88,-746 4745.88,-752 4739.88,-758 4733.88,-758"/>
 <text xml:space="preserve" text-anchor="start" x="4630.38" y="-743.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_register</text>
 <text xml:space="preserve" text-anchor="start" x="4673.88" y="-729.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
 <text xml:space="preserve" text-anchor="start" x="4627.38" y="-718.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_state_register_async</text>
@@ -128,7 +128,7 @@
 <g id="node95" class="node">
 <title>n5</title>
 <g id="a_node95"><a xlink:title="(write_next_state_logic fsm) &#160;by m_write_next_state_logic">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M5244.62,-521C5244.62,-521 5133.62,-521 5133.62,-521 5127.62,-521 5121.62,-515 5121.62,-509 5121.62,-509 5121.62,-486 5121.62,-486 5121.62,-480 5127.62,-474 5133.62,-474 5133.62,-474 5244.62,-474 5244.62,-474 5250.62,-474 5256.62,-480 5256.62,-486 5256.62,-486 5256.62,-509 5256.62,-509 5256.62,-515 5250.62,-521 5244.62,-521"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M5244.62,-521C5244.62,-521 5133.62,-521 5133.62,-521 5127.62,-521 5121.62,-515 5121.62,-509 5121.62,-509 5121.62,-486 5121.62,-486 5121.62,-480 5127.62,-474 5133.62,-474 5133.62,-474 5244.62,-474 5244.62,-474 5250.62,-474 5256.62,-480 5256.62,-486 5256.62,-486 5256.62,-509 5256.62,-509 5256.62,-515 5250.62,-521 5244.62,-521"/>
 <text xml:space="preserve" text-anchor="start" x="5130.62" y="-506.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_next_state_logic</text>
 <text xml:space="preserve" text-anchor="start" x="5180.88" y="-492.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
 <text xml:space="preserve" text-anchor="start" x="5131" y="-481.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_write_next_state_logic</text>
@@ -145,7 +145,7 @@
 <g id="node109" class="node">
 <title>n3</title>
 <g id="a_node109"><a xlink:title="(write_output_logic fsm) &#160;by m_write_mealy_output">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M6344.62,-205C6344.62,-205 6245.62,-205 6245.62,-205 6239.62,-205 6233.62,-199 6233.62,-193 6233.62,-193 6233.62,-170 6233.62,-170 6233.62,-164 6239.62,-158 6245.62,-158 6245.62,-158 6344.62,-158 6344.62,-158 6350.62,-158 6356.62,-164 6356.62,-170 6356.62,-170 6356.62,-193 6356.62,-193 6356.62,-199 6350.62,-205 6344.62,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M6344.62,-205C6344.62,-205 6245.62,-205 6245.62,-205 6239.62,-205 6233.62,-199 6233.62,-193 6233.62,-193 6233.62,-170 6233.62,-170 6233.62,-164 6239.62,-158 6245.62,-158 6245.62,-158 6344.62,-158 6344.62,-158 6350.62,-158 6356.62,-164 6356.62,-170 6356.62,-170 6356.62,-193 6356.62,-193 6356.62,-199 6350.62,-205 6344.62,-205"/>
 <text xml:space="preserve" text-anchor="start" x="6246.38" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_logic</text>
 <text xml:space="preserve" text-anchor="start" x="6286.88" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
 <text xml:space="preserve" text-anchor="start" x="6242.62" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_write_mealy_output</text>
@@ -162,7 +162,7 @@
 <g id="node116" class="node">
 <title>n8</title>
 <g id="a_node116"><a xlink:title="step 42: (write_module_end fsm)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="6847.12,-47 6733.12,-47 6733.12,0 6847.12,0 6847.12,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="6847.12,-47 6733.12,-47 6733.12,0 6847.12,0 6847.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="6742.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 42</text>
 <text xml:space="preserve" text-anchor="start" x="6742.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_module_end</text>
 <text xml:space="preserve" text-anchor="start" x="6781.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
@@ -185,7 +185,7 @@
 <g id="node7" class="node">
 <title>n18</title>
 <g id="a_node7"><a xlink:title="step 2: (analyze_stay_initial fsm s0 zero)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="331.75,-47 212.5,-47 212.5,0 331.75,0 331.75,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="331.75,-47 212.5,-47 212.5,0 331.75,0 331.75,-47"/>
 <text xml:space="preserve" text-anchor="start" x="221.5" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 2</text>
 <text xml:space="preserve" text-anchor="start" x="221.5" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_stay_initial</text>
 <text xml:space="preserve" text-anchor="start" x="243.25" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, zero</text>
@@ -202,7 +202,7 @@
 <g id="node5" class="node">
 <title>n12</title>
 <g id="a_node5"><a xlink:title="(derive_transitions_from fsm s0) &#160;by m_derive_transitions_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M549.75,-758C549.75,-758 430.5,-758 430.5,-758 424.5,-758 418.5,-752 418.5,-746 418.5,-746 418.5,-723 418.5,-723 418.5,-717 424.5,-711 430.5,-711 430.5,-711 549.75,-711 549.75,-711 555.75,-711 561.75,-717 561.75,-723 561.75,-723 561.75,-746 561.75,-746 561.75,-752 555.75,-758 549.75,-758"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M549.75,-758C549.75,-758 430.5,-758 430.5,-758 424.5,-758 418.5,-752 418.5,-746 418.5,-746 418.5,-723 418.5,-723 418.5,-717 424.5,-711 430.5,-711 430.5,-711 549.75,-711 549.75,-711 555.75,-711 561.75,-717 561.75,-723 561.75,-723 561.75,-746 561.75,-746 561.75,-752 555.75,-758 549.75,-758"/>
 <text xml:space="preserve" text-anchor="start" x="427.5" y="-743.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_transitions_from</text>
 <text xml:space="preserve" text-anchor="start" x="473.62" y="-729.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0</text>
 <text xml:space="preserve" text-anchor="start" x="428.25" y="-718.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_derive_transitions_more</text>
@@ -225,7 +225,7 @@
 <g id="node6" class="node">
 <title>n16</title>
 <g id="a_node6"><a xlink:title="(derive_next fsm s0 zero) &#160;by m_next_mismatch_initial">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M330.75,-600C330.75,-600 223.5,-600 223.5,-600 217.5,-600 211.5,-594 211.5,-588 211.5,-588 211.5,-565 211.5,-565 211.5,-559 217.5,-553 223.5,-553 223.5,-553 330.75,-553 330.75,-553 336.75,-553 342.75,-559 342.75,-565 342.75,-565 342.75,-588 342.75,-588 342.75,-594 336.75,-600 330.75,-600"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M330.75,-600C330.75,-600 223.5,-600 223.5,-600 217.5,-600 211.5,-594 211.5,-588 211.5,-588 211.5,-565 211.5,-565 211.5,-559 217.5,-553 223.5,-553 223.5,-553 330.75,-553 330.75,-553 336.75,-553 342.75,-559 342.75,-565 342.75,-565 342.75,-588 342.75,-588 342.75,-594 336.75,-600 330.75,-600"/>
 <text xml:space="preserve" text-anchor="start" x="246.75" y="-585.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="248.25" y="-571.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, zero</text>
 <text xml:space="preserve" text-anchor="start" x="220.5" y="-560.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_mismatch_initial</text>
@@ -242,7 +242,7 @@
 <g id="node8" class="node">
 <title>n15</title>
 <g id="a_node8"><a xlink:title="(derive_next fsm s0 one) &#160;by m_next_advance">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M458.38,-679C458.38,-679 381.88,-679 381.88,-679 375.88,-679 369.88,-673 369.88,-667 369.88,-667 369.88,-644 369.88,-644 369.88,-638 375.88,-632 381.88,-632 381.88,-632 458.38,-632 458.38,-632 464.38,-632 470.38,-638 470.38,-644 470.38,-644 470.38,-667 470.38,-667 470.38,-673 464.38,-679 458.38,-679"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M458.38,-679C458.38,-679 381.88,-679 381.88,-679 375.88,-679 369.88,-673 369.88,-667 369.88,-667 369.88,-644 369.88,-644 369.88,-638 375.88,-632 381.88,-632 381.88,-632 458.38,-632 458.38,-632 464.38,-632 470.38,-638 470.38,-644 470.38,-644 470.38,-667 470.38,-667 470.38,-673 464.38,-679 458.38,-679"/>
 <text xml:space="preserve" text-anchor="start" x="389.75" y="-664.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="392.75" y="-650.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, one</text>
 <text xml:space="preserve" text-anchor="start" x="378.88" y="-639.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_advance</text>
@@ -259,7 +259,7 @@
 <g id="node10" class="node">
 <title>n14</title>
 <g id="a_node10"><a xlink:title="(derive_transitions_from fsm s1) &#160;by m_derive_transitions_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M619.75,-679C619.75,-679 500.5,-679 500.5,-679 494.5,-679 488.5,-673 488.5,-667 488.5,-667 488.5,-644 488.5,-644 488.5,-638 494.5,-632 500.5,-632 500.5,-632 619.75,-632 619.75,-632 625.75,-632 631.75,-638 631.75,-644 631.75,-644 631.75,-667 631.75,-667 631.75,-673 625.75,-679 619.75,-679"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M619.75,-679C619.75,-679 500.5,-679 500.5,-679 494.5,-679 488.5,-673 488.5,-667 488.5,-667 488.5,-644 488.5,-644 488.5,-638 494.5,-632 500.5,-632 500.5,-632 619.75,-632 619.75,-632 625.75,-632 631.75,-638 631.75,-644 631.75,-644 631.75,-667 631.75,-667 631.75,-673 625.75,-679 619.75,-679"/>
 <text xml:space="preserve" text-anchor="start" x="497.5" y="-664.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_transitions_from</text>
 <text xml:space="preserve" text-anchor="start" x="543.62" y="-650.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1</text>
 <text xml:space="preserve" text-anchor="start" x="498.25" y="-639.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_derive_transitions_more</text>
@@ -300,7 +300,7 @@
 <g id="node9" class="node">
 <title>n20</title>
 <g id="a_node9"><a xlink:title="step 3: (analyze_advance fsm s0 one s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="456.38,-47 349.88,-47 349.88,0 456.38,0 456.38,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="456.38,-47 349.88,-47 349.88,0 456.38,0 456.38,-47"/>
 <text xml:space="preserve" text-anchor="start" x="358.88" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 3</text>
 <text xml:space="preserve" text-anchor="start" x="358.88" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_advance</text>
 <text xml:space="preserve" text-anchor="start" x="367.5" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, one, s1</text>
@@ -335,7 +335,7 @@
 <g id="node12" class="node">
 <title>n26</title>
 <g id="a_node12"><a xlink:title="step 4: (analyze_advance fsm s1 zero s2)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="581.38,-47 474.88,-47 474.88,0 581.38,0 581.38,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="581.38,-47 474.88,-47 474.88,0 581.38,0 581.38,-47"/>
 <text xml:space="preserve" text-anchor="start" x="483.88" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 4</text>
 <text xml:space="preserve" text-anchor="start" x="483.88" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_advance</text>
 <text xml:space="preserve" text-anchor="start" x="491" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, zero, s2</text>
@@ -352,7 +352,7 @@
 <g id="node11" class="node">
 <title>n24</title>
 <g id="a_node11"><a xlink:title="(derive_next fsm s1 zero) &#160;by m_next_advance">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M592.38,-600C592.38,-600 515.88,-600 515.88,-600 509.88,-600 503.88,-594 503.88,-588 503.88,-588 503.88,-565 503.88,-565 503.88,-559 509.88,-553 515.88,-553 515.88,-553 592.38,-553 592.38,-553 598.38,-553 604.38,-559 604.38,-565 604.38,-565 604.38,-588 604.38,-588 604.38,-594 598.38,-600 592.38,-600"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M592.38,-600C592.38,-600 515.88,-600 515.88,-600 509.88,-600 503.88,-594 503.88,-588 503.88,-588 503.88,-565 503.88,-565 503.88,-559 509.88,-553 515.88,-553 515.88,-553 592.38,-553 592.38,-553 598.38,-553 604.38,-559 604.38,-565 604.38,-565 604.38,-588 604.38,-588 604.38,-594 598.38,-600 592.38,-600"/>
 <text xml:space="preserve" text-anchor="start" x="523.75" y="-585.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="525.25" y="-571.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, zero</text>
 <text xml:space="preserve" text-anchor="start" x="512.88" y="-560.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_advance</text>
@@ -369,7 +369,7 @@
 <g id="node13" class="node">
 <title>n23</title>
 <g id="a_node13"><a xlink:title="(derive_next fsm s1 one) &#160;by m_next_mismatch_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M693.62,-284C693.62,-284 576.62,-284 576.62,-284 570.62,-284 564.62,-278 564.62,-272 564.62,-272 564.62,-249 564.62,-249 564.62,-243 570.62,-237 576.62,-237 576.62,-237 693.62,-237 693.62,-237 699.62,-237 705.62,-243 705.62,-249 705.62,-249 705.62,-272 705.62,-272 705.62,-278 699.62,-284 693.62,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M693.62,-284C693.62,-284 576.62,-284 576.62,-284 570.62,-284 564.62,-278 564.62,-272 564.62,-272 564.62,-249 564.62,-249 564.62,-243 570.62,-237 576.62,-237 576.62,-237 693.62,-237 693.62,-237 699.62,-237 705.62,-243 705.62,-249 705.62,-249 705.62,-272 705.62,-272 705.62,-278 699.62,-284 693.62,-284"/>
 <text xml:space="preserve" text-anchor="start" x="604.75" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="607.75" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, one</text>
 <text xml:space="preserve" text-anchor="start" x="573.62" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_mismatch_fallback</text>
@@ -386,7 +386,7 @@
 <g id="node20" class="node">
 <title>n22</title>
 <g id="a_node20"><a xlink:title="(derive_transitions_from fsm s2) &#160;by m_derive_transitions_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1194.75,-600C1194.75,-600 1075.5,-600 1075.5,-600 1069.5,-600 1063.5,-594 1063.5,-588 1063.5,-588 1063.5,-565 1063.5,-565 1063.5,-559 1069.5,-553 1075.5,-553 1075.5,-553 1194.75,-553 1194.75,-553 1200.75,-553 1206.75,-559 1206.75,-565 1206.75,-565 1206.75,-588 1206.75,-588 1206.75,-594 1200.75,-600 1194.75,-600"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1194.75,-600C1194.75,-600 1075.5,-600 1075.5,-600 1069.5,-600 1063.5,-594 1063.5,-588 1063.5,-588 1063.5,-565 1063.5,-565 1063.5,-559 1069.5,-553 1075.5,-553 1075.5,-553 1194.75,-553 1194.75,-553 1200.75,-553 1206.75,-559 1206.75,-565 1206.75,-565 1206.75,-588 1206.75,-588 1206.75,-594 1200.75,-600 1194.75,-600"/>
 <text xml:space="preserve" text-anchor="start" x="1072.5" y="-585.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_transitions_from</text>
 <text xml:space="preserve" text-anchor="start" x="1118.62" y="-571.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2</text>
 <text xml:space="preserve" text-anchor="start" x="1073.25" y="-560.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_derive_transitions_more</text>
@@ -427,7 +427,7 @@
 <g id="node15" class="node">
 <title>n31</title>
 <g id="a_node15"><a xlink:title="step 5: (analyze_fallback_first fsm s1 s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="730.38,-47 599.88,-47 599.88,0 730.38,0 730.38,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="730.38,-47 599.88,-47 599.88,0 730.38,0 730.38,-47"/>
 <text xml:space="preserve" text-anchor="start" x="608.88" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 5</text>
 <text xml:space="preserve" text-anchor="start" x="608.88" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fallback_first</text>
 <text xml:space="preserve" text-anchor="start" x="640.38" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, s0</text>
@@ -444,7 +444,7 @@
 <g id="node14" class="node">
 <title>n29</title>
 <g id="a_node14"><a xlink:title="(derive_fallback fsm s1) &#160;by m_fallback_first">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M671.5,-126C671.5,-126 598.75,-126 598.75,-126 592.75,-126 586.75,-120 586.75,-114 586.75,-114 586.75,-91 586.75,-91 586.75,-85 592.75,-79 598.75,-79 598.75,-79 671.5,-79 671.5,-79 677.5,-79 683.5,-85 683.5,-91 683.5,-91 683.5,-114 683.5,-114 683.5,-120 677.5,-126 671.5,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M671.5,-126C671.5,-126 598.75,-126 598.75,-126 592.75,-126 586.75,-120 586.75,-114 586.75,-114 586.75,-91 586.75,-91 586.75,-85 592.75,-79 598.75,-79 598.75,-79 671.5,-79 671.5,-79 677.5,-79 683.5,-85 683.5,-91 683.5,-91 683.5,-114 683.5,-114 683.5,-120 677.5,-126 671.5,-126"/>
 <text xml:space="preserve" text-anchor="start" x="595.75" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="618.62" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1</text>
 <text xml:space="preserve" text-anchor="start" x="597.25" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_first</text>
@@ -461,7 +461,7 @@
 <g id="node16" class="node">
 <title>n28</title>
 <g id="a_node16"><a xlink:title="(derive_via_fallback fsm s1 one) &#160;by m_via_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M847,-205C847,-205 753.25,-205 753.25,-205 747.25,-205 741.25,-199 741.25,-193 741.25,-193 741.25,-170 741.25,-170 741.25,-164 747.25,-158 753.25,-158 753.25,-158 847,-158 847,-158 853,-158 859,-164 859,-170 859,-170 859,-193 859,-193 859,-199 853,-205 847,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M847,-205C847,-205 753.25,-205 753.25,-205 747.25,-205 741.25,-199 741.25,-193 741.25,-193 741.25,-170 741.25,-170 741.25,-164 747.25,-158 753.25,-158 753.25,-158 847,-158 847,-158 853,-158 859,-164 859,-170 859,-170 859,-193 859,-193 859,-199 853,-205 847,-205"/>
 <text xml:space="preserve" text-anchor="start" x="750.25" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_via_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="772.75" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, one</text>
 <text xml:space="preserve" text-anchor="start" x="763.38" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_via_fallback</text>
@@ -502,7 +502,7 @@
 <g id="node18" class="node">
 <title>n37</title>
 <g id="a_node18"><a xlink:title="step 6: (analyze_fall_back fsm s1 one s0 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="857.88,-47 748.38,-47 748.38,0 857.88,0 857.88,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="857.88,-47 748.38,-47 748.38,0 857.88,0 857.88,-47"/>
 <text xml:space="preserve" text-anchor="start" x="757.38" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 6</text>
 <text xml:space="preserve" text-anchor="start" x="757.38" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="759.25" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, one, s0, s1</text>
@@ -519,7 +519,7 @@
 <g id="node17" class="node">
 <title>n33</title>
 <g id="a_node17"><a xlink:title="(conclude_fall_back fsm s1 one s0) &#160;by m_conclude_fall_back">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M849.25,-126C849.25,-126 751,-126 751,-126 745,-126 739,-120 739,-114 739,-114 739,-91 739,-91 739,-85 745,-79 751,-79 751,-79 849.25,-79 849.25,-79 855.25,-79 861.25,-85 861.25,-91 861.25,-91 861.25,-114 861.25,-114 861.25,-120 855.25,-126 849.25,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M849.25,-126C849.25,-126 751,-126 751,-126 745,-126 739,-120 739,-114 739,-114 739,-91 739,-91 739,-85 745,-79 751,-79 751,-79 849.25,-79 849.25,-79 855.25,-79 861.25,-85 861.25,-91 861.25,-91 861.25,-114 861.25,-114 861.25,-120 855.25,-126 849.25,-126"/>
 <text xml:space="preserve" text-anchor="start" x="749.88" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="764.5" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, one, s0</text>
 <text xml:space="preserve" text-anchor="start" x="748" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_fall_back</text>
@@ -536,7 +536,7 @@
 <g id="node19" class="node">
 <title>n34</title>
 <g id="a_node19"><a xlink:title="(derive_next fsm s0 one) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M959.25,-126C959.25,-126 891,-126 891,-126 885,-126 879,-120 879,-114 879,-114 879,-91 879,-91 879,-85 885,-79 891,-79 891,-79 959.25,-79 959.25,-79 965.25,-79 971.25,-85 971.25,-91 971.25,-91 971.25,-114 971.25,-114 971.25,-120 965.25,-126 959.25,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M959.25,-126C959.25,-126 891,-126 891,-126 885,-126 879,-120 879,-114 879,-114 879,-91 879,-91 879,-85 885,-79 891,-79 891,-79 959.25,-79 959.25,-79 965.25,-79 971.25,-85 971.25,-91 971.25,-91 971.25,-114 971.25,-114 971.25,-120 965.25,-126 959.25,-126"/>
 <text xml:space="preserve" text-anchor="start" x="894.75" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="897.75" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, one</text>
 <text xml:space="preserve" text-anchor="start" x="888" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -577,7 +577,7 @@
 <g id="node22" class="node">
 <title>n43</title>
 <g id="a_node22"><a xlink:title="step 7: (analyze_advance fsm s2 zero s3)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="1090.38,-47 983.88,-47 983.88,0 1090.38,0 1090.38,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="1090.38,-47 983.88,-47 983.88,0 1090.38,0 1090.38,-47"/>
 <text xml:space="preserve" text-anchor="start" x="992.88" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 7</text>
 <text xml:space="preserve" text-anchor="start" x="992.88" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_advance</text>
 <text xml:space="preserve" text-anchor="start" x="1000" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, zero, s3</text>
@@ -600,7 +600,7 @@
 <g id="node21" class="node">
 <title>n41</title>
 <g id="a_node21"><a xlink:title="(derive_next fsm s2 zero) &#160;by m_next_advance">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1133.38,-521C1133.38,-521 1056.88,-521 1056.88,-521 1050.88,-521 1044.88,-515 1044.88,-509 1044.88,-509 1044.88,-486 1044.88,-486 1044.88,-480 1050.88,-474 1056.88,-474 1056.88,-474 1133.38,-474 1133.38,-474 1139.38,-474 1145.38,-480 1145.38,-486 1145.38,-486 1145.38,-509 1145.38,-509 1145.38,-515 1139.38,-521 1133.38,-521"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1133.38,-521C1133.38,-521 1056.88,-521 1056.88,-521 1050.88,-521 1044.88,-515 1044.88,-509 1044.88,-509 1044.88,-486 1044.88,-486 1044.88,-480 1050.88,-474 1056.88,-474 1056.88,-474 1133.38,-474 1133.38,-474 1139.38,-474 1145.38,-480 1145.38,-486 1145.38,-486 1145.38,-509 1145.38,-509 1145.38,-515 1139.38,-521 1133.38,-521"/>
 <text xml:space="preserve" text-anchor="start" x="1064.75" y="-506.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="1066.25" y="-492.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, zero</text>
 <text xml:space="preserve" text-anchor="start" x="1053.88" y="-481.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_advance</text>
@@ -617,7 +617,7 @@
 <g id="node23" class="node">
 <title>n40</title>
 <g id="a_node23"><a xlink:title="(derive_next fsm s2 one) &#160;by m_next_mismatch_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1238.62,-363C1238.62,-363 1121.62,-363 1121.62,-363 1115.62,-363 1109.62,-357 1109.62,-351 1109.62,-351 1109.62,-328 1109.62,-328 1109.62,-322 1115.62,-316 1121.62,-316 1121.62,-316 1238.62,-316 1238.62,-316 1244.62,-316 1250.62,-322 1250.62,-328 1250.62,-328 1250.62,-351 1250.62,-351 1250.62,-357 1244.62,-363 1238.62,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1238.62,-363C1238.62,-363 1121.62,-363 1121.62,-363 1115.62,-363 1109.62,-357 1109.62,-351 1109.62,-351 1109.62,-328 1109.62,-328 1109.62,-322 1115.62,-316 1121.62,-316 1121.62,-316 1238.62,-316 1238.62,-316 1244.62,-316 1250.62,-322 1250.62,-328 1250.62,-328 1250.62,-351 1250.62,-351 1250.62,-357 1244.62,-363 1238.62,-363"/>
 <text xml:space="preserve" text-anchor="start" x="1149.75" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="1152.75" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, one</text>
 <text xml:space="preserve" text-anchor="start" x="1118.62" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_mismatch_fallback</text>
@@ -634,7 +634,7 @@
 <g id="node34" class="node">
 <title>n39</title>
 <g id="a_node34"><a xlink:title="(derive_transitions_from fsm s3) &#160;by m_derive_transitions_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2139.75,-521C2139.75,-521 2020.5,-521 2020.5,-521 2014.5,-521 2008.5,-515 2008.5,-509 2008.5,-509 2008.5,-486 2008.5,-486 2008.5,-480 2014.5,-474 2020.5,-474 2020.5,-474 2139.75,-474 2139.75,-474 2145.75,-474 2151.75,-480 2151.75,-486 2151.75,-486 2151.75,-509 2151.75,-509 2151.75,-515 2145.75,-521 2139.75,-521"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2139.75,-521C2139.75,-521 2020.5,-521 2020.5,-521 2014.5,-521 2008.5,-515 2008.5,-509 2008.5,-509 2008.5,-486 2008.5,-486 2008.5,-480 2014.5,-474 2020.5,-474 2020.5,-474 2139.75,-474 2139.75,-474 2145.75,-474 2151.75,-480 2151.75,-486 2151.75,-486 2151.75,-509 2151.75,-509 2151.75,-515 2145.75,-521 2139.75,-521"/>
 <text xml:space="preserve" text-anchor="start" x="2017.5" y="-506.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_transitions_from</text>
 <text xml:space="preserve" text-anchor="start" x="2063.62" y="-492.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3</text>
 <text xml:space="preserve" text-anchor="start" x="2018.25" y="-481.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_derive_transitions_more</text>
@@ -675,7 +675,7 @@
 <g id="node27" class="node">
 <title>n56</title>
 <g id="a_node27"><a xlink:title="step 8: (analyze_fallback_extend fsm s2 s1 zero s0 s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="1253.5,-47 1108.75,-47 1108.75,0 1253.5,0 1253.5,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="1253.5,-47 1108.75,-47 1108.75,0 1253.5,0 1253.5,-47"/>
 <text xml:space="preserve" text-anchor="start" x="1117.75" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 8</text>
 <text xml:space="preserve" text-anchor="start" x="1117.75" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fallback_extend</text>
 <text xml:space="preserve" text-anchor="start" x="1127.5" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, s1, zero, s0, s0</text>
@@ -692,7 +692,7 @@
 <g id="node24" class="node">
 <title>n46</title>
 <g id="a_node24"><a xlink:title="(derive_fallback fsm s2) &#160;by m_fallback_extend">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1221.75,-284C1221.75,-284 1138.5,-284 1138.5,-284 1132.5,-284 1126.5,-278 1126.5,-272 1126.5,-272 1126.5,-249 1126.5,-249 1126.5,-243 1132.5,-237 1138.5,-237 1138.5,-237 1221.75,-237 1221.75,-237 1227.75,-237 1233.75,-243 1233.75,-249 1233.75,-249 1233.75,-272 1233.75,-272 1233.75,-278 1227.75,-284 1221.75,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1221.75,-284C1221.75,-284 1138.5,-284 1138.5,-284 1132.5,-284 1126.5,-278 1126.5,-272 1126.5,-272 1126.5,-249 1126.5,-249 1126.5,-243 1132.5,-237 1138.5,-237 1138.5,-237 1221.75,-237 1221.75,-237 1227.75,-237 1233.75,-243 1233.75,-249 1233.75,-249 1233.75,-272 1233.75,-272 1233.75,-278 1227.75,-284 1221.75,-284"/>
 <text xml:space="preserve" text-anchor="start" x="1140.75" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="1163.62" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2</text>
 <text xml:space="preserve" text-anchor="start" x="1135.5" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_extend</text>
@@ -709,7 +709,7 @@
 <g id="node30" class="node">
 <title>n45</title>
 <g id="a_node30"><a xlink:title="(derive_via_fallback fsm s2 one) &#160;by m_via_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1504,-284C1504,-284 1410.25,-284 1410.25,-284 1404.25,-284 1398.25,-278 1398.25,-272 1398.25,-272 1398.25,-249 1398.25,-249 1398.25,-243 1404.25,-237 1410.25,-237 1410.25,-237 1504,-237 1504,-237 1510,-237 1516,-243 1516,-249 1516,-249 1516,-272 1516,-272 1516,-278 1510,-284 1504,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1504,-284C1504,-284 1410.25,-284 1410.25,-284 1404.25,-284 1398.25,-278 1398.25,-272 1398.25,-272 1398.25,-249 1398.25,-249 1398.25,-243 1404.25,-237 1410.25,-237 1410.25,-237 1504,-237 1504,-237 1510,-237 1516,-243 1516,-249 1516,-249 1516,-272 1516,-272 1516,-278 1510,-284 1504,-284"/>
 <text xml:space="preserve" text-anchor="start" x="1407.25" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_via_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="1429.75" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, one</text>
 <text xml:space="preserve" text-anchor="start" x="1420.38" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_via_fallback</text>
@@ -732,7 +732,7 @@
 <g id="node25" class="node">
 <title>n48</title>
 <g id="a_node25"><a xlink:title="(derive_fallback_step fsm s2 s1 zero) &#160;by m_fallback_step">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1216.75,-205C1216.75,-205 1115.5,-205 1115.5,-205 1109.5,-205 1103.5,-199 1103.5,-193 1103.5,-193 1103.5,-170 1103.5,-170 1103.5,-164 1109.5,-158 1115.5,-158 1115.5,-158 1216.75,-158 1216.75,-158 1222.75,-158 1228.75,-164 1228.75,-170 1228.75,-170 1228.75,-193 1228.75,-193 1228.75,-199 1222.75,-205 1216.75,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1216.75,-205C1216.75,-205 1115.5,-205 1115.5,-205 1109.5,-205 1103.5,-199 1103.5,-193 1103.5,-193 1103.5,-170 1103.5,-170 1103.5,-164 1109.5,-158 1115.5,-158 1115.5,-158 1216.75,-158 1216.75,-158 1222.75,-158 1228.75,-164 1228.75,-170 1228.75,-170 1228.75,-193 1228.75,-193 1228.75,-199 1222.75,-205 1216.75,-205"/>
 <text xml:space="preserve" text-anchor="start" x="1112.5" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback_step</text>
 <text xml:space="preserve" text-anchor="start" x="1129" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, s1, zero</text>
 <text xml:space="preserve" text-anchor="start" x="1126.75" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_step</text>
@@ -749,7 +749,7 @@
 <g id="node29" class="node">
 <title>n49</title>
 <g id="a_node29"><a xlink:title="(derive_fallback fsm s1) &#160;by m_fallback_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1341.38,-205C1341.38,-205 1258.88,-205 1258.88,-205 1252.88,-205 1246.88,-199 1246.88,-193 1246.88,-193 1246.88,-170 1246.88,-170 1246.88,-164 1252.88,-158 1258.88,-158 1258.88,-158 1341.38,-158 1341.38,-158 1347.38,-158 1353.38,-164 1353.38,-170 1353.38,-170 1353.38,-193 1353.38,-193 1353.38,-199 1347.38,-205 1341.38,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1341.38,-205C1341.38,-205 1258.88,-205 1258.88,-205 1252.88,-205 1246.88,-199 1246.88,-193 1246.88,-193 1246.88,-170 1246.88,-170 1246.88,-164 1252.88,-158 1258.88,-158 1258.88,-158 1341.38,-158 1341.38,-158 1347.38,-158 1353.38,-164 1353.38,-170 1353.38,-170 1353.38,-193 1353.38,-193 1353.38,-199 1347.38,-205 1341.38,-205"/>
 <text xml:space="preserve" text-anchor="start" x="1260.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="1283.62" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1</text>
 <text xml:space="preserve" text-anchor="start" x="1255.88" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_known</text>
@@ -772,7 +772,7 @@
 <g id="node26" class="node">
 <title>n52</title>
 <g id="a_node26"><a xlink:title="(conclude_fallback_extend fsm s2 s1 zero s0) &#160;by m_conclude_fallback_extend">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1245,-126C1245,-126 1115.25,-126 1115.25,-126 1109.25,-126 1103.25,-120 1103.25,-114 1103.25,-114 1103.25,-91 1103.25,-91 1103.25,-85 1109.25,-79 1115.25,-79 1115.25,-79 1245,-79 1245,-79 1251,-79 1257,-85 1257,-91 1257,-91 1257,-114 1257,-114 1257,-120 1251,-126 1245,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1245,-126C1245,-126 1115.25,-126 1115.25,-126 1109.25,-126 1103.25,-120 1103.25,-114 1103.25,-114 1103.25,-91 1103.25,-91 1103.25,-85 1109.25,-79 1115.25,-79 1115.25,-79 1245,-79 1245,-79 1251,-79 1257,-85 1257,-91 1257,-91 1257,-114 1257,-114 1257,-120 1251,-126 1245,-126"/>
 <text xml:space="preserve" text-anchor="start" x="1112.25" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_fallback_extend</text>
 <text xml:space="preserve" text-anchor="start" x="1134.75" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, s1, zero, s0</text>
 <text xml:space="preserve" text-anchor="start" x="1114.12" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_fallback_extend</text>
@@ -789,7 +789,7 @@
 <g id="node28" class="node">
 <title>n53</title>
 <g id="a_node28"><a xlink:title="(derive_next fsm s0 zero) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1355.25,-126C1355.25,-126 1287,-126 1287,-126 1281,-126 1275,-120 1275,-114 1275,-114 1275,-91 1275,-91 1275,-85 1281,-79 1287,-79 1287,-79 1355.25,-79 1355.25,-79 1361.25,-79 1367.25,-85 1367.25,-91 1367.25,-91 1367.25,-114 1367.25,-114 1367.25,-120 1361.25,-126 1355.25,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1355.25,-126C1355.25,-126 1287,-126 1287,-126 1281,-126 1275,-120 1275,-114 1275,-114 1275,-91 1275,-91 1275,-85 1281,-79 1287,-79 1287,-79 1355.25,-79 1355.25,-79 1361.25,-79 1367.25,-85 1367.25,-91 1367.25,-91 1367.25,-114 1367.25,-114 1367.25,-120 1361.25,-126 1355.25,-126"/>
 <text xml:space="preserve" text-anchor="start" x="1290.75" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="1292.25" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, zero</text>
 <text xml:space="preserve" text-anchor="start" x="1284" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -830,7 +830,7 @@
 <g id="node32" class="node">
 <title>n62</title>
 <g id="a_node32"><a xlink:title="step 9: (analyze_fall_back fsm s2 one s0 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="1538.88,-47 1429.38,-47 1429.38,0 1538.88,0 1538.88,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="1538.88,-47 1429.38,-47 1429.38,0 1538.88,0 1538.88,-47"/>
 <text xml:space="preserve" text-anchor="start" x="1438.38" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 9</text>
 <text xml:space="preserve" text-anchor="start" x="1438.38" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="1440.25" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, one, s0, s1</text>
@@ -859,7 +859,7 @@
 <g id="node31" class="node">
 <title>n58</title>
 <g id="a_node31"><a xlink:title="(conclude_fall_back fsm s2 one s0) &#160;by m_conclude_fall_back">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1533.25,-126C1533.25,-126 1435,-126 1435,-126 1429,-126 1423,-120 1423,-114 1423,-114 1423,-91 1423,-91 1423,-85 1429,-79 1435,-79 1435,-79 1533.25,-79 1533.25,-79 1539.25,-79 1545.25,-85 1545.25,-91 1545.25,-91 1545.25,-114 1545.25,-114 1545.25,-120 1539.25,-126 1533.25,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1533.25,-126C1533.25,-126 1435,-126 1435,-126 1429,-126 1423,-120 1423,-114 1423,-114 1423,-91 1423,-91 1423,-85 1429,-79 1435,-79 1435,-79 1533.25,-79 1533.25,-79 1539.25,-79 1545.25,-85 1545.25,-91 1545.25,-91 1545.25,-114 1545.25,-114 1545.25,-120 1539.25,-126 1533.25,-126"/>
 <text xml:space="preserve" text-anchor="start" x="1433.88" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="1448.5" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, one, s0</text>
 <text xml:space="preserve" text-anchor="start" x="1432" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_fall_back</text>
@@ -876,7 +876,7 @@
 <g id="node33" class="node">
 <title>n59</title>
 <g id="a_node33"><a xlink:title="(derive_next fsm s0 one) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1565.25,-205C1565.25,-205 1497,-205 1497,-205 1491,-205 1485,-199 1485,-193 1485,-193 1485,-170 1485,-170 1485,-164 1491,-158 1497,-158 1497,-158 1565.25,-158 1565.25,-158 1571.25,-158 1577.25,-164 1577.25,-170 1577.25,-170 1577.25,-193 1577.25,-193 1577.25,-199 1571.25,-205 1565.25,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1565.25,-205C1565.25,-205 1497,-205 1497,-205 1491,-205 1485,-199 1485,-193 1485,-193 1485,-170 1485,-170 1485,-164 1491,-158 1497,-158 1497,-158 1565.25,-158 1565.25,-158 1571.25,-158 1577.25,-164 1577.25,-170 1577.25,-170 1577.25,-193 1577.25,-193 1577.25,-199 1571.25,-205 1565.25,-205"/>
 <text xml:space="preserve" text-anchor="start" x="1500.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="1503.75" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, one</text>
 <text xml:space="preserve" text-anchor="start" x="1494" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -917,7 +917,7 @@
 <g id="node39" class="node">
 <title>n79</title>
 <g id="a_node39"><a xlink:title="step 10: (analyze_fallback_extend fsm s3 s2 zero s0 s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="1777.5,-47 1632.75,-47 1632.75,0 1777.5,0 1777.5,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="1777.5,-47 1632.75,-47 1632.75,0 1777.5,0 1777.5,-47"/>
 <text xml:space="preserve" text-anchor="start" x="1641.75" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 10</text>
 <text xml:space="preserve" text-anchor="start" x="1641.75" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fallback_extend</text>
 <text xml:space="preserve" text-anchor="start" x="1651.5" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, s2, zero, s0, s0</text>
@@ -940,7 +940,7 @@
 <g id="node35" class="node">
 <title>n66</title>
 <g id="a_node35"><a xlink:title="(derive_next fsm s3 zero) &#160;by m_next_mismatch_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2088.62,-363C2088.62,-363 1971.62,-363 1971.62,-363 1965.62,-363 1959.62,-357 1959.62,-351 1959.62,-351 1959.62,-328 1959.62,-328 1959.62,-322 1965.62,-316 1971.62,-316 1971.62,-316 2088.62,-316 2088.62,-316 2094.62,-316 2100.62,-322 2100.62,-328 2100.62,-328 2100.62,-351 2100.62,-351 2100.62,-357 2094.62,-363 2088.62,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2088.62,-363C2088.62,-363 1971.62,-363 1971.62,-363 1965.62,-363 1959.62,-357 1959.62,-351 1959.62,-351 1959.62,-328 1959.62,-328 1959.62,-322 1965.62,-316 1971.62,-316 1971.62,-316 2088.62,-316 2088.62,-316 2094.62,-316 2100.62,-322 2100.62,-328 2100.62,-328 2100.62,-351 2100.62,-351 2100.62,-357 2094.62,-363 2088.62,-363"/>
 <text xml:space="preserve" text-anchor="start" x="1999.75" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="2001.25" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, zero</text>
 <text xml:space="preserve" text-anchor="start" x="1968.62" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_mismatch_fallback</text>
@@ -957,7 +957,7 @@
 <g id="node46" class="node">
 <title>n65</title>
 <g id="a_node46"><a xlink:title="(derive_next fsm s3 one) &#160;by m_next_advance">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2165.38,-442C2165.38,-442 2088.88,-442 2088.88,-442 2082.88,-442 2076.88,-436 2076.88,-430 2076.88,-430 2076.88,-407 2076.88,-407 2076.88,-401 2082.88,-395 2088.88,-395 2088.88,-395 2165.38,-395 2165.38,-395 2171.38,-395 2177.38,-401 2177.38,-407 2177.38,-407 2177.38,-430 2177.38,-430 2177.38,-436 2171.38,-442 2165.38,-442"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2165.38,-442C2165.38,-442 2088.88,-442 2088.88,-442 2082.88,-442 2076.88,-436 2076.88,-430 2076.88,-430 2076.88,-407 2076.88,-407 2076.88,-401 2082.88,-395 2088.88,-395 2088.88,-395 2165.38,-395 2165.38,-395 2171.38,-395 2177.38,-401 2177.38,-407 2177.38,-407 2177.38,-430 2177.38,-430 2177.38,-436 2171.38,-442 2165.38,-442"/>
 <text xml:space="preserve" text-anchor="start" x="2096.75" y="-427.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="2099.75" y="-413.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, one</text>
 <text xml:space="preserve" text-anchor="start" x="2085.88" y="-402.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_advance</text>
@@ -974,7 +974,7 @@
 <g id="node48" class="node">
 <title>n64</title>
 <g id="a_node48"><a xlink:title="(derive_transitions_from fsm s4) &#160;by m_derive_transitions_last">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2674.75,-442C2674.75,-442 2555.5,-442 2555.5,-442 2549.5,-442 2543.5,-436 2543.5,-430 2543.5,-430 2543.5,-407 2543.5,-407 2543.5,-401 2549.5,-395 2555.5,-395 2555.5,-395 2674.75,-395 2674.75,-395 2680.75,-395 2686.75,-401 2686.75,-407 2686.75,-407 2686.75,-430 2686.75,-430 2686.75,-436 2680.75,-442 2674.75,-442"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2674.75,-442C2674.75,-442 2555.5,-442 2555.5,-442 2549.5,-442 2543.5,-436 2543.5,-430 2543.5,-430 2543.5,-407 2543.5,-407 2543.5,-401 2549.5,-395 2555.5,-395 2555.5,-395 2674.75,-395 2674.75,-395 2680.75,-395 2686.75,-401 2686.75,-407 2686.75,-407 2686.75,-430 2686.75,-430 2686.75,-436 2680.75,-442 2674.75,-442"/>
 <text xml:space="preserve" text-anchor="start" x="2552.5" y="-427.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_transitions_from</text>
 <text xml:space="preserve" text-anchor="start" x="2598.62" y="-413.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4</text>
 <text xml:space="preserve" text-anchor="start" x="2556.62" y="-402.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_derive_transitions_last</text>
@@ -997,7 +997,7 @@
 <g id="node36" class="node">
 <title>n69</title>
 <g id="a_node36"><a xlink:title="(derive_fallback fsm s3) &#160;by m_fallback_extend">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1909.75,-284C1909.75,-284 1826.5,-284 1826.5,-284 1820.5,-284 1814.5,-278 1814.5,-272 1814.5,-272 1814.5,-249 1814.5,-249 1814.5,-243 1820.5,-237 1826.5,-237 1826.5,-237 1909.75,-237 1909.75,-237 1915.75,-237 1921.75,-243 1921.75,-249 1921.75,-249 1921.75,-272 1921.75,-272 1921.75,-278 1915.75,-284 1909.75,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1909.75,-284C1909.75,-284 1826.5,-284 1826.5,-284 1820.5,-284 1814.5,-278 1814.5,-272 1814.5,-272 1814.5,-249 1814.5,-249 1814.5,-243 1820.5,-237 1826.5,-237 1826.5,-237 1909.75,-237 1909.75,-237 1915.75,-237 1921.75,-243 1921.75,-249 1921.75,-249 1921.75,-272 1921.75,-272 1921.75,-278 1915.75,-284 1909.75,-284"/>
 <text xml:space="preserve" text-anchor="start" x="1828.75" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="1851.62" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3</text>
 <text xml:space="preserve" text-anchor="start" x="1823.5" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_extend</text>
@@ -1014,7 +1014,7 @@
 <g id="node42" class="node">
 <title>n68</title>
 <g id="a_node42"><a xlink:title="(derive_via_fallback fsm s3 zero) &#160;by m_via_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2077,-284C2077,-284 1983.25,-284 1983.25,-284 1977.25,-284 1971.25,-278 1971.25,-272 1971.25,-272 1971.25,-249 1971.25,-249 1971.25,-243 1977.25,-237 1983.25,-237 1983.25,-237 2077,-237 2077,-237 2083,-237 2089,-243 2089,-249 2089,-249 2089,-272 2089,-272 2089,-278 2083,-284 2077,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2077,-284C2077,-284 1983.25,-284 1983.25,-284 1977.25,-284 1971.25,-278 1971.25,-272 1971.25,-272 1971.25,-249 1971.25,-249 1971.25,-243 1977.25,-237 1983.25,-237 1983.25,-237 2077,-237 2077,-237 2083,-237 2089,-243 2089,-249 2089,-249 2089,-272 2089,-272 2089,-278 2083,-284 2077,-284"/>
 <text xml:space="preserve" text-anchor="start" x="1980.25" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_via_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="2001.25" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, zero</text>
 <text xml:space="preserve" text-anchor="start" x="1993.38" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_via_fallback</text>
@@ -1037,7 +1037,7 @@
 <g id="node37" class="node">
 <title>n71</title>
 <g id="a_node37"><a xlink:title="(derive_fallback_step fsm s3 s2 zero) &#160;by m_fallback_step">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1784.75,-205C1784.75,-205 1683.5,-205 1683.5,-205 1677.5,-205 1671.5,-199 1671.5,-193 1671.5,-193 1671.5,-170 1671.5,-170 1671.5,-164 1677.5,-158 1683.5,-158 1683.5,-158 1784.75,-158 1784.75,-158 1790.75,-158 1796.75,-164 1796.75,-170 1796.75,-170 1796.75,-193 1796.75,-193 1796.75,-199 1790.75,-205 1784.75,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1784.75,-205C1784.75,-205 1683.5,-205 1683.5,-205 1677.5,-205 1671.5,-199 1671.5,-193 1671.5,-193 1671.5,-170 1671.5,-170 1671.5,-164 1677.5,-158 1683.5,-158 1683.5,-158 1784.75,-158 1784.75,-158 1790.75,-158 1796.75,-164 1796.75,-170 1796.75,-170 1796.75,-193 1796.75,-193 1796.75,-199 1790.75,-205 1784.75,-205"/>
 <text xml:space="preserve" text-anchor="start" x="1680.5" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback_step</text>
 <text xml:space="preserve" text-anchor="start" x="1697" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, s2, zero</text>
 <text xml:space="preserve" text-anchor="start" x="1694.75" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_step</text>
@@ -1054,7 +1054,7 @@
 <g id="node41" class="node">
 <title>n72</title>
 <g id="a_node41"><a xlink:title="(derive_fallback fsm s2) &#160;by m_fallback_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1909.38,-205C1909.38,-205 1826.88,-205 1826.88,-205 1820.88,-205 1814.88,-199 1814.88,-193 1814.88,-193 1814.88,-170 1814.88,-170 1814.88,-164 1820.88,-158 1826.88,-158 1826.88,-158 1909.38,-158 1909.38,-158 1915.38,-158 1921.38,-164 1921.38,-170 1921.38,-170 1921.38,-193 1921.38,-193 1921.38,-199 1915.38,-205 1909.38,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1909.38,-205C1909.38,-205 1826.88,-205 1826.88,-205 1820.88,-205 1814.88,-199 1814.88,-193 1814.88,-193 1814.88,-170 1814.88,-170 1814.88,-164 1820.88,-158 1826.88,-158 1826.88,-158 1909.38,-158 1909.38,-158 1915.38,-158 1921.38,-164 1921.38,-170 1921.38,-170 1921.38,-193 1921.38,-193 1921.38,-199 1915.38,-205 1909.38,-205"/>
 <text xml:space="preserve" text-anchor="start" x="1828.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="1851.62" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2</text>
 <text xml:space="preserve" text-anchor="start" x="1823.88" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_known</text>
@@ -1077,7 +1077,7 @@
 <g id="node38" class="node">
 <title>n75</title>
 <g id="a_node38"><a xlink:title="(conclude_fallback_extend fsm s3 s2 zero s0) &#160;by m_conclude_fallback_extend">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1770,-126C1770,-126 1640.25,-126 1640.25,-126 1634.25,-126 1628.25,-120 1628.25,-114 1628.25,-114 1628.25,-91 1628.25,-91 1628.25,-85 1634.25,-79 1640.25,-79 1640.25,-79 1770,-79 1770,-79 1776,-79 1782,-85 1782,-91 1782,-91 1782,-114 1782,-114 1782,-120 1776,-126 1770,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1770,-126C1770,-126 1640.25,-126 1640.25,-126 1634.25,-126 1628.25,-120 1628.25,-114 1628.25,-114 1628.25,-91 1628.25,-91 1628.25,-85 1634.25,-79 1640.25,-79 1640.25,-79 1770,-79 1770,-79 1776,-79 1782,-85 1782,-91 1782,-91 1782,-114 1782,-114 1782,-120 1776,-126 1770,-126"/>
 <text xml:space="preserve" text-anchor="start" x="1637.25" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_fallback_extend</text>
 <text xml:space="preserve" text-anchor="start" x="1659.75" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, s2, zero, s0</text>
 <text xml:space="preserve" text-anchor="start" x="1639.12" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_fallback_extend</text>
@@ -1094,7 +1094,7 @@
 <g id="node40" class="node">
 <title>n76</title>
 <g id="a_node40"><a xlink:title="(derive_next fsm s0 zero) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M1880.25,-126C1880.25,-126 1812,-126 1812,-126 1806,-126 1800,-120 1800,-114 1800,-114 1800,-91 1800,-91 1800,-85 1806,-79 1812,-79 1812,-79 1880.25,-79 1880.25,-79 1886.25,-79 1892.25,-85 1892.25,-91 1892.25,-91 1892.25,-114 1892.25,-114 1892.25,-120 1886.25,-126 1880.25,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M1880.25,-126C1880.25,-126 1812,-126 1812,-126 1806,-126 1800,-120 1800,-114 1800,-114 1800,-91 1800,-91 1800,-85 1806,-79 1812,-79 1812,-79 1880.25,-79 1880.25,-79 1886.25,-79 1892.25,-85 1892.25,-91 1892.25,-91 1892.25,-114 1892.25,-114 1892.25,-120 1886.25,-126 1880.25,-126"/>
 <text xml:space="preserve" text-anchor="start" x="1815.75" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="1817.25" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, zero</text>
 <text xml:space="preserve" text-anchor="start" x="1809" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -1135,7 +1135,7 @@
 <g id="node44" class="node">
 <title>n85</title>
 <g id="a_node44"><a xlink:title="step 11: (analyze_fall_back fsm s3 zero s0 s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="2079.88,-47 1970.38,-47 1970.38,0 2079.88,0 2079.88,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="2079.88,-47 1970.38,-47 1970.38,0 2079.88,0 2079.88,-47"/>
 <text xml:space="preserve" text-anchor="start" x="1979.38" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 11</text>
 <text xml:space="preserve" text-anchor="start" x="1979.38" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="1979.75" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, zero, s0, s0</text>
@@ -1164,7 +1164,7 @@
 <g id="node43" class="node">
 <title>n81</title>
 <g id="a_node43"><a xlink:title="(conclude_fall_back fsm s3 zero s0) &#160;by m_conclude_fall_back">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2074.25,-126C2074.25,-126 1976,-126 1976,-126 1970,-126 1964,-120 1964,-114 1964,-114 1964,-91 1964,-91 1964,-85 1970,-79 1976,-79 1976,-79 2074.25,-79 2074.25,-79 2080.25,-79 2086.25,-85 2086.25,-91 2086.25,-91 2086.25,-114 2086.25,-114 2086.25,-120 2080.25,-126 2074.25,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2074.25,-126C2074.25,-126 1976,-126 1976,-126 1970,-126 1964,-120 1964,-114 1964,-114 1964,-91 1964,-91 1964,-85 1970,-79 1976,-79 1976,-79 2074.25,-79 2074.25,-79 2080.25,-79 2086.25,-85 2086.25,-91 2086.25,-91 2086.25,-114 2086.25,-114 2086.25,-120 2080.25,-126 2074.25,-126"/>
 <text xml:space="preserve" text-anchor="start" x="1974.88" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="1988" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, zero, s0</text>
 <text xml:space="preserve" text-anchor="start" x="1973" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_fall_back</text>
@@ -1181,7 +1181,7 @@
 <g id="node45" class="node">
 <title>n82</title>
 <g id="a_node45"><a xlink:title="(derive_next fsm s0 zero) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2133.25,-205C2133.25,-205 2065,-205 2065,-205 2059,-205 2053,-199 2053,-193 2053,-193 2053,-170 2053,-170 2053,-164 2059,-158 2065,-158 2065,-158 2133.25,-158 2133.25,-158 2139.25,-158 2145.25,-164 2145.25,-170 2145.25,-170 2145.25,-193 2145.25,-193 2145.25,-199 2139.25,-205 2133.25,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2133.25,-205C2133.25,-205 2065,-205 2065,-205 2059,-205 2053,-199 2053,-193 2053,-193 2053,-170 2053,-170 2053,-164 2059,-158 2065,-158 2065,-158 2133.25,-158 2133.25,-158 2139.25,-158 2145.25,-164 2145.25,-170 2145.25,-170 2145.25,-193 2145.25,-193 2145.25,-199 2139.25,-205 2133.25,-205"/>
 <text xml:space="preserve" text-anchor="start" x="2068.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="2070.25" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, zero</text>
 <text xml:space="preserve" text-anchor="start" x="2062" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -1222,7 +1222,7 @@
 <g id="node47" class="node">
 <title>n87</title>
 <g id="a_node47"><a xlink:title="step 12: (analyze_advance fsm s3 one s4)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="2302.38,-47 2195.88,-47 2195.88,0 2302.38,0 2302.38,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="2302.38,-47 2195.88,-47 2195.88,0 2302.38,0 2302.38,-47"/>
 <text xml:space="preserve" text-anchor="start" x="2204.88" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 12</text>
 <text xml:space="preserve" text-anchor="start" x="2204.88" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_advance</text>
 <text xml:space="preserve" text-anchor="start" x="2213.5" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, one, s4</text>
@@ -1263,7 +1263,7 @@
 <g id="node53" class="node">
 <title>n103</title>
 <g id="a_node53"><a xlink:title="step 13: (analyze_fallback_extend fsm s4 s3 one s0 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="2465.5,-47 2320.75,-47 2320.75,0 2465.5,0 2465.5,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="2465.5,-47 2320.75,-47 2320.75,0 2465.5,0 2465.5,-47"/>
 <text xml:space="preserve" text-anchor="start" x="2329.75" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 13</text>
 <text xml:space="preserve" text-anchor="start" x="2329.75" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fallback_extend</text>
 <text xml:space="preserve" text-anchor="start" x="2341" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, s3, one, s0, s1</text>
@@ -1280,7 +1280,7 @@
 <g id="node49" class="node">
 <title>n90</title>
 <g id="a_node49"><a xlink:title="(derive_next fsm s4 zero) &#160;by m_next_mismatch_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2673.62,-363C2673.62,-363 2556.62,-363 2556.62,-363 2550.62,-363 2544.62,-357 2544.62,-351 2544.62,-351 2544.62,-328 2544.62,-328 2544.62,-322 2550.62,-316 2556.62,-316 2556.62,-316 2673.62,-316 2673.62,-316 2679.62,-316 2685.62,-322 2685.62,-328 2685.62,-328 2685.62,-351 2685.62,-351 2685.62,-357 2679.62,-363 2673.62,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2673.62,-363C2673.62,-363 2556.62,-363 2556.62,-363 2550.62,-363 2544.62,-357 2544.62,-351 2544.62,-351 2544.62,-328 2544.62,-328 2544.62,-322 2550.62,-316 2556.62,-316 2556.62,-316 2673.62,-316 2673.62,-316 2679.62,-316 2685.62,-322 2685.62,-328 2685.62,-328 2685.62,-351 2685.62,-351 2685.62,-357 2679.62,-363 2673.62,-363"/>
 <text xml:space="preserve" text-anchor="start" x="2584.75" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="2586.25" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, zero</text>
 <text xml:space="preserve" text-anchor="start" x="2553.62" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_mismatch_fallback</text>
@@ -1297,7 +1297,7 @@
 <g id="node60" class="node">
 <title>n89</title>
 <g id="a_node60"><a xlink:title="(derive_next fsm s4 one) &#160;by m_next_match_overlapping">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2976.12,-363C2976.12,-363 2856.12,-363 2856.12,-363 2850.12,-363 2844.12,-357 2844.12,-351 2844.12,-351 2844.12,-328 2844.12,-328 2844.12,-322 2850.12,-316 2856.12,-316 2856.12,-316 2976.12,-316 2976.12,-316 2982.12,-316 2988.12,-322 2988.12,-328 2988.12,-328 2988.12,-351 2988.12,-351 2988.12,-357 2982.12,-363 2976.12,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2976.12,-363C2976.12,-363 2856.12,-363 2856.12,-363 2850.12,-363 2844.12,-357 2844.12,-351 2844.12,-351 2844.12,-328 2844.12,-328 2844.12,-322 2850.12,-316 2856.12,-316 2856.12,-316 2976.12,-316 2976.12,-316 2982.12,-316 2988.12,-322 2988.12,-328 2988.12,-328 2988.12,-351 2988.12,-351 2988.12,-357 2982.12,-363 2976.12,-363"/>
 <text xml:space="preserve" text-anchor="start" x="2885.75" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="2888.75" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, one</text>
 <text xml:space="preserve" text-anchor="start" x="2853.12" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_match_overlapping</text>
@@ -1320,7 +1320,7 @@
 <g id="node50" class="node">
 <title>n93</title>
 <g id="a_node50"><a xlink:title="(derive_fallback fsm s4) &#160;by m_fallback_extend">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2553.75,-284C2553.75,-284 2470.5,-284 2470.5,-284 2464.5,-284 2458.5,-278 2458.5,-272 2458.5,-272 2458.5,-249 2458.5,-249 2458.5,-243 2464.5,-237 2470.5,-237 2470.5,-237 2553.75,-237 2553.75,-237 2559.75,-237 2565.75,-243 2565.75,-249 2565.75,-249 2565.75,-272 2565.75,-272 2565.75,-278 2559.75,-284 2553.75,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2553.75,-284C2553.75,-284 2470.5,-284 2470.5,-284 2464.5,-284 2458.5,-278 2458.5,-272 2458.5,-272 2458.5,-249 2458.5,-249 2458.5,-243 2464.5,-237 2470.5,-237 2470.5,-237 2553.75,-237 2553.75,-237 2559.75,-237 2565.75,-243 2565.75,-249 2565.75,-249 2565.75,-272 2565.75,-272 2565.75,-278 2559.75,-284 2553.75,-284"/>
 <text xml:space="preserve" text-anchor="start" x="2472.75" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="2495.62" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4</text>
 <text xml:space="preserve" text-anchor="start" x="2467.5" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_extend</text>
@@ -1337,7 +1337,7 @@
 <g id="node56" class="node">
 <title>n92</title>
 <g id="a_node56"><a xlink:title="(derive_via_fallback fsm s4 zero) &#160;by m_via_fallback">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2745,-284C2745,-284 2651.25,-284 2651.25,-284 2645.25,-284 2639.25,-278 2639.25,-272 2639.25,-272 2639.25,-249 2639.25,-249 2639.25,-243 2645.25,-237 2651.25,-237 2651.25,-237 2745,-237 2745,-237 2751,-237 2757,-243 2757,-249 2757,-249 2757,-272 2757,-272 2757,-278 2751,-284 2745,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2745,-284C2745,-284 2651.25,-284 2651.25,-284 2645.25,-284 2639.25,-278 2639.25,-272 2639.25,-272 2639.25,-249 2639.25,-249 2639.25,-243 2645.25,-237 2651.25,-237 2651.25,-237 2745,-237 2745,-237 2751,-237 2757,-243 2757,-249 2757,-249 2757,-272 2757,-272 2757,-278 2751,-284 2745,-284"/>
 <text xml:space="preserve" text-anchor="start" x="2648.25" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_via_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="2669.25" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, zero</text>
 <text xml:space="preserve" text-anchor="start" x="2661.38" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_via_fallback</text>
@@ -1360,7 +1360,7 @@
 <g id="node51" class="node">
 <title>n95</title>
 <g id="a_node51"><a xlink:title="(derive_fallback_step fsm s4 s3 one) &#160;by m_fallback_step">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2428.75,-205C2428.75,-205 2327.5,-205 2327.5,-205 2321.5,-205 2315.5,-199 2315.5,-193 2315.5,-193 2315.5,-170 2315.5,-170 2315.5,-164 2321.5,-158 2327.5,-158 2327.5,-158 2428.75,-158 2428.75,-158 2434.75,-158 2440.75,-164 2440.75,-170 2440.75,-170 2440.75,-193 2440.75,-193 2440.75,-199 2434.75,-205 2428.75,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2428.75,-205C2428.75,-205 2327.5,-205 2327.5,-205 2321.5,-205 2315.5,-199 2315.5,-193 2315.5,-193 2315.5,-170 2315.5,-170 2315.5,-164 2321.5,-158 2327.5,-158 2327.5,-158 2428.75,-158 2428.75,-158 2434.75,-158 2440.75,-164 2440.75,-170 2440.75,-170 2440.75,-193 2440.75,-193 2440.75,-199 2434.75,-205 2428.75,-205"/>
 <text xml:space="preserve" text-anchor="start" x="2324.5" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback_step</text>
 <text xml:space="preserve" text-anchor="start" x="2342.5" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, s3, one</text>
 <text xml:space="preserve" text-anchor="start" x="2338.75" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_step</text>
@@ -1377,7 +1377,7 @@
 <g id="node55" class="node">
 <title>n96</title>
 <g id="a_node55"><a xlink:title="(derive_fallback fsm s3) &#160;by m_fallback_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2553.38,-205C2553.38,-205 2470.88,-205 2470.88,-205 2464.88,-205 2458.88,-199 2458.88,-193 2458.88,-193 2458.88,-170 2458.88,-170 2458.88,-164 2464.88,-158 2470.88,-158 2470.88,-158 2553.38,-158 2553.38,-158 2559.38,-158 2565.38,-164 2565.38,-170 2565.38,-170 2565.38,-193 2565.38,-193 2565.38,-199 2559.38,-205 2553.38,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2553.38,-205C2553.38,-205 2470.88,-205 2470.88,-205 2464.88,-205 2458.88,-199 2458.88,-193 2458.88,-193 2458.88,-170 2458.88,-170 2458.88,-164 2464.88,-158 2470.88,-158 2470.88,-158 2553.38,-158 2553.38,-158 2559.38,-158 2565.38,-164 2565.38,-170 2565.38,-170 2565.38,-193 2565.38,-193 2565.38,-199 2559.38,-205 2553.38,-205"/>
 <text xml:space="preserve" text-anchor="start" x="2472.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="2495.62" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3</text>
 <text xml:space="preserve" text-anchor="start" x="2467.88" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_known</text>
@@ -1400,7 +1400,7 @@
 <g id="node52" class="node">
 <title>n99</title>
 <g id="a_node52"><a xlink:title="(conclude_fallback_extend fsm s4 s3 one s0) &#160;by m_conclude_fallback_extend">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2457,-126C2457,-126 2327.25,-126 2327.25,-126 2321.25,-126 2315.25,-120 2315.25,-114 2315.25,-114 2315.25,-91 2315.25,-91 2315.25,-85 2321.25,-79 2327.25,-79 2327.25,-79 2457,-79 2457,-79 2463,-79 2469,-85 2469,-91 2469,-91 2469,-114 2469,-114 2469,-120 2463,-126 2457,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2457,-126C2457,-126 2327.25,-126 2327.25,-126 2321.25,-126 2315.25,-120 2315.25,-114 2315.25,-114 2315.25,-91 2315.25,-91 2315.25,-85 2321.25,-79 2327.25,-79 2327.25,-79 2457,-79 2457,-79 2463,-79 2469,-85 2469,-91 2469,-91 2469,-114 2469,-114 2469,-120 2463,-126 2457,-126"/>
 <text xml:space="preserve" text-anchor="start" x="2324.25" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_fallback_extend</text>
 <text xml:space="preserve" text-anchor="start" x="2348.25" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, s3, one, s0</text>
 <text xml:space="preserve" text-anchor="start" x="2326.12" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_fallback_extend</text>
@@ -1417,7 +1417,7 @@
 <g id="node54" class="node">
 <title>n100</title>
 <g id="a_node54"><a xlink:title="(derive_next fsm s0 one) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2567.25,-126C2567.25,-126 2499,-126 2499,-126 2493,-126 2487,-120 2487,-114 2487,-114 2487,-91 2487,-91 2487,-85 2493,-79 2499,-79 2499,-79 2567.25,-79 2567.25,-79 2573.25,-79 2579.25,-85 2579.25,-91 2579.25,-91 2579.25,-114 2579.25,-114 2579.25,-120 2573.25,-126 2567.25,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2567.25,-126C2567.25,-126 2499,-126 2499,-126 2493,-126 2487,-120 2487,-114 2487,-114 2487,-91 2487,-91 2487,-85 2493,-79 2499,-79 2499,-79 2567.25,-79 2567.25,-79 2573.25,-79 2579.25,-85 2579.25,-91 2579.25,-91 2579.25,-114 2579.25,-114 2579.25,-120 2573.25,-126 2567.25,-126"/>
 <text xml:space="preserve" text-anchor="start" x="2502.75" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="2505.75" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, one</text>
 <text xml:space="preserve" text-anchor="start" x="2496" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -1458,7 +1458,7 @@
 <g id="node58" class="node">
 <title>n109</title>
 <g id="a_node58"><a xlink:title="step 14: (analyze_fall_back fsm s4 zero s1 s2)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="2774.88,-47 2665.38,-47 2665.38,0 2774.88,0 2774.88,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="2774.88,-47 2665.38,-47 2665.38,0 2774.88,0 2774.88,-47"/>
 <text xml:space="preserve" text-anchor="start" x="2674.38" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 14</text>
 <text xml:space="preserve" text-anchor="start" x="2674.38" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="2674.75" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, zero, s1, s2</text>
@@ -1487,7 +1487,7 @@
 <g id="node57" class="node">
 <title>n105</title>
 <g id="a_node57"><a xlink:title="(conclude_fall_back fsm s4 zero s1) &#160;by m_conclude_fall_back">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2769.25,-205C2769.25,-205 2671,-205 2671,-205 2665,-205 2659,-199 2659,-193 2659,-193 2659,-170 2659,-170 2659,-164 2665,-158 2671,-158 2671,-158 2769.25,-158 2769.25,-158 2775.25,-158 2781.25,-164 2781.25,-170 2781.25,-170 2781.25,-193 2781.25,-193 2781.25,-199 2775.25,-205 2769.25,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2769.25,-205C2769.25,-205 2671,-205 2671,-205 2665,-205 2659,-199 2659,-193 2659,-193 2659,-170 2659,-170 2659,-164 2665,-158 2671,-158 2671,-158 2769.25,-158 2769.25,-158 2775.25,-158 2781.25,-164 2781.25,-170 2781.25,-170 2781.25,-193 2781.25,-193 2781.25,-199 2775.25,-205 2769.25,-205"/>
 <text xml:space="preserve" text-anchor="start" x="2669.88" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_fall_back</text>
 <text xml:space="preserve" text-anchor="start" x="2683" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, zero, s1</text>
 <text xml:space="preserve" text-anchor="start" x="2668" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_fall_back</text>
@@ -1504,7 +1504,7 @@
 <g id="node59" class="node">
 <title>n106</title>
 <g id="a_node59"><a xlink:title="(derive_next fsm s1 zero) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2879.25,-205C2879.25,-205 2811,-205 2811,-205 2805,-205 2799,-199 2799,-193 2799,-193 2799,-170 2799,-170 2799,-164 2805,-158 2811,-158 2811,-158 2879.25,-158 2879.25,-158 2885.25,-158 2891.25,-164 2891.25,-170 2891.25,-170 2891.25,-193 2891.25,-193 2891.25,-199 2885.25,-205 2879.25,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2879.25,-205C2879.25,-205 2811,-205 2811,-205 2805,-205 2799,-199 2799,-193 2799,-193 2799,-170 2799,-170 2799,-164 2805,-158 2811,-158 2811,-158 2879.25,-158 2879.25,-158 2885.25,-158 2891.25,-164 2891.25,-170 2891.25,-170 2891.25,-193 2891.25,-193 2891.25,-199 2885.25,-205 2879.25,-205"/>
 <text xml:space="preserve" text-anchor="start" x="2814.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="2816.25" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, zero</text>
 <text xml:space="preserve" text-anchor="start" x="2808" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -1545,7 +1545,7 @@
 <g id="node63" class="node">
 <title>n119</title>
 <g id="a_node63"><a xlink:title="step 15: (analyze_match_overlapping fsm s4 one s1 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="3038.88,-47 2875.38,-47 2875.38,0 3038.88,0 3038.88,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="3038.88,-47 2875.38,-47 2875.38,0 3038.88,0 3038.88,-47"/>
 <text xml:space="preserve" text-anchor="start" x="2884.38" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 15</text>
 <text xml:space="preserve" text-anchor="start" x="2884.38" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_match_overlapping</text>
 <text xml:space="preserve" text-anchor="start" x="2913.25" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, one, s1, s1</text>
@@ -1568,7 +1568,7 @@
 <g id="node61" class="node">
 <title>n111</title>
 <g id="a_node61"><a xlink:title="(derive_match_restart fsm s4 one) &#160;by m_match_restart">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M2968.62,-284C2968.62,-284 2863.62,-284 2863.62,-284 2857.62,-284 2851.62,-278 2851.62,-272 2851.62,-272 2851.62,-249 2851.62,-249 2851.62,-243 2857.62,-237 2863.62,-237 2863.62,-237 2968.62,-237 2968.62,-237 2974.62,-237 2980.62,-243 2980.62,-249 2980.62,-249 2980.62,-272 2980.62,-272 2980.62,-278 2974.62,-284 2968.62,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M2968.62,-284C2968.62,-284 2863.62,-284 2863.62,-284 2857.62,-284 2851.62,-278 2851.62,-272 2851.62,-272 2851.62,-249 2851.62,-249 2851.62,-243 2857.62,-237 2863.62,-237 2863.62,-237 2968.62,-237 2968.62,-237 2974.62,-237 2980.62,-243 2980.62,-249 2980.62,-249 2980.62,-272 2980.62,-272 2980.62,-278 2974.62,-284 2968.62,-284"/>
 <text xml:space="preserve" text-anchor="start" x="2860.62" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_match_restart</text>
 <text xml:space="preserve" text-anchor="start" x="2888.75" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, one</text>
 <text xml:space="preserve" text-anchor="start" x="2876" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_match_restart</text>
@@ -1585,7 +1585,7 @@
 <g id="node65" class="node">
 <title>n112</title>
 <g id="a_node65"><a xlink:title="(derive_fallback fsm s4) &#160;by m_fallback_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3093.38,-284C3093.38,-284 3010.88,-284 3010.88,-284 3004.88,-284 2998.88,-278 2998.88,-272 2998.88,-272 2998.88,-249 2998.88,-249 2998.88,-243 3004.88,-237 3010.88,-237 3010.88,-237 3093.38,-237 3093.38,-237 3099.38,-237 3105.38,-243 3105.38,-249 3105.38,-249 3105.38,-272 3105.38,-272 3105.38,-278 3099.38,-284 3093.38,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3093.38,-284C3093.38,-284 3010.88,-284 3010.88,-284 3004.88,-284 2998.88,-278 2998.88,-272 2998.88,-272 2998.88,-249 2998.88,-249 2998.88,-243 3004.88,-237 3010.88,-237 3010.88,-237 3093.38,-237 3093.38,-237 3099.38,-237 3105.38,-243 3105.38,-249 3105.38,-249 3105.38,-272 3105.38,-272 3105.38,-278 3099.38,-284 3093.38,-284"/>
 <text xml:space="preserve" text-anchor="start" x="3012.75" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_fallback</text>
 <text xml:space="preserve" text-anchor="start" x="3035.62" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4</text>
 <text xml:space="preserve" text-anchor="start" x="3007.88" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_fallback_known</text>
@@ -1608,7 +1608,7 @@
 <g id="node62" class="node">
 <title>n115</title>
 <g id="a_node62"><a xlink:title="(conclude_match_restart fsm s4 one s1) &#160;by m_conclude_match_restart">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3017.5,-126C3017.5,-126 2896.75,-126 2896.75,-126 2890.75,-126 2884.75,-120 2884.75,-114 2884.75,-114 2884.75,-91 2884.75,-91 2884.75,-85 2890.75,-79 2896.75,-79 2896.75,-79 3017.5,-79 3017.5,-79 3023.5,-79 3029.5,-85 3029.5,-91 3029.5,-91 3029.5,-114 3029.5,-114 3029.5,-120 3023.5,-126 3017.5,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3017.5,-126C3017.5,-126 2896.75,-126 2896.75,-126 2890.75,-126 2884.75,-120 2884.75,-114 2884.75,-114 2884.75,-91 2884.75,-91 2884.75,-85 2890.75,-79 2896.75,-79 2896.75,-79 3017.5,-79 3017.5,-79 3023.5,-79 3029.5,-85 3029.5,-91 3029.5,-91 3029.5,-114 3029.5,-114 3029.5,-120 3023.5,-126 3017.5,-126"/>
 <text xml:space="preserve" text-anchor="start" x="2893.75" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">conclude_match_restart</text>
 <text xml:space="preserve" text-anchor="start" x="2921.5" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, one, s1</text>
 <text xml:space="preserve" text-anchor="start" x="2895.62" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_conclude_match_restart</text>
@@ -1625,7 +1625,7 @@
 <g id="node64" class="node">
 <title>n116</title>
 <g id="a_node64"><a xlink:title="(derive_next fsm s1 one) &#160;by m_next_known">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3065.25,-205C3065.25,-205 2997,-205 2997,-205 2991,-205 2985,-199 2985,-193 2985,-193 2985,-170 2985,-170 2985,-164 2991,-158 2997,-158 2997,-158 3065.25,-158 3065.25,-158 3071.25,-158 3077.25,-164 3077.25,-170 3077.25,-170 3077.25,-193 3077.25,-193 3077.25,-199 3071.25,-205 3065.25,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3065.25,-205C3065.25,-205 2997,-205 2997,-205 2991,-205 2985,-199 2985,-193 2985,-193 2985,-170 2985,-170 2985,-164 2991,-158 2997,-158 2997,-158 3065.25,-158 3065.25,-158 3071.25,-158 3077.25,-164 3077.25,-170 3077.25,-170 3077.25,-193 3077.25,-193 3077.25,-199 3071.25,-205 3065.25,-205"/>
 <text xml:space="preserve" text-anchor="start" x="3000.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">derive_next</text>
 <text xml:space="preserve" text-anchor="start" x="3003.75" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, one</text>
 <text xml:space="preserve" text-anchor="start" x="2994" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_next_known</text>
@@ -1666,7 +1666,7 @@
 <g id="node67" class="node">
 <title>n122</title>
 <g id="a_node67"><a xlink:title="step 16: (write_module_header fsm)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="3209.38,-47 3078.88,-47 3078.88,0 3209.38,0 3209.38,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="3209.38,-47 3078.88,-47 3078.88,0 3209.38,0 3209.38,-47"/>
 <text xml:space="preserve" text-anchor="start" x="3087.88" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 16</text>
 <text xml:space="preserve" text-anchor="start" x="3087.88" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_module_header</text>
 <text xml:space="preserve" text-anchor="start" x="3135.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
@@ -1701,7 +1701,7 @@
 <g id="node68" class="node">
 <title>n121</title>
 <g id="a_node68"><a xlink:title="(declare_ports_from fsm IN) &#160;by m_declare_ports_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3440.75,-442C3440.75,-442 3339.5,-442 3339.5,-442 3333.5,-442 3327.5,-436 3327.5,-430 3327.5,-430 3327.5,-407 3327.5,-407 3327.5,-401 3333.5,-395 3339.5,-395 3339.5,-395 3440.75,-395 3440.75,-395 3446.75,-395 3452.75,-401 3452.75,-407 3452.75,-407 3452.75,-430 3452.75,-430 3452.75,-436 3446.75,-442 3440.75,-442"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3440.75,-442C3440.75,-442 3339.5,-442 3339.5,-442 3333.5,-442 3327.5,-436 3327.5,-430 3327.5,-430 3327.5,-407 3327.5,-407 3327.5,-401 3333.5,-395 3339.5,-395 3339.5,-395 3440.75,-395 3440.75,-395 3446.75,-395 3452.75,-401 3452.75,-407 3452.75,-407 3452.75,-430 3452.75,-430 3452.75,-436 3446.75,-442 3440.75,-442"/>
 <text xml:space="preserve" text-anchor="start" x="3338.75" y="-427.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_ports_from</text>
 <text xml:space="preserve" text-anchor="start" x="3373.62" y="-413.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, IN</text>
 <text xml:space="preserve" text-anchor="start" x="3336.5" y="-402.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_ports_more</text>
@@ -1730,7 +1730,7 @@
 <g id="node70" class="node">
 <title>n127</title>
 <g id="a_node70"><a xlink:title="step 17: (write_input_decl fsm IN)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="3331.25,-47 3227,-47 3227,0 3331.25,0 3331.25,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="3331.25,-47 3227,-47 3227,0 3331.25,0 3331.25,-47"/>
 <text xml:space="preserve" text-anchor="start" x="3236" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 17</text>
 <text xml:space="preserve" text-anchor="start" x="3236" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_input_decl</text>
 <text xml:space="preserve" text-anchor="start" x="3262.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, IN</text>
@@ -1747,7 +1747,7 @@
 <g id="node69" class="node">
 <title>n125</title>
 <g id="a_node69"><a xlink:title="(declare_port fsm IN) &#160;by m_declare_input">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3362.62,-363C3362.62,-363 3287.62,-363 3287.62,-363 3281.62,-363 3275.62,-357 3275.62,-351 3275.62,-351 3275.62,-328 3275.62,-328 3275.62,-322 3281.62,-316 3287.62,-316 3287.62,-316 3362.62,-316 3362.62,-316 3368.62,-316 3374.62,-322 3374.62,-328 3374.62,-328 3374.62,-351 3374.62,-351 3374.62,-357 3368.62,-363 3362.62,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3362.62,-363C3362.62,-363 3287.62,-363 3287.62,-363 3281.62,-363 3275.62,-357 3275.62,-351 3275.62,-351 3275.62,-328 3275.62,-328 3275.62,-322 3281.62,-316 3287.62,-316 3287.62,-316 3362.62,-316 3362.62,-316 3368.62,-316 3374.62,-322 3374.62,-328 3374.62,-328 3374.62,-351 3374.62,-351 3374.62,-357 3368.62,-363 3362.62,-363"/>
 <text xml:space="preserve" text-anchor="start" x="3292.12" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_port</text>
 <text xml:space="preserve" text-anchor="start" x="3308.62" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, IN</text>
 <text xml:space="preserve" text-anchor="start" x="3284.62" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_input</text>
@@ -1764,7 +1764,7 @@
 <g id="node71" class="node">
 <title>n124</title>
 <g id="a_node71"><a xlink:title="(declare_ports_from fsm CLK) &#160;by m_declare_ports_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3505.75,-363C3505.75,-363 3404.5,-363 3404.5,-363 3398.5,-363 3392.5,-357 3392.5,-351 3392.5,-351 3392.5,-328 3392.5,-328 3392.5,-322 3398.5,-316 3404.5,-316 3404.5,-316 3505.75,-316 3505.75,-316 3511.75,-316 3517.75,-322 3517.75,-328 3517.75,-328 3517.75,-351 3517.75,-351 3517.75,-357 3511.75,-363 3505.75,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3505.75,-363C3505.75,-363 3404.5,-363 3404.5,-363 3398.5,-363 3392.5,-357 3392.5,-351 3392.5,-351 3392.5,-328 3392.5,-328 3392.5,-322 3398.5,-316 3404.5,-316 3404.5,-316 3505.75,-316 3505.75,-316 3511.75,-316 3517.75,-322 3517.75,-328 3517.75,-328 3517.75,-351 3517.75,-351 3517.75,-357 3511.75,-363 3505.75,-363"/>
 <text xml:space="preserve" text-anchor="start" x="3403.75" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_ports_from</text>
 <text xml:space="preserve" text-anchor="start" x="3434.12" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, CLK</text>
 <text xml:space="preserve" text-anchor="start" x="3401.5" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_ports_more</text>
@@ -1805,7 +1805,7 @@
 <g id="node73" class="node">
 <title>n132</title>
 <g id="a_node73"><a xlink:title="step 18: (write_input_decl fsm CLK)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="3453.25,-47 3349,-47 3349,0 3453.25,0 3453.25,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="3453.25,-47 3349,-47 3349,0 3453.25,0 3453.25,-47"/>
 <text xml:space="preserve" text-anchor="start" x="3358" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 18</text>
 <text xml:space="preserve" text-anchor="start" x="3358" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_input_decl</text>
 <text xml:space="preserve" text-anchor="start" x="3380.12" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, CLK</text>
@@ -1822,7 +1822,7 @@
 <g id="node72" class="node">
 <title>n130</title>
 <g id="a_node72"><a xlink:title="(declare_port fsm CLK) &#160;by m_declare_input">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3438.62,-126C3438.62,-126 3363.62,-126 3363.62,-126 3357.62,-126 3351.62,-120 3351.62,-114 3351.62,-114 3351.62,-91 3351.62,-91 3351.62,-85 3357.62,-79 3363.62,-79 3363.62,-79 3438.62,-79 3438.62,-79 3444.62,-79 3450.62,-85 3450.62,-91 3450.62,-91 3450.62,-114 3450.62,-114 3450.62,-120 3444.62,-126 3438.62,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3438.62,-126C3438.62,-126 3363.62,-126 3363.62,-126 3357.62,-126 3351.62,-120 3351.62,-114 3351.62,-114 3351.62,-91 3351.62,-91 3351.62,-85 3357.62,-79 3363.62,-79 3363.62,-79 3438.62,-79 3438.62,-79 3444.62,-79 3450.62,-85 3450.62,-91 3450.62,-91 3450.62,-114 3450.62,-114 3450.62,-120 3444.62,-126 3438.62,-126"/>
 <text xml:space="preserve" text-anchor="start" x="3368.12" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_port</text>
 <text xml:space="preserve" text-anchor="start" x="3380.12" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, CLK</text>
 <text xml:space="preserve" text-anchor="start" x="3360.62" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_input</text>
@@ -1839,7 +1839,7 @@
 <g id="node74" class="node">
 <title>n129</title>
 <g id="a_node74"><a xlink:title="(declare_ports_from fsm RST) &#160;by m_declare_ports_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3583.75,-284C3583.75,-284 3482.5,-284 3482.5,-284 3476.5,-284 3470.5,-278 3470.5,-272 3470.5,-272 3470.5,-249 3470.5,-249 3470.5,-243 3476.5,-237 3482.5,-237 3482.5,-237 3583.75,-237 3583.75,-237 3589.75,-237 3595.75,-243 3595.75,-249 3595.75,-249 3595.75,-272 3595.75,-272 3595.75,-278 3589.75,-284 3583.75,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3583.75,-284C3583.75,-284 3482.5,-284 3482.5,-284 3476.5,-284 3470.5,-278 3470.5,-272 3470.5,-272 3470.5,-249 3470.5,-249 3470.5,-243 3476.5,-237 3482.5,-237 3482.5,-237 3583.75,-237 3583.75,-237 3589.75,-237 3595.75,-243 3595.75,-249 3595.75,-249 3595.75,-272 3595.75,-272 3595.75,-278 3589.75,-284 3583.75,-284"/>
 <text xml:space="preserve" text-anchor="start" x="3481.75" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_ports_from</text>
 <text xml:space="preserve" text-anchor="start" x="3511.75" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, RST</text>
 <text xml:space="preserve" text-anchor="start" x="3479.5" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_ports_more</text>
@@ -1880,7 +1880,7 @@
 <g id="node76" class="node">
 <title>n137</title>
 <g id="a_node76"><a xlink:title="step 19: (write_input_decl fsm RST)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="3575.25,-47 3471,-47 3471,0 3575.25,0 3575.25,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="3575.25,-47 3471,-47 3471,0 3575.25,0 3575.25,-47"/>
 <text xml:space="preserve" text-anchor="start" x="3480" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 19</text>
 <text xml:space="preserve" text-anchor="start" x="3480" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_input_decl</text>
 <text xml:space="preserve" text-anchor="start" x="3501.75" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, RST</text>
@@ -1897,7 +1897,7 @@
 <g id="node75" class="node">
 <title>n135</title>
 <g id="a_node75"><a xlink:title="(declare_port fsm RST) &#160;by m_declare_input">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3570.62,-205C3570.62,-205 3495.62,-205 3495.62,-205 3489.62,-205 3483.62,-199 3483.62,-193 3483.62,-193 3483.62,-170 3483.62,-170 3483.62,-164 3489.62,-158 3495.62,-158 3495.62,-158 3570.62,-158 3570.62,-158 3576.62,-158 3582.62,-164 3582.62,-170 3582.62,-170 3582.62,-193 3582.62,-193 3582.62,-199 3576.62,-205 3570.62,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3570.62,-205C3570.62,-205 3495.62,-205 3495.62,-205 3489.62,-205 3483.62,-199 3483.62,-193 3483.62,-193 3483.62,-170 3483.62,-170 3483.62,-164 3489.62,-158 3495.62,-158 3495.62,-158 3570.62,-158 3570.62,-158 3576.62,-158 3582.62,-164 3582.62,-170 3582.62,-170 3582.62,-193 3582.62,-193 3582.62,-199 3576.62,-205 3570.62,-205"/>
 <text xml:space="preserve" text-anchor="start" x="3500.12" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_port</text>
 <text xml:space="preserve" text-anchor="start" x="3511.75" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, RST</text>
 <text xml:space="preserve" text-anchor="start" x="3492.62" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_input</text>
@@ -1914,7 +1914,7 @@
 <g id="node77" class="node">
 <title>n134</title>
 <g id="a_node77"><a xlink:title="(declare_ports_from fsm MATCH) &#160;by m_declare_ports_last">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3709.5,-205C3709.5,-205 3612.75,-205 3612.75,-205 3606.75,-205 3600.75,-199 3600.75,-193 3600.75,-193 3600.75,-170 3600.75,-170 3600.75,-164 3606.75,-158 3612.75,-158 3612.75,-158 3709.5,-158 3709.5,-158 3715.5,-158 3721.5,-164 3721.5,-170 3721.5,-170 3721.5,-193 3721.5,-193 3721.5,-199 3715.5,-205 3709.5,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3709.5,-205C3709.5,-205 3612.75,-205 3612.75,-205 3606.75,-205 3600.75,-199 3600.75,-193 3600.75,-193 3600.75,-170 3600.75,-170 3600.75,-164 3606.75,-158 3612.75,-158 3612.75,-158 3709.5,-158 3709.5,-158 3715.5,-158 3721.5,-164 3721.5,-170 3721.5,-170 3721.5,-193 3721.5,-193 3721.5,-199 3715.5,-205 3709.5,-205"/>
 <text xml:space="preserve" text-anchor="start" x="3609.75" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_ports_from</text>
 <text xml:space="preserve" text-anchor="start" x="3632.25" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH</text>
 <text xml:space="preserve" text-anchor="start" x="3610.88" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_ports_last</text>
@@ -1955,7 +1955,7 @@
 <g id="node79" class="node">
 <title>n141</title>
 <g id="a_node79"><a xlink:title="step 20: (write_output_reg_decl fsm MATCH)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="3728.62,-47 3593.62,-47 3593.62,0 3728.62,0 3728.62,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="3728.62,-47 3593.62,-47 3593.62,0 3728.62,0 3728.62,-47"/>
 <text xml:space="preserve" text-anchor="start" x="3602.62" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 20</text>
 <text xml:space="preserve" text-anchor="start" x="3602.62" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_reg_decl</text>
 <text xml:space="preserve" text-anchor="start" x="3632.25" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH</text>
@@ -1972,7 +1972,7 @@
 <g id="node78" class="node">
 <title>n139</title>
 <g id="a_node78"><a xlink:title="(declare_port fsm MATCH) &#160;by m_declare_output_reg">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M3710.62,-126C3710.62,-126 3611.62,-126 3611.62,-126 3605.62,-126 3599.62,-120 3599.62,-114 3599.62,-114 3599.62,-91 3599.62,-91 3599.62,-85 3605.62,-79 3611.62,-79 3611.62,-79 3710.62,-79 3710.62,-79 3716.62,-79 3722.62,-85 3722.62,-91 3722.62,-91 3722.62,-114 3722.62,-114 3722.62,-120 3716.62,-126 3710.62,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M3710.62,-126C3710.62,-126 3611.62,-126 3611.62,-126 3605.62,-126 3599.62,-120 3599.62,-114 3599.62,-114 3599.62,-91 3599.62,-91 3599.62,-85 3605.62,-79 3611.62,-79 3611.62,-79 3710.62,-79 3710.62,-79 3716.62,-79 3722.62,-85 3722.62,-91 3722.62,-91 3722.62,-114 3722.62,-114 3722.62,-120 3716.62,-126 3710.62,-126"/>
 <text xml:space="preserve" text-anchor="start" x="3628.12" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_port</text>
 <text xml:space="preserve" text-anchor="start" x="3632.25" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH</text>
 <text xml:space="preserve" text-anchor="start" x="3608.62" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_output_reg</text>
@@ -2012,11 +2012,11 @@
 <!-- n145 -->
 <g id="node81" class="node">
 <title>n145</title>
-<g id="a_node81"><a xlink:title="step 21: (analyze_choose_state_encoding fsm s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="3933.88,-47 3746.38,-47 3746.38,0 3933.88,0 3933.88,-47"/>
+<g id="a_node81"><a xlink:title="step 21: (analyze_choose_state_encoding fsm s0 bits3)">
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="3933.88,-47 3746.38,-47 3746.38,0 3933.88,0 3933.88,-47"/>
 <text xml:space="preserve" text-anchor="start" x="3755.38" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 21</text>
 <text xml:space="preserve" text-anchor="start" x="3755.38" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">analyze_choose_state_encoding</text>
-<text xml:space="preserve" text-anchor="start" x="3823.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0</text>
+<text xml:space="preserve" text-anchor="start" x="3810.12" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, bits3</text>
 </a>
 </g>
 </g>
@@ -2036,7 +2036,7 @@
 <g id="node82" class="node">
 <title>n144</title>
 <g id="a_node82"><a xlink:title="(declare_states_from fsm s0) &#160;by m_declare_states_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4214.62,-442C4214.62,-442 4109.62,-442 4109.62,-442 4103.62,-442 4097.62,-436 4097.62,-430 4097.62,-430 4097.62,-407 4097.62,-407 4097.62,-401 4103.62,-395 4109.62,-395 4109.62,-395 4214.62,-395 4214.62,-395 4220.62,-395 4226.62,-401 4226.62,-407 4226.62,-407 4226.62,-430 4226.62,-430 4226.62,-436 4220.62,-442 4214.62,-442"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4214.62,-442C4214.62,-442 4109.62,-442 4109.62,-442 4103.62,-442 4097.62,-436 4097.62,-430 4097.62,-430 4097.62,-407 4097.62,-407 4097.62,-401 4103.62,-395 4109.62,-395 4109.62,-395 4214.62,-395 4214.62,-395 4220.62,-395 4226.62,-401 4226.62,-407 4226.62,-407 4226.62,-430 4226.62,-430 4226.62,-436 4220.62,-442 4214.62,-442"/>
 <text xml:space="preserve" text-anchor="start" x="4108.88" y="-427.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_states_from</text>
 <text xml:space="preserve" text-anchor="start" x="4145.62" y="-413.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0</text>
 <text xml:space="preserve" text-anchor="start" x="4106.62" y="-402.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_states_more</text>
@@ -2052,11 +2052,11 @@
 <!-- n143 -->
 <g id="node92" class="node">
 <title>n143</title>
-<g id="a_node92"><a xlink:title="step 27: (write_state_regs fsm)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="4716.25,-47 4612,-47 4612,0 4716.25,0 4716.25,-47"/>
+<g id="a_node92"><a xlink:title="step 27: (write_state_regs fsm bits3)">
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="4716.25,-47 4612,-47 4612,0 4716.25,0 4716.25,-47"/>
 <text xml:space="preserve" text-anchor="start" x="4621" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 27</text>
 <text xml:space="preserve" text-anchor="start" x="4621" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_regs</text>
-<text xml:space="preserve" text-anchor="start" x="4655.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
+<text xml:space="preserve" text-anchor="start" x="4642.38" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, bits3</text>
 </a>
 </g>
 </g>
@@ -2081,11 +2081,11 @@
 <!-- n148 -->
 <g id="node83" class="node">
 <title>n148</title>
-<g id="a_node83"><a xlink:title="step 22: (write_state_param fsm s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="4066.12,-47 3952.12,-47 3952.12,0 4066.12,0 4066.12,-47"/>
+<g id="a_node83"><a xlink:title="step 22: (write_state_param fsm s0 n0 bits3)">
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="4066.12,-47 3952.12,-47 3952.12,0 4066.12,0 4066.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="3961.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 22</text>
 <text xml:space="preserve" text-anchor="start" x="3961.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_param</text>
-<text xml:space="preserve" text-anchor="start" x="3992.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0</text>
+<text xml:space="preserve" text-anchor="start" x="3970.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, n0, bits3</text>
 </a>
 </g>
 </g>
@@ -2105,7 +2105,7 @@
 <g id="node84" class="node">
 <title>n147</title>
 <g id="a_node84"><a xlink:title="(declare_states_from fsm s1) &#160;by m_declare_states_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4214.62,-363C4214.62,-363 4109.62,-363 4109.62,-363 4103.62,-363 4097.62,-357 4097.62,-351 4097.62,-351 4097.62,-328 4097.62,-328 4097.62,-322 4103.62,-316 4109.62,-316 4109.62,-316 4214.62,-316 4214.62,-316 4220.62,-316 4226.62,-322 4226.62,-328 4226.62,-328 4226.62,-351 4226.62,-351 4226.62,-357 4220.62,-363 4214.62,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4214.62,-363C4214.62,-363 4109.62,-363 4109.62,-363 4103.62,-363 4097.62,-357 4097.62,-351 4097.62,-351 4097.62,-328 4097.62,-328 4097.62,-322 4103.62,-316 4109.62,-316 4109.62,-316 4214.62,-316 4214.62,-316 4220.62,-316 4226.62,-322 4226.62,-328 4226.62,-328 4226.62,-351 4226.62,-351 4226.62,-357 4220.62,-363 4214.62,-363"/>
 <text xml:space="preserve" text-anchor="start" x="4108.88" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_states_from</text>
 <text xml:space="preserve" text-anchor="start" x="4145.62" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1</text>
 <text xml:space="preserve" text-anchor="start" x="4106.62" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_states_more</text>
@@ -2133,11 +2133,11 @@
 <!-- n151 -->
 <g id="node85" class="node">
 <title>n151</title>
-<g id="a_node85"><a xlink:title="step 23: (write_state_param fsm s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="4198.12,-47 4084.12,-47 4084.12,0 4198.12,0 4198.12,-47"/>
+<g id="a_node85"><a xlink:title="step 23: (write_state_param fsm s1 n1 bits3)">
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="4198.12,-47 4084.12,-47 4084.12,0 4198.12,0 4198.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="4093.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 23</text>
 <text xml:space="preserve" text-anchor="start" x="4093.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_param</text>
-<text xml:space="preserve" text-anchor="start" x="4124.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1</text>
+<text xml:space="preserve" text-anchor="start" x="4102.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, n1, bits3</text>
 </a>
 </g>
 </g>
@@ -2157,7 +2157,7 @@
 <g id="node86" class="node">
 <title>n150</title>
 <g id="a_node86"><a xlink:title="(declare_states_from fsm s2) &#160;by m_declare_states_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4323.62,-284C4323.62,-284 4218.62,-284 4218.62,-284 4212.62,-284 4206.62,-278 4206.62,-272 4206.62,-272 4206.62,-249 4206.62,-249 4206.62,-243 4212.62,-237 4218.62,-237 4218.62,-237 4323.62,-237 4323.62,-237 4329.62,-237 4335.62,-243 4335.62,-249 4335.62,-249 4335.62,-272 4335.62,-272 4335.62,-278 4329.62,-284 4323.62,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4323.62,-284C4323.62,-284 4218.62,-284 4218.62,-284 4212.62,-284 4206.62,-278 4206.62,-272 4206.62,-272 4206.62,-249 4206.62,-249 4206.62,-243 4212.62,-237 4218.62,-237 4218.62,-237 4323.62,-237 4323.62,-237 4329.62,-237 4335.62,-243 4335.62,-249 4335.62,-249 4335.62,-272 4335.62,-272 4335.62,-278 4329.62,-284 4323.62,-284"/>
 <text xml:space="preserve" text-anchor="start" x="4217.88" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_states_from</text>
 <text xml:space="preserve" text-anchor="start" x="4254.62" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2</text>
 <text xml:space="preserve" text-anchor="start" x="4215.62" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_states_more</text>
@@ -2185,11 +2185,11 @@
 <!-- n154 -->
 <g id="node87" class="node">
 <title>n154</title>
-<g id="a_node87"><a xlink:title="step 24: (write_state_param fsm s2)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="4330.12,-47 4216.12,-47 4216.12,0 4330.12,0 4330.12,-47"/>
+<g id="a_node87"><a xlink:title="step 24: (write_state_param fsm s2 n2 bits3)">
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="4330.12,-47 4216.12,-47 4216.12,0 4330.12,0 4330.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="4225.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 24</text>
 <text xml:space="preserve" text-anchor="start" x="4225.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_param</text>
-<text xml:space="preserve" text-anchor="start" x="4256.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2</text>
+<text xml:space="preserve" text-anchor="start" x="4234.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, n2, bits3</text>
 </a>
 </g>
 </g>
@@ -2209,7 +2209,7 @@
 <g id="node88" class="node">
 <title>n153</title>
 <g id="a_node88"><a xlink:title="(declare_states_from fsm s3) &#160;by m_declare_states_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4416.62,-205C4416.62,-205 4311.62,-205 4311.62,-205 4305.62,-205 4299.62,-199 4299.62,-193 4299.62,-193 4299.62,-170 4299.62,-170 4299.62,-164 4305.62,-158 4311.62,-158 4311.62,-158 4416.62,-158 4416.62,-158 4422.62,-158 4428.62,-164 4428.62,-170 4428.62,-170 4428.62,-193 4428.62,-193 4428.62,-199 4422.62,-205 4416.62,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4416.62,-205C4416.62,-205 4311.62,-205 4311.62,-205 4305.62,-205 4299.62,-199 4299.62,-193 4299.62,-193 4299.62,-170 4299.62,-170 4299.62,-164 4305.62,-158 4311.62,-158 4311.62,-158 4416.62,-158 4416.62,-158 4422.62,-158 4428.62,-164 4428.62,-170 4428.62,-170 4428.62,-193 4428.62,-193 4428.62,-199 4422.62,-205 4416.62,-205"/>
 <text xml:space="preserve" text-anchor="start" x="4310.88" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_states_from</text>
 <text xml:space="preserve" text-anchor="start" x="4347.62" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3</text>
 <text xml:space="preserve" text-anchor="start" x="4308.62" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_states_more</text>
@@ -2237,11 +2237,11 @@
 <!-- n157 -->
 <g id="node89" class="node">
 <title>n157</title>
-<g id="a_node89"><a xlink:title="step 25: (write_state_param fsm s3)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="4462.12,-47 4348.12,-47 4348.12,0 4462.12,0 4462.12,-47"/>
+<g id="a_node89"><a xlink:title="step 25: (write_state_param fsm s3 n3 bits3)">
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="4462.12,-47 4348.12,-47 4348.12,0 4462.12,0 4462.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="4357.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 25</text>
 <text xml:space="preserve" text-anchor="start" x="4357.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_param</text>
-<text xml:space="preserve" text-anchor="start" x="4388.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3</text>
+<text xml:space="preserve" text-anchor="start" x="4366.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, n3, bits3</text>
 </a>
 </g>
 </g>
@@ -2261,7 +2261,7 @@
 <g id="node90" class="node">
 <title>n156</title>
 <g id="a_node90"><a xlink:title="(declare_states_from fsm s4) &#160;by m_declare_states_last">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M4503.38,-126C4503.38,-126 4402.88,-126 4402.88,-126 4396.88,-126 4390.88,-120 4390.88,-114 4390.88,-114 4390.88,-91 4390.88,-91 4390.88,-85 4396.88,-79 4402.88,-79 4402.88,-79 4503.38,-79 4503.38,-79 4509.38,-79 4515.38,-85 4515.38,-91 4515.38,-91 4515.38,-114 4515.38,-114 4515.38,-120 4509.38,-126 4503.38,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M4503.38,-126C4503.38,-126 4402.88,-126 4402.88,-126 4396.88,-126 4390.88,-120 4390.88,-114 4390.88,-114 4390.88,-91 4390.88,-91 4390.88,-85 4396.88,-79 4402.88,-79 4402.88,-79 4503.38,-79 4503.38,-79 4509.38,-79 4515.38,-85 4515.38,-91 4515.38,-91 4515.38,-114 4515.38,-114 4515.38,-120 4509.38,-126 4503.38,-126"/>
 <text xml:space="preserve" text-anchor="start" x="4399.88" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">declare_states_from</text>
 <text xml:space="preserve" text-anchor="start" x="4436.62" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4</text>
 <text xml:space="preserve" text-anchor="start" x="4401" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_declare_states_last</text>
@@ -2289,11 +2289,11 @@
 <!-- n159 -->
 <g id="node91" class="node">
 <title>n159</title>
-<g id="a_node91"><a xlink:title="step 26: (write_state_param fsm s4)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="4594.12,-47 4480.12,-47 4480.12,0 4594.12,0 4594.12,-47"/>
+<g id="a_node91"><a xlink:title="step 26: (write_state_param fsm s4 n4 bits3)">
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="4594.12,-47 4480.12,-47 4480.12,0 4594.12,0 4594.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="4489.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 26</text>
 <text xml:space="preserve" text-anchor="start" x="4489.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_param</text>
-<text xml:space="preserve" text-anchor="start" x="4520.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4</text>
+<text xml:space="preserve" text-anchor="start" x="4498.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, n4, bits3</text>
 </a>
 </g>
 </g>
@@ -2337,7 +2337,7 @@
 <g id="node94" class="node">
 <title>n161</title>
 <g id="a_node94"><a xlink:title="step 28: (write_state_register_async fsm CLK RST active_high s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="4892.25,-47 4734,-47 4734,0 4892.25,0 4892.25,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="4892.25,-47 4734,-47 4734,0 4892.25,0 4892.25,-47"/>
 <text xml:space="preserve" text-anchor="start" x="4743" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 28</text>
 <text xml:space="preserve" text-anchor="start" x="4743" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_register_async</text>
 <text xml:space="preserve" text-anchor="start" x="4743.75" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, CLK, RST, active_high, s0</text>
@@ -2372,7 +2372,7 @@
 <g id="node96" class="node">
 <title>n166</title>
 <g id="a_node96"><a xlink:title="step 29: (write_next_state_open fsm)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5046,-47 4910.25,-47 4910.25,0 5046,0 5046,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5046,-47 4910.25,-47 4910.25,0 5046,0 5046,-47"/>
 <text xml:space="preserve" text-anchor="start" x="4919.25" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 29</text>
 <text xml:space="preserve" text-anchor="start" x="4919.25" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_next_state_open</text>
 <text xml:space="preserve" text-anchor="start" x="4969.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
@@ -2395,7 +2395,7 @@
 <g id="node97" class="node">
 <title>n165</title>
 <g id="a_node97"><a xlink:title="(write_state_cases_from fsm s0) &#160;by m_state_cases_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M5248,-442C5248,-442 5130.25,-442 5130.25,-442 5124.25,-442 5118.25,-436 5118.25,-430 5118.25,-430 5118.25,-407 5118.25,-407 5118.25,-401 5124.25,-395 5130.25,-395 5130.25,-395 5248,-395 5248,-395 5254,-395 5260,-401 5260,-407 5260,-407 5260,-430 5260,-430 5260,-436 5254,-442 5248,-442"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M5248,-442C5248,-442 5130.25,-442 5130.25,-442 5124.25,-442 5118.25,-436 5118.25,-430 5118.25,-430 5118.25,-407 5118.25,-407 5118.25,-401 5124.25,-395 5130.25,-395 5130.25,-395 5248,-395 5248,-395 5254,-395 5260,-401 5260,-407 5260,-407 5260,-430 5260,-430 5260,-436 5254,-442 5248,-442"/>
 <text xml:space="preserve" text-anchor="start" x="5127.25" y="-427.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_cases_from</text>
 <text xml:space="preserve" text-anchor="start" x="5172.62" y="-413.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0</text>
 <text xml:space="preserve" text-anchor="start" x="5139.25" y="-402.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_state_cases_more</text>
@@ -2412,7 +2412,7 @@
 <g id="node107" class="node">
 <title>n164</title>
 <g id="a_node107"><a xlink:title="step 35: (write_next_state_default fsm s0)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5823.88,-47 5678.38,-47 5678.38,0 5823.88,0 5823.88,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5823.88,-47 5678.38,-47 5678.38,0 5823.88,0 5823.88,-47"/>
 <text xml:space="preserve" text-anchor="start" x="5687.38" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 35</text>
 <text xml:space="preserve" text-anchor="start" x="5687.38" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_next_state_default</text>
 <text xml:space="preserve" text-anchor="start" x="5734.62" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0</text>
@@ -2429,7 +2429,7 @@
 <g id="node108" class="node">
 <title>n163</title>
 <g id="a_node108"><a xlink:title="step 36: (write_next_state_close fsm)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5978.75,-47 5841.5,-47 5841.5,0 5978.75,0 5978.75,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5978.75,-47 5841.5,-47 5841.5,0 5978.75,0 5978.75,-47"/>
 <text xml:space="preserve" text-anchor="start" x="5850.5" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 36</text>
 <text xml:space="preserve" text-anchor="start" x="5850.5" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_next_state_close</text>
 <text xml:space="preserve" text-anchor="start" x="5901.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
@@ -2458,7 +2458,7 @@
 <g id="node98" class="node">
 <title>n169</title>
 <g id="a_node98"><a xlink:title="step 30: (write_state_case fsm s0 IN s0 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5168.62,-47 5063.62,-47 5063.62,0 5168.62,0 5168.62,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5168.62,-47 5063.62,-47 5063.62,0 5168.62,0 5168.62,-47"/>
 <text xml:space="preserve" text-anchor="start" x="5072.62" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 30</text>
 <text xml:space="preserve" text-anchor="start" x="5072.62" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_case</text>
 <text xml:space="preserve" text-anchor="start" x="5074.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s0, IN, s0, s1</text>
@@ -2481,7 +2481,7 @@
 <g id="node99" class="node">
 <title>n168</title>
 <g id="a_node99"><a xlink:title="(write_state_cases_from fsm s1) &#160;by m_state_cases_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M5298,-363C5298,-363 5180.25,-363 5180.25,-363 5174.25,-363 5168.25,-357 5168.25,-351 5168.25,-351 5168.25,-328 5168.25,-328 5168.25,-322 5174.25,-316 5180.25,-316 5180.25,-316 5298,-316 5298,-316 5304,-316 5310,-322 5310,-328 5310,-328 5310,-351 5310,-351 5310,-357 5304,-363 5298,-363"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M5298,-363C5298,-363 5180.25,-363 5180.25,-363 5174.25,-363 5168.25,-357 5168.25,-351 5168.25,-351 5168.25,-328 5168.25,-328 5168.25,-322 5174.25,-316 5180.25,-316 5180.25,-316 5298,-316 5298,-316 5304,-316 5310,-322 5310,-328 5310,-328 5310,-351 5310,-351 5310,-357 5304,-363 5298,-363"/>
 <text xml:space="preserve" text-anchor="start" x="5177.25" y="-348.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_cases_from</text>
 <text xml:space="preserve" text-anchor="start" x="5222.62" y="-334.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1</text>
 <text xml:space="preserve" text-anchor="start" x="5189.25" y="-323.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_state_cases_more</text>
@@ -2510,7 +2510,7 @@
 <g id="node100" class="node">
 <title>n172</title>
 <g id="a_node100"><a xlink:title="step 31: (write_state_case fsm s1 IN s2 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5291.62,-47 5186.62,-47 5186.62,0 5291.62,0 5291.62,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5291.62,-47 5186.62,-47 5186.62,0 5291.62,0 5291.62,-47"/>
 <text xml:space="preserve" text-anchor="start" x="5195.62" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 31</text>
 <text xml:space="preserve" text-anchor="start" x="5195.62" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_case</text>
 <text xml:space="preserve" text-anchor="start" x="5197.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s1, IN, s2, s1</text>
@@ -2533,7 +2533,7 @@
 <g id="node101" class="node">
 <title>n171</title>
 <g id="a_node101"><a xlink:title="(write_state_cases_from fsm s2) &#160;by m_state_cases_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M5409,-284C5409,-284 5291.25,-284 5291.25,-284 5285.25,-284 5279.25,-278 5279.25,-272 5279.25,-272 5279.25,-249 5279.25,-249 5279.25,-243 5285.25,-237 5291.25,-237 5291.25,-237 5409,-237 5409,-237 5415,-237 5421,-243 5421,-249 5421,-249 5421,-272 5421,-272 5421,-278 5415,-284 5409,-284"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M5409,-284C5409,-284 5291.25,-284 5291.25,-284 5285.25,-284 5279.25,-278 5279.25,-272 5279.25,-272 5279.25,-249 5279.25,-249 5279.25,-243 5285.25,-237 5291.25,-237 5291.25,-237 5409,-237 5409,-237 5415,-237 5421,-243 5421,-249 5421,-249 5421,-272 5421,-272 5421,-278 5415,-284 5409,-284"/>
 <text xml:space="preserve" text-anchor="start" x="5288.25" y="-269.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_cases_from</text>
 <text xml:space="preserve" text-anchor="start" x="5333.62" y="-255.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2</text>
 <text xml:space="preserve" text-anchor="start" x="5300.25" y="-244.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_state_cases_more</text>
@@ -2562,7 +2562,7 @@
 <g id="node102" class="node">
 <title>n175</title>
 <g id="a_node102"><a xlink:title="step 32: (write_state_case fsm s2 IN s3 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5414.62,-47 5309.62,-47 5309.62,0 5414.62,0 5414.62,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5414.62,-47 5309.62,-47 5309.62,0 5414.62,0 5414.62,-47"/>
 <text xml:space="preserve" text-anchor="start" x="5318.62" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 32</text>
 <text xml:space="preserve" text-anchor="start" x="5318.62" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_case</text>
 <text xml:space="preserve" text-anchor="start" x="5320.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s2, IN, s3, s1</text>
@@ -2585,7 +2585,7 @@
 <g id="node103" class="node">
 <title>n174</title>
 <g id="a_node103"><a xlink:title="(write_state_cases_from fsm s3) &#160;by m_state_cases_more">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M5508,-205C5508,-205 5390.25,-205 5390.25,-205 5384.25,-205 5378.25,-199 5378.25,-193 5378.25,-193 5378.25,-170 5378.25,-170 5378.25,-164 5384.25,-158 5390.25,-158 5390.25,-158 5508,-158 5508,-158 5514,-158 5520,-164 5520,-170 5520,-170 5520,-193 5520,-193 5520,-199 5514,-205 5508,-205"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M5508,-205C5508,-205 5390.25,-205 5390.25,-205 5384.25,-205 5378.25,-199 5378.25,-193 5378.25,-193 5378.25,-170 5378.25,-170 5378.25,-164 5384.25,-158 5390.25,-158 5390.25,-158 5508,-158 5508,-158 5514,-158 5520,-164 5520,-170 5520,-170 5520,-193 5520,-193 5520,-199 5514,-205 5508,-205"/>
 <text xml:space="preserve" text-anchor="start" x="5387.25" y="-190.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_cases_from</text>
 <text xml:space="preserve" text-anchor="start" x="5432.62" y="-176.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3</text>
 <text xml:space="preserve" text-anchor="start" x="5399.25" y="-165.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_state_cases_more</text>
@@ -2614,7 +2614,7 @@
 <g id="node104" class="node">
 <title>n178</title>
 <g id="a_node104"><a xlink:title="step 33: (write_state_case fsm s3 IN s0 s4)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5537.62,-47 5432.62,-47 5432.62,0 5537.62,0 5537.62,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5537.62,-47 5432.62,-47 5432.62,0 5537.62,0 5537.62,-47"/>
 <text xml:space="preserve" text-anchor="start" x="5441.62" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 33</text>
 <text xml:space="preserve" text-anchor="start" x="5441.62" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_case</text>
 <text xml:space="preserve" text-anchor="start" x="5443.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s3, IN, s0, s4</text>
@@ -2637,7 +2637,7 @@
 <g id="node105" class="node">
 <title>n177</title>
 <g id="a_node105"><a xlink:title="(write_state_cases_from fsm s4) &#160;by m_state_cases_last">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M5584,-126C5584,-126 5466.25,-126 5466.25,-126 5460.25,-126 5454.25,-120 5454.25,-114 5454.25,-114 5454.25,-91 5454.25,-91 5454.25,-85 5460.25,-79 5466.25,-79 5466.25,-79 5584,-79 5584,-79 5590,-79 5596,-85 5596,-91 5596,-91 5596,-114 5596,-114 5596,-120 5590,-126 5584,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M5584,-126C5584,-126 5466.25,-126 5466.25,-126 5460.25,-126 5454.25,-120 5454.25,-114 5454.25,-114 5454.25,-91 5454.25,-91 5454.25,-85 5460.25,-79 5466.25,-79 5466.25,-79 5584,-79 5584,-79 5590,-79 5596,-85 5596,-91 5596,-91 5596,-114 5596,-114 5596,-120 5590,-126 5584,-126"/>
 <text xml:space="preserve" text-anchor="start" x="5463.25" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_cases_from</text>
 <text xml:space="preserve" text-anchor="start" x="5508.62" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4</text>
 <text xml:space="preserve" text-anchor="start" x="5478.62" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_state_cases_last</text>
@@ -2666,7 +2666,7 @@
 <g id="node106" class="node">
 <title>n180</title>
 <g id="a_node106"><a xlink:title="step 34: (write_state_case fsm s4 IN s2 s1)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="5660.62,-47 5555.62,-47 5555.62,0 5660.62,0 5660.62,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="5660.62,-47 5555.62,-47 5555.62,0 5660.62,0 5660.62,-47"/>
 <text xml:space="preserve" text-anchor="start" x="5564.62" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 34</text>
 <text xml:space="preserve" text-anchor="start" x="5564.62" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_state_case</text>
 <text xml:space="preserve" text-anchor="start" x="5566.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, s4, IN, s2, s1</text>
@@ -2725,7 +2725,7 @@
 <g id="node110" class="node">
 <title>n186</title>
 <g id="a_node110"><a xlink:title="step 37: (write_output_open fsm MATCH)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="6113.25,-47 5997,-47 5997,0 6113.25,0 6113.25,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="6113.25,-47 5997,-47 5997,0 6113.25,0 6113.25,-47"/>
 <text xml:space="preserve" text-anchor="start" x="6006" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 37</text>
 <text xml:space="preserve" text-anchor="start" x="6006" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_open</text>
 <text xml:space="preserve" text-anchor="start" x="6026.25" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH</text>
@@ -2748,7 +2748,7 @@
 <g id="node111" class="node">
 <title>n185</title>
 <g id="a_node111"><a xlink:title="(write_output_reset fsm MATCH) &#160;by m_output_reset_clause">
-<path fill="#f3f4f6" stroke="#374151" stroke-width="1.2" d="M6277.12,-126C6277.12,-126 6175.12,-126 6175.12,-126 6169.12,-126 6163.12,-120 6163.12,-114 6163.12,-114 6163.12,-91 6163.12,-91 6163.12,-85 6169.12,-79 6175.12,-79 6175.12,-79 6277.12,-79 6277.12,-79 6283.12,-79 6289.12,-85 6289.12,-91 6289.12,-91 6289.12,-114 6289.12,-114 6289.12,-120 6283.12,-126 6277.12,-126"/>
+<path fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" d="M6277.12,-126C6277.12,-126 6175.12,-126 6175.12,-126 6169.12,-126 6163.12,-120 6163.12,-114 6163.12,-114 6163.12,-91 6163.12,-91 6163.12,-85 6169.12,-79 6175.12,-79 6175.12,-79 6277.12,-79 6277.12,-79 6283.12,-79 6289.12,-85 6289.12,-91 6289.12,-91 6289.12,-114 6289.12,-114 6289.12,-120 6283.12,-126 6277.12,-126"/>
 <text xml:space="preserve" text-anchor="start" x="6177" y="-111.55" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_reset</text>
 <text xml:space="preserve" text-anchor="start" x="6197.25" y="-97.5" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH</text>
 <text xml:space="preserve" text-anchor="start" x="6172.12" y="-86.2" font-family="Helvetica,sans-Serif" font-style="italic" font-size="9.00" fill="#555555">by m_output_reset_clause</text>
@@ -2765,7 +2765,7 @@
 <g id="node113" class="node">
 <title>n183</title>
 <g id="a_node113"><a xlink:title="step 39: (write_output_assert fsm MATCH s4 IN one)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="6435.38,-47 6304.88,-47 6304.88,0 6435.38,0 6435.38,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="6435.38,-47 6304.88,-47 6304.88,0 6435.38,0 6435.38,-47"/>
 <text xml:space="preserve" text-anchor="start" x="6313.88" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 39</text>
 <text xml:space="preserve" text-anchor="start" x="6318" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_assert</text>
 <text xml:space="preserve" text-anchor="start" x="6313.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH, s4, IN, one</text>
@@ -2782,7 +2782,7 @@
 <g id="node114" class="node">
 <title>n182</title>
 <g id="a_node114"><a xlink:title="step 40: (write_output_default fsm MATCH)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="6579.12,-47 6453.12,-47 6453.12,0 6579.12,0 6579.12,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="6579.12,-47 6453.12,-47 6453.12,0 6579.12,0 6579.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="6462.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 40</text>
 <text xml:space="preserve" text-anchor="start" x="6462.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_default</text>
 <text xml:space="preserve" text-anchor="start" x="6487.25" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH</text>
@@ -2799,7 +2799,7 @@
 <g id="node115" class="node">
 <title>n184</title>
 <g id="a_node115"><a xlink:title="step 41: (write_output_close fsm)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="6715,-47 6597.25,-47 6597.25,0 6715,0 6715,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="6715,-47 6597.25,-47 6597.25,0 6715,0 6715,-47"/>
 <text xml:space="preserve" text-anchor="start" x="6606.25" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 41</text>
 <text xml:space="preserve" text-anchor="start" x="6606.25" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_close</text>
 <text xml:space="preserve" text-anchor="start" x="6647.88" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm</text>
@@ -2828,7 +2828,7 @@
 <g id="node112" class="node">
 <title>n188</title>
 <g id="a_node112"><a xlink:title="step 38: (write_output_reset_clause fsm MATCH RST active_high)">
-<polygon fill="#f3f4f6" stroke="#374151" stroke-width="1.2" points="6287.12,-47 6131.12,-47 6131.12,0 6287.12,0 6287.12,-47"/>
+<polygon fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.2" points="6287.12,-47 6131.12,-47 6131.12,0 6287.12,0 6287.12,-47"/>
 <text xml:space="preserve" text-anchor="start" x="6140.12" y="-33.45" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#555555">step 38</text>
 <text xml:space="preserve" text-anchor="start" x="6140.12" y="-20.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">write_output_reset_clause</text>
 <text xml:space="preserve" text-anchor="start" x="6140.12" y="-6.75" font-family="Helvetica,sans-Serif" font-size="10.00">fsm, MATCH, RST, active_high</text>

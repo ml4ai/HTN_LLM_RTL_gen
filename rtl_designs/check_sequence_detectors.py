@@ -35,6 +35,7 @@ from concurrent.futures import ThreadPoolExecutor
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from plan_to_verilog import read_plan, render  # noqa: E402
+import state_encoding  # noqa: E402
 
 DOMAIN = os.path.join(HERE, "rtl_domain.hddl")
 DEFAULT_PLANNER = os.path.join(HERE, "..", "build", "apps", "planners", "MCTS_planner")
@@ -60,9 +61,13 @@ def problem(pat, overlap, async_, pol):
         facts.append("(overlapping fsm)")
     facts += [f"(next_prefix s{i} s{i + 1})" for i in range(n - 1)]
     facts += [f"(expects s{i} {bit[c]})" for i, c in enumerate(pat)]
-    states = " ".join(f"s{i}" for i in range(n))
+    names = [f"s{i}" for i in range(n)]
+    enc_objects, enc_facts = state_encoding.encoding("fsm", names)
+    facts += enc_facts
+    states = " ".join(names)
     return (f"(define (problem detect_{pat}) (:domain rtl_fsm)\n"
-            f"  (:objects fsm - module IN CLK RST MATCH - port {states} - fsm_state)\n"
+            f"  (:objects fsm - module IN CLK RST MATCH - port {states} - fsm_state "
+            f"{' '.join(enc_objects)})\n"
             f"  (:htn :parameters () :subtasks (and (implement_module fsm)))\n"
             f"  (:init {' '.join(facts)}))\n")
 
