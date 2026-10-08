@@ -1,0 +1,4 @@
+Module name: seen_110
+Inputs: clock, reset_n (active-low reset, asynchronous), d
+Output: hit
+Implement a Moore finite state machine that detects the bit sequence 110 on d. After the third bit of the sequence has been received the machine is in a state DONE in which hit is high; hit is low in every other state. The states are WAIT, GOT1, GOT11 and DONE. A new occurrence may begin with bits of the previous one.

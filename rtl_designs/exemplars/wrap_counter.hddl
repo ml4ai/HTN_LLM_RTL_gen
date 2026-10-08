@@ -1,0 +1,34 @@
+(define (problem dec_count)
+  (:domain rtl_fsm)
+  (:objects
+    dec_count - module
+    clk rst en count - port
+    bits4 - width
+    n0 n9 - value
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module dec_count))
+  )
+  (:init
+    (first_port dec_count clk)
+    (next_port clk rst)
+    (next_port rst en)
+    (next_port en count)
+    (last_port dec_count count)
+    (input_port clk)
+    (input_port rst)
+    (input_port en)
+    (output_port count)
+    (port_width count bits4)
+    (clock_of dec_count clk)
+    (reset_of dec_count rst)
+    (reset_async rst)
+    (reset_polarity rst active_high)
+    (wrap_counter dec_count)
+    (count_output dec_count count)
+    (enable_of dec_count en)
+    (count_min dec_count n0)
+    (count_max dec_count n9)
+  )
+)

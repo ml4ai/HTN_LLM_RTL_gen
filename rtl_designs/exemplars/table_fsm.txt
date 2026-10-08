@@ -1,0 +1,8 @@
+Write a module called tri_state with inputs clk, rst and a and an output f. It is a Moore machine with three states and this transition table:
+
+  state | next if a=0 | next if a=1 | f
+  X     | X           | Y           | 0
+  Y     | Z           | Y           | 0
+  Z     | X           | Y           | 1
+
+rst is a synchronous, active-high reset that puts the machine in state X.

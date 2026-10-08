@@ -1,0 +1,1 @@
+Design a module named det1101 with inputs clk, rst and din, and an output found, all one bit. It is a Mealy state machine that watches din and sets found to 1 in the same cycle that the last bit of the sequence 1101 arrives; found is 0 otherwise. Occurrences may overlap. rst is an active-high synchronous reset.

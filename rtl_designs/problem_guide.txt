@@ -1,0 +1,117 @@
+You translate a hardware design description into a planning problem for the domain rtl_fsm. A planner will read the problem and work out the design, so write only what the description states. Do not design the circuit, and do not write Verilog.
+
+OUTPUT
+
+One HDDL problem file, in one code block, of this shape:
+
+(define (problem <any_name>)
+  (:domain rtl_fsm)
+  (:objects
+    <names> - <type>
+    ...
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module <module>))
+  )
+  (:init
+    <facts>
+  )
+)
+
+OBJECTS AND THEIR TYPES
+
+  module      the design. Use the module name the description gives.
+  port        an input or output. Use the names the description gives.
+  fsm_state   a state of a state machine. Use the description's names if it names its states; otherwise s0, s1, s2, ...
+  register    an internal register the description names.
+  width       a number of bits, named bitsN: bits4 is 4 bits.
+  value       a number, named nN: n11 is the number 11.
+
+The bit values zero and one and the reset polarities active_high and active_low are constants. Use them without declaring them.
+
+FACTS FOR EVERY DESIGN
+
+  (first_port <module> <p>) (next_port <p> <q>) ... (last_port <module> <p>)
+        the ports, chained in the order the description lists them
+  (input_port <p>) or (output_port <p>)     for every port
+  (port_width <p> bitsN)                     only for a port wider than one bit
+  (clock_of <module> <p>)                    the clock
+  (reset_of <module> <p>)                    the reset
+  (reset_polarity <p> active_high) or (reset_polarity <p> active_low)
+  (reset_async <p>)                          only if the description says the reset is asynchronous, or says the
+                                             logic is triggered on an edge of the reset. Leave it out if the reset
+                                             is synchronous or the description does not say.
+
+THEN THE FACTS OF EXACTLY ONE KIND OF DESIGN
+
+A. Sequence detector: a state machine that detects one fixed bit pattern on a one-bit input.
+
+  (sequence_detector <module>)
+  (mealy <module>)        if the output is asserted in the same cycle as the last bit of the pattern
+  (moore <module>)        if the output is asserted from a state, after the last bit
+  (data_input_of <module> <p>)       the input that carries the bits
+  (detect_output_of <module> <p>)    the output that reports a detection
+  (overlapping <module>)             if an occurrence may begin with bits of the one before; leave out if not
+
+  The states follow the pattern, one per bit. For a pattern of L bits b0 b1 ... b(L-1):
+    Mealy: L states. State k means "the first k bits have been matched".
+    Moore: L+1 states. The extra, last state means "the whole pattern has been matched".
+  (initial_state <module> <first state>)
+  (next_prefix <state k> <state k+1>)          chaining all the states in order
+  (expects <state k> zero) or (expects <state k> one)     bit k of the pattern, for k = 0 .. L-1
+  (last_state <module> <last state>)
+  (accept_state <module> <last state>)         Moore only; it has no (expects ...)
+  (cleared_by_reset <output> <reset>)          Mealy only, and only if the description says the output is
+                                               set to 0 while the reset is active
+
+  Do not write any transitions. The planner derives them from the pattern.
+
+B. State machine given by a table or diagram: a Moore machine with a one-bit input whose every transition the description lists.
+
+  (table_fsm <module>) (moore <module>)
+  (data_input_of <module> <p>)
+  (initial_state <module> <s>)                 the state the reset puts it in
+  (first_listed <module> <s>) (listed_after <s> <t>) ... (last_listed <module> <s>)
+        all the states, chained in the order the description lists them
+  (table_next <s> zero <t>) and (table_next <s> one <t>)     for every state: where it goes on 0 and on 1
+  (asserted_in <output> <s>)                   the state in which the output is 1
+
+C. Run classifier: a Moore machine that counts consecutive 1s on a one-bit input and reports how a run ends. Its recognised sequences each start after a 0.
+
+  (run_classifier <module>) (moore <module>)
+  (data_input_of <module> <p>)
+  States: one for "previous input was 0" and one for each count of consecutive 1s that has to be told apart, then one state for each recognised sequence.
+  (zero_run_state <module> <s>)                the state for "previous input was 0"
+  (initial_state <module> <s>)                 the state after reset
+  (first_listed <module> <s>) (listed_after <s> <t>) ... (last_listed <module> <s>)
+        all the states: the counting states in order, then the sequence states
+  (ones_next <s> <t>)                          one more 1 takes counting state <s> to counting state <t>
+  (zero_rule <s> <t>)                          in counting state <s>, a 0 completes a recognised sequence: go to its state <t>
+  (one_rule <s> <t>)                           in counting state <s>, a 1 completes a recognised sequence: go to its state <t>
+  (holds_on_one <t>)                           sequence state <t> persists while 1s keep arriving
+  (asserted_in <output> <t>)                   the sequence state in which the output is 1
+
+  Do not write any other transitions. The planner derives them.
+
+D. Wrap-around counter with an enable.
+
+  (wrap_counter <module>)
+  (count_output <module> <p>)                  the output that holds the count; give its (port_width ...)
+  (enable_of <module> <p>)                     the input that enables counting
+  (count_min <module> nN) (count_max <module> nN)     the first and last count values
+
+E. Triangle-wave generator: an output that steps up to a maximum and back down to a minimum, steered by a direction register.
+
+  (triangle_generator <module>)
+  (wave_output <module> <p>)                   the output; give its (port_width ...)
+  (direction_register <module> <r>)            the internal register that holds the direction
+  (register_width <r> bitsN)
+  (rising_code <module> nN) (falling_code <module> nN)     the register's value while rising, and while falling
+  (count_min <module> nN) (count_max <module> nN)          the lowest and highest output values
+
+RULES
+
+  - Use only the facts listed above, spelled exactly as shown.
+  - Declare every object you use, with its type, and nothing else.
+  - Do not write (state_code ...) or (state_width ...), and do not declare values or widths for state codes: those are added automatically.

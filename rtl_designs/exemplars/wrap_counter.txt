@@ -1,0 +1,11 @@
+Implement a decade counter.
+
+Module name: dec_count
+Input ports:
+    clk: clock
+    rst: reset, active high, asynchronous
+    en: count enable
+Output ports:
+    count: 4-bit count value
+
+The counter counts from 0 to 9 and then wraps back to 0. It advances by one on each rising clock edge while en is 1 and holds its value while en is 0. Reset sets it to 0.

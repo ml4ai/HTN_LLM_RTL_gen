@@ -1,0 +1,36 @@
+(define (problem ramp)
+  (:domain rtl_fsm)
+  (:objects
+    ramp - module
+    clock rst_n level - port
+    dir - register
+    bits1 bits4 - width
+    n0 n1 n15 - value
+  )
+  (:htn
+    :parameters ()
+    :subtasks (and (implement_module ramp))
+  )
+  (:init
+    (first_port ramp clock)
+    (next_port clock rst_n)
+    (next_port rst_n level)
+    (last_port ramp level)
+    (input_port clock)
+    (input_port rst_n)
+    (output_port level)
+    (port_width level bits4)
+    (clock_of ramp clock)
+    (reset_of ramp rst_n)
+    (reset_async rst_n)
+    (reset_polarity rst_n active_low)
+    (triangle_generator ramp)
+    (wave_output ramp level)
+    (direction_register ramp dir)
+    (register_width dir bits1)
+    (rising_code ramp n0)
+    (falling_code ramp n1)
+    (count_min ramp n0)
+    (count_max ramp n15)
+  )
+)
