@@ -1,7 +1,9 @@
 """Plan the pilot problems (pilot/pilot.json), save each plan and its task tree,
 and check that the plan is a complete set of instructions.
 
-For each problem this runs the planner, writes
+For each problem this compiles the problem file (problem_compiler.py: what
+can be computed about it is, so the file itself holds only what the
+description says), runs the planner, writes
 
     pilot/<bench>/<pid>.plan.txt    the plan, one action per line
     pilot/<bench>/<pid>.tree.json   the task tree behind it (the planner's -g)
@@ -32,16 +34,23 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "eval"))
 
 import plan_to_verilog  # noqa: E402
+import problem_compiler  # noqa: E402
 import rtl_eval  # noqa: E402
 
 
 def plan(manifest, problem, tree_path):
-    """Run the planner; return its output, or exit with its error."""
+    """Compile the problem (problem_compiler.py) and run the planner on it;
+    return the planner's output, or exit with its error."""
+    with open(problem) as f:
+        compiled, _, _ = problem_compiler.compile_text(f.read())
     p = manifest["planner"]
+    with tempfile.NamedTemporaryFile("w", suffix=".hddl", delete=False) as f:
+        f.write(compiled)
     cmd = [os.path.join(ROOT, p["binary"]), "-D", os.path.join(ROOT, manifest["domain"]),
-           "-P", problem, "-F", p["score_fun"], "-T", str(p["time_limit_ms"]),
+           "-P", f.name, "-F", p["score_fun"], "-T", str(p["time_limit_ms"]),
            "-r", str(p["simulations"]), "-s", str(p["seed"]), "-g", "-f", tree_path]
     run = subprocess.run(cmd, capture_output=True, text=True)
+    os.unlink(f.name)
     if run.returncode != 0:
         errors = [line for line in run.stderr.splitlines() if not line.startswith("warning:")]
         sys.exit(f"planner failed on {problem}:\n" + "\n".join(errors))

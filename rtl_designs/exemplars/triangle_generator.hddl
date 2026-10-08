@@ -4,8 +4,6 @@
     ramp - module
     clock rst_n level - port
     dir - register
-    bits1 bits4 - width
-    n0 n1 n15 - value
   )
   (:htn
     :parameters ()

@@ -1,78 +1,220 @@
 {"title": "fsm_hdlc (domain rtl_fsm)",
  "roots": [
   {"token": "(__fsm_hdlc__)", "action": false, "method": "", "children": [
-    {"token": "(implement_module TopModule)", "action": false, "method": "m_implement_run_classifier", "children": [
+    {"token": "(implement_module TopModule)", "action": false, "method": "m_implement_sequence_recogniser", "children": [
       {"token": "(analyze_choose_moore_fsm TopModule)", "action": true, "method": "", "step": 1, "children": []},
-      {"token": "(design_run_classifier TopModule)", "action": false, "method": "m_design_run_classifier", "children": [
-        {"token": "(classify_from TopModule S0)", "action": false, "method": "m_classify_more", "children": [
-          {"token": "(classify_on_zero TopModule S0)", "action": false, "method": "m_on_zero_restart", "children": [
-            {"token": "(analyze_restart_on_zero TopModule S0 S0)", "action": true, "method": "", "step": 2, "children": []}
+      {"token": "(design_recogniser TopModule)", "action": false, "method": "m_design_recogniser", "children": [
+        {"token": "(recognise_from TopModule S_START)", "action": false, "method": "m_recognise_more", "children": [
+          {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_extend", "children": [
+            {"token": "(analyze_extend_sequence TopModule S_START zero S_0)", "action": true, "method": "", "step": 2, "children": []}
           ]},
-          {"token": "(classify_on_one TopModule S0)", "action": false, "method": "m_on_one_count", "children": [
-            {"token": "(analyze_count_one TopModule S0 S1)", "action": true, "method": "", "step": 3, "children": []}
+          {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_stay", "children": [
+            {"token": "(analyze_stay_at_start TopModule S_START one)", "action": true, "method": "", "step": 3, "children": []}
           ]},
-          {"token": "(classify_from TopModule S1)", "action": false, "method": "m_classify_more", "children": [
-            {"token": "(classify_on_zero TopModule S1)", "action": false, "method": "m_on_zero_restart", "children": [
-              {"token": "(analyze_restart_on_zero TopModule S1 S0)", "action": true, "method": "", "step": 4, "children": []}
-            ]},
-            {"token": "(classify_on_one TopModule S1)", "action": false, "method": "m_on_one_count", "children": [
-              {"token": "(analyze_count_one TopModule S1 S2)", "action": true, "method": "", "step": 5, "children": []}
-            ]},
-            {"token": "(classify_from TopModule S2)", "action": false, "method": "m_classify_more", "children": [
-              {"token": "(classify_on_zero TopModule S2)", "action": false, "method": "m_on_zero_restart", "children": [
-                {"token": "(analyze_restart_on_zero TopModule S2 S0)", "action": true, "method": "", "step": 6, "children": []}
+          {"token": "(recognise_from TopModule S_0)", "action": false, "method": "m_recognise_more", "children": [
+            {"token": "(derive_sequence_next TopModule S_0 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+              {"token": "(derive_sequence_fallback TopModule S_0)", "action": false, "method": "m_sequence_fallback_first", "children": [
+                {"token": "(analyze_sequence_fallback_first TopModule S_0 S_START)", "action": true, "method": "", "step": 4, "children": []}
               ]},
-              {"token": "(classify_on_one TopModule S2)", "action": false, "method": "m_on_one_count", "children": [
-                {"token": "(analyze_count_one TopModule S2 S3)", "action": true, "method": "", "step": 7, "children": []}
+              {"token": "(derive_via_sequence_fallback TopModule S_0 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                {"token": "(conclude_fall_back TopModule S_0 zero S_START)", "action": false, "method": "m_conclude_fall_back", "children": [
+                  {"token": "(analyze_fall_back TopModule S_0 zero S_START S_0)", "action": true, "method": "", "step": 5, "children": []}
+                ]},
+                {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+              ]}
+            ]},
+            {"token": "(derive_sequence_next TopModule S_0 one)", "action": false, "method": "m_sequence_next_extend", "children": [
+              {"token": "(analyze_extend_sequence TopModule S_0 one S_01)", "action": true, "method": "", "step": 6, "children": []}
+            ]},
+            {"token": "(recognise_from TopModule S_01)", "action": false, "method": "m_recognise_more", "children": [
+              {"token": "(derive_sequence_next TopModule S_01 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                {"token": "(derive_sequence_fallback TopModule S_01)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                  {"token": "(derive_sequence_fallback_step TopModule S_01 S_0 one)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                    {"token": "(conclude_sequence_fallback TopModule S_01 S_0 one S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                      {"token": "(analyze_sequence_fallback_extend TopModule S_01 S_0 one S_START S_START)", "action": true, "method": "", "step": 7, "children": []}
+                    ]},
+                    {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                  ]},
+                  {"token": "(derive_sequence_fallback TopModule S_0)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                ]},
+                {"token": "(derive_via_sequence_fallback TopModule S_01 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                  {"token": "(conclude_fall_back TopModule S_01 zero S_START)", "action": false, "method": "m_conclude_fall_back", "children": [
+                    {"token": "(analyze_fall_back TopModule S_01 zero S_START S_0)", "action": true, "method": "", "step": 8, "children": []}
+                  ]},
+                  {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                ]}
               ]},
-              {"token": "(classify_from TopModule S3)", "action": false, "method": "m_classify_more", "children": [
-                {"token": "(classify_on_zero TopModule S3)", "action": false, "method": "m_on_zero_restart", "children": [
-                  {"token": "(analyze_restart_on_zero TopModule S3 S0)", "action": true, "method": "", "step": 8, "children": []}
-                ]},
-                {"token": "(classify_on_one TopModule S3)", "action": false, "method": "m_on_one_count", "children": [
-                  {"token": "(analyze_count_one TopModule S3 S4)", "action": true, "method": "", "step": 9, "children": []}
-                ]},
-                {"token": "(classify_from TopModule S4)", "action": false, "method": "m_classify_more", "children": [
-                  {"token": "(classify_on_zero TopModule S4)", "action": false, "method": "m_on_zero_restart", "children": [
-                    {"token": "(analyze_restart_on_zero TopModule S4 S0)", "action": true, "method": "", "step": 10, "children": []}
-                  ]},
-                  {"token": "(classify_on_one TopModule S4)", "action": false, "method": "m_on_one_count", "children": [
-                    {"token": "(analyze_count_one TopModule S4 S5)", "action": true, "method": "", "step": 11, "children": []}
-                  ]},
-                  {"token": "(classify_from TopModule S5)", "action": false, "method": "m_classify_more", "children": [
-                    {"token": "(classify_on_zero TopModule S5)", "action": false, "method": "m_on_zero_rule", "children": [
-                      {"token": "(analyze_complete_on_zero TopModule S5 SDISC)", "action": true, "method": "", "step": 12, "children": []}
-                    ]},
-                    {"token": "(classify_on_one TopModule S5)", "action": false, "method": "m_on_one_count", "children": [
-                      {"token": "(analyze_count_one TopModule S5 S6)", "action": true, "method": "", "step": 13, "children": []}
-                    ]},
-                    {"token": "(classify_from TopModule S6)", "action": false, "method": "m_classify_more", "children": [
-                      {"token": "(classify_on_zero TopModule S6)", "action": false, "method": "m_on_zero_rule", "children": [
-                        {"token": "(analyze_complete_on_zero TopModule S6 SFLAG)", "action": true, "method": "", "step": 14, "children": []}
+              {"token": "(derive_sequence_next TopModule S_01 one)", "action": false, "method": "m_sequence_next_extend", "children": [
+                {"token": "(analyze_extend_sequence TopModule S_01 one S_011)", "action": true, "method": "", "step": 9, "children": []}
+              ]},
+              {"token": "(recognise_from TopModule S_011)", "action": false, "method": "m_recognise_more", "children": [
+                {"token": "(derive_sequence_next TopModule S_011 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                  {"token": "(derive_sequence_fallback TopModule S_011)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                    {"token": "(derive_sequence_fallback_step TopModule S_011 S_01 one)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                      {"token": "(conclude_sequence_fallback TopModule S_011 S_01 one S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                        {"token": "(analyze_sequence_fallback_extend TopModule S_011 S_01 one S_START S_START)", "action": true, "method": "", "step": 10, "children": []}
                       ]},
-                      {"token": "(classify_on_one TopModule S6)", "action": false, "method": "m_on_one_rule", "children": [
-                        {"token": "(analyze_complete_on_one TopModule S6 SERR)", "action": true, "method": "", "step": 15, "children": []}
+                      {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                    ]},
+                    {"token": "(derive_sequence_fallback TopModule S_01)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                  ]},
+                  {"token": "(derive_via_sequence_fallback TopModule S_011 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                    {"token": "(conclude_fall_back TopModule S_011 zero S_START)", "action": false, "method": "m_conclude_fall_back", "children": [
+                      {"token": "(analyze_fall_back TopModule S_011 zero S_START S_0)", "action": true, "method": "", "step": 11, "children": []}
+                    ]},
+                    {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                  ]}
+                ]},
+                {"token": "(derive_sequence_next TopModule S_011 one)", "action": false, "method": "m_sequence_next_extend", "children": [
+                  {"token": "(analyze_extend_sequence TopModule S_011 one S_0111)", "action": true, "method": "", "step": 12, "children": []}
+                ]},
+                {"token": "(recognise_from TopModule S_0111)", "action": false, "method": "m_recognise_more", "children": [
+                  {"token": "(derive_sequence_next TopModule S_0111 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                    {"token": "(derive_sequence_fallback TopModule S_0111)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                      {"token": "(derive_sequence_fallback_step TopModule S_0111 S_011 one)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                        {"token": "(conclude_sequence_fallback TopModule S_0111 S_011 one S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                          {"token": "(analyze_sequence_fallback_extend TopModule S_0111 S_011 one S_START S_START)", "action": true, "method": "", "step": 13, "children": []}
+                        ]},
+                        {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_known", "children": []}
                       ]},
-                      {"token": "(classify_from TopModule SERR)", "action": false, "method": "m_classify_more", "children": [
-                        {"token": "(classify_on_zero TopModule SERR)", "action": false, "method": "m_on_zero_restart", "children": [
-                          {"token": "(analyze_restart_on_zero TopModule SERR S0)", "action": true, "method": "", "step": 16, "children": []}
-                        ]},
-                        {"token": "(classify_on_one TopModule SERR)", "action": false, "method": "m_on_one_hold", "children": [
-                          {"token": "(analyze_hold_on_one TopModule SERR)", "action": true, "method": "", "step": 17, "children": []}
-                        ]},
-                        {"token": "(classify_from TopModule SDISC)", "action": false, "method": "m_classify_more", "children": [
-                          {"token": "(classify_on_zero TopModule SDISC)", "action": false, "method": "m_on_zero_restart", "children": [
-                            {"token": "(analyze_restart_on_zero TopModule SDISC S0)", "action": true, "method": "", "step": 18, "children": []}
+                      {"token": "(derive_sequence_fallback TopModule S_011)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                    ]},
+                    {"token": "(derive_via_sequence_fallback TopModule S_0111 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                      {"token": "(conclude_fall_back TopModule S_0111 zero S_START)", "action": false, "method": "m_conclude_fall_back", "children": [
+                        {"token": "(analyze_fall_back TopModule S_0111 zero S_START S_0)", "action": true, "method": "", "step": 14, "children": []}
+                      ]},
+                      {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                    ]}
+                  ]},
+                  {"token": "(derive_sequence_next TopModule S_0111 one)", "action": false, "method": "m_sequence_next_extend", "children": [
+                    {"token": "(analyze_extend_sequence TopModule S_0111 one S_01111)", "action": true, "method": "", "step": 15, "children": []}
+                  ]},
+                  {"token": "(recognise_from TopModule S_01111)", "action": false, "method": "m_recognise_more", "children": [
+                    {"token": "(derive_sequence_next TopModule S_01111 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                      {"token": "(derive_sequence_fallback TopModule S_01111)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                        {"token": "(derive_sequence_fallback_step TopModule S_01111 S_0111 one)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                          {"token": "(conclude_sequence_fallback TopModule S_01111 S_0111 one S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                            {"token": "(analyze_sequence_fallback_extend TopModule S_01111 S_0111 one S_START S_START)", "action": true, "method": "", "step": 16, "children": []}
                           ]},
-                          {"token": "(classify_on_one TopModule SDISC)", "action": false, "method": "m_on_one_resume", "children": [
-                            {"token": "(analyze_resume_after_zero TopModule SDISC S0 S1)", "action": true, "method": "", "step": 19, "children": []}
-                          ]},
-                          {"token": "(classify_from TopModule SFLAG)", "action": false, "method": "m_classify_last", "children": [
-                            {"token": "(classify_on_zero TopModule SFLAG)", "action": false, "method": "m_on_zero_restart", "children": [
-                              {"token": "(analyze_restart_on_zero TopModule SFLAG S0)", "action": true, "method": "", "step": 20, "children": []}
+                          {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                        ]},
+                        {"token": "(derive_sequence_fallback TopModule S_0111)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                      ]},
+                      {"token": "(derive_via_sequence_fallback TopModule S_01111 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                        {"token": "(conclude_fall_back TopModule S_01111 zero S_START)", "action": false, "method": "m_conclude_fall_back", "children": [
+                          {"token": "(analyze_fall_back TopModule S_01111 zero S_START S_0)", "action": true, "method": "", "step": 17, "children": []}
+                        ]},
+                        {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                      ]}
+                    ]},
+                    {"token": "(derive_sequence_next TopModule S_01111 one)", "action": false, "method": "m_sequence_next_extend", "children": [
+                      {"token": "(analyze_extend_sequence TopModule S_01111 one S_011111)", "action": true, "method": "", "step": 18, "children": []}
+                    ]},
+                    {"token": "(recognise_from TopModule S_011111)", "action": false, "method": "m_recognise_more", "children": [
+                      {"token": "(derive_sequence_next TopModule S_011111 zero)", "action": false, "method": "m_sequence_next_extend", "children": [
+                        {"token": "(analyze_extend_sequence TopModule S_011111 zero S_0111110)", "action": true, "method": "", "step": 19, "children": []}
+                      ]},
+                      {"token": "(derive_sequence_next TopModule S_011111 one)", "action": false, "method": "m_sequence_next_extend", "children": [
+                        {"token": "(analyze_extend_sequence TopModule S_011111 one S_0111111)", "action": true, "method": "", "step": 20, "children": []}
+                      ]},
+                      {"token": "(recognise_from TopModule S_0111110)", "action": false, "method": "m_recognise_more", "children": [
+                        {"token": "(derive_sequence_next TopModule S_0111110 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                          {"token": "(derive_sequence_fallback TopModule S_0111110)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                            {"token": "(derive_sequence_fallback TopModule S_011111)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                              {"token": "(derive_sequence_fallback_step TopModule S_011111 S_01111 one)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                                {"token": "(conclude_sequence_fallback TopModule S_011111 S_01111 one S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                                  {"token": "(analyze_sequence_fallback_extend TopModule S_011111 S_01111 one S_START S_START)", "action": true, "method": "", "step": 21, "children": []}
+                                ]},
+                                {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                              ]},
+                              {"token": "(derive_sequence_fallback TopModule S_01111)", "action": false, "method": "m_sequence_fallback_known", "children": []}
                             ]},
-                            {"token": "(classify_on_one TopModule SFLAG)", "action": false, "method": "m_on_one_resume", "children": [
-                              {"token": "(analyze_resume_after_zero TopModule SFLAG S0 S1)", "action": true, "method": "", "step": 21, "children": []}
+                            {"token": "(derive_sequence_fallback_step TopModule S_0111110 S_011111 zero)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                              {"token": "(conclude_sequence_fallback TopModule S_0111110 S_011111 zero S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                                {"token": "(analyze_sequence_fallback_extend TopModule S_0111110 S_011111 zero S_START S_0)", "action": true, "method": "", "step": 22, "children": []}
+                              ]},
+                              {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                            ]}
+                          ]},
+                          {"token": "(derive_via_sequence_fallback TopModule S_0111110 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                            {"token": "(conclude_fall_back TopModule S_0111110 zero S_0)", "action": false, "method": "m_conclude_fall_back", "children": [
+                              {"token": "(analyze_fall_back TopModule S_0111110 zero S_0 S_0)", "action": true, "method": "", "step": 23, "children": []}
+                            ]},
+                            {"token": "(derive_sequence_next TopModule S_0 zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                          ]}
+                        ]},
+                        {"token": "(derive_sequence_next TopModule S_0111110 one)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                          {"token": "(derive_via_sequence_fallback TopModule S_0111110 one)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                            {"token": "(conclude_fall_back TopModule S_0111110 one S_0)", "action": false, "method": "m_conclude_fall_back", "children": [
+                              {"token": "(analyze_fall_back TopModule S_0111110 one S_0 S_01)", "action": true, "method": "", "step": 24, "children": []}
+                            ]},
+                            {"token": "(derive_sequence_next TopModule S_0 one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                          ]},
+                          {"token": "(derive_sequence_fallback TopModule S_0111110)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                        ]},
+                        {"token": "(recognise_from TopModule S_0111111)", "action": false, "method": "m_recognise_more", "children": [
+                          {"token": "(derive_sequence_next TopModule S_0111111 zero)", "action": false, "method": "m_sequence_next_extend", "children": [
+                            {"token": "(analyze_extend_sequence TopModule S_0111111 zero S_01111110)", "action": true, "method": "", "step": 25, "children": []}
+                          ]},
+                          {"token": "(derive_sequence_next TopModule S_0111111 one)", "action": false, "method": "m_sequence_next_extend", "children": [
+                            {"token": "(analyze_extend_sequence TopModule S_0111111 one S_01111111)", "action": true, "method": "", "step": 26, "children": []}
+                          ]},
+                          {"token": "(recognise_from TopModule S_01111110)", "action": false, "method": "m_recognise_more", "children": [
+                            {"token": "(derive_sequence_next TopModule S_01111110 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                              {"token": "(derive_sequence_fallback TopModule S_01111110)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                                {"token": "(derive_sequence_fallback TopModule S_0111111)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                                  {"token": "(derive_sequence_fallback_step TopModule S_0111111 S_011111 one)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                                    {"token": "(conclude_sequence_fallback TopModule S_0111111 S_011111 one S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                                      {"token": "(analyze_sequence_fallback_extend TopModule S_0111111 S_011111 one S_START S_START)", "action": true, "method": "", "step": 27, "children": []}
+                                    ]},
+                                    {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                                  ]},
+                                  {"token": "(derive_sequence_fallback TopModule S_011111)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                                ]},
+                                {"token": "(derive_sequence_fallback_step TopModule S_01111110 S_0111111 zero)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                                  {"token": "(conclude_sequence_fallback TopModule S_01111110 S_0111111 zero S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                                    {"token": "(analyze_sequence_fallback_extend TopModule S_01111110 S_0111111 zero S_START S_0)", "action": true, "method": "", "step": 28, "children": []}
+                                  ]},
+                                  {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                                ]}
+                              ]},
+                              {"token": "(derive_via_sequence_fallback TopModule S_01111110 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                                {"token": "(conclude_fall_back TopModule S_01111110 zero S_0)", "action": false, "method": "m_conclude_fall_back", "children": [
+                                  {"token": "(analyze_fall_back TopModule S_01111110 zero S_0 S_0)", "action": true, "method": "", "step": 29, "children": []}
+                                ]},
+                                {"token": "(derive_sequence_next TopModule S_0 zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                              ]}
+                            ]},
+                            {"token": "(derive_sequence_next TopModule S_01111110 one)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                              {"token": "(derive_via_sequence_fallback TopModule S_01111110 one)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                                {"token": "(conclude_fall_back TopModule S_01111110 one S_0)", "action": false, "method": "m_conclude_fall_back", "children": [
+                                  {"token": "(analyze_fall_back TopModule S_01111110 one S_0 S_01)", "action": true, "method": "", "step": 30, "children": []}
+                                ]},
+                                {"token": "(derive_sequence_next TopModule S_0 one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                              ]},
+                              {"token": "(derive_sequence_fallback TopModule S_01111110)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                            ]},
+                            {"token": "(recognise_from TopModule S_01111111)", "action": false, "method": "m_recognise_last", "children": [
+                              {"token": "(derive_sequence_next TopModule S_01111111 zero)", "action": false, "method": "m_sequence_next_fallback", "children": [
+                                {"token": "(derive_sequence_fallback TopModule S_01111111)", "action": false, "method": "m_sequence_fallback_extend", "children": [
+                                  {"token": "(derive_sequence_fallback_step TopModule S_01111111 S_0111111 one)", "action": false, "method": "m_sequence_fallback_step", "children": [
+                                    {"token": "(conclude_sequence_fallback TopModule S_01111111 S_0111111 one S_START)", "action": false, "method": "m_conclude_sequence_fallback", "children": [
+                                      {"token": "(analyze_sequence_fallback_extend TopModule S_01111111 S_0111111 one S_START S_START)", "action": true, "method": "", "step": 31, "children": []}
+                                    ]},
+                                    {"token": "(derive_sequence_next TopModule S_START one)", "action": false, "method": "m_sequence_next_known", "children": []}
+                                  ]},
+                                  {"token": "(derive_sequence_fallback TopModule S_0111111)", "action": false, "method": "m_sequence_fallback_known", "children": []}
+                                ]},
+                                {"token": "(derive_via_sequence_fallback TopModule S_01111111 zero)", "action": false, "method": "m_via_sequence_fallback", "children": [
+                                  {"token": "(conclude_fall_back TopModule S_01111111 zero S_START)", "action": false, "method": "m_conclude_fall_back", "children": [
+                                    {"token": "(analyze_fall_back TopModule S_01111111 zero S_START S_0)", "action": true, "method": "", "step": 32, "children": []}
+                                  ]},
+                                  {"token": "(derive_sequence_next TopModule S_START zero)", "action": false, "method": "m_sequence_next_known", "children": []}
+                                ]}
+                              ]},
+                              {"token": "(derive_sequence_next TopModule S_01111111 one)", "action": false, "method": "m_sequence_next_hold", "children": [
+                                {"token": "(analyze_keep_while TopModule S_01111111 one)", "action": true, "method": "", "step": 33, "children": []}
+                              ]}
                             ]}
                           ]}
                         ]}
@@ -86,30 +228,30 @@
         ]}
       ]},
       {"token": "(write_interface TopModule)", "action": false, "method": "m_write_interface", "children": [
-        {"token": "(write_module_header TopModule)", "action": true, "method": "", "step": 22, "children": []},
+        {"token": "(write_module_header TopModule)", "action": true, "method": "", "step": 34, "children": []},
         {"token": "(declare_ports_from TopModule clk)", "action": false, "method": "m_declare_ports_more", "children": [
           {"token": "(declare_port TopModule clk)", "action": false, "method": "m_declare_input", "children": [
-            {"token": "(write_input_decl TopModule clk)", "action": true, "method": "", "step": 23, "children": []}
+            {"token": "(write_input_decl TopModule clk)", "action": true, "method": "", "step": 35, "children": []}
           ]},
           {"token": "(declare_ports_from TopModule reset)", "action": false, "method": "m_declare_ports_more", "children": [
             {"token": "(declare_port TopModule reset)", "action": false, "method": "m_declare_input", "children": [
-              {"token": "(write_input_decl TopModule reset)", "action": true, "method": "", "step": 24, "children": []}
+              {"token": "(write_input_decl TopModule reset)", "action": true, "method": "", "step": 36, "children": []}
             ]},
             {"token": "(declare_ports_from TopModule in)", "action": false, "method": "m_declare_ports_more", "children": [
               {"token": "(declare_port TopModule in)", "action": false, "method": "m_declare_input", "children": [
-                {"token": "(write_input_decl TopModule in)", "action": true, "method": "", "step": 25, "children": []}
+                {"token": "(write_input_decl TopModule in)", "action": true, "method": "", "step": 37, "children": []}
               ]},
               {"token": "(declare_ports_from TopModule disc)", "action": false, "method": "m_declare_ports_more", "children": [
                 {"token": "(declare_port TopModule disc)", "action": false, "method": "m_declare_output_wire", "children": [
-                  {"token": "(write_output_decl TopModule disc)", "action": true, "method": "", "step": 26, "children": []}
+                  {"token": "(write_output_decl TopModule disc)", "action": true, "method": "", "step": 38, "children": []}
                 ]},
                 {"token": "(declare_ports_from TopModule flag)", "action": false, "method": "m_declare_ports_more", "children": [
                   {"token": "(declare_port TopModule flag)", "action": false, "method": "m_declare_output_wire", "children": [
-                    {"token": "(write_output_decl TopModule flag)", "action": true, "method": "", "step": 27, "children": []}
+                    {"token": "(write_output_decl TopModule flag)", "action": true, "method": "", "step": 39, "children": []}
                   ]},
                   {"token": "(declare_ports_from TopModule err)", "action": false, "method": "m_declare_ports_last", "children": [
                     {"token": "(declare_port TopModule err)", "action": false, "method": "m_declare_output_wire", "children": [
-                      {"token": "(write_output_decl TopModule err)", "action": true, "method": "", "step": 28, "children": []}
+                      {"token": "(write_output_decl TopModule err)", "action": true, "method": "", "step": 40, "children": []}
                     ]}
                   ]}
                 ]}
@@ -119,27 +261,30 @@
         ]}
       ]},
       {"token": "(write_state_declarations TopModule)", "action": false, "method": "m_write_state_declarations_listed", "children": [
-        {"token": "(analyze_choose_state_encoding TopModule S0 bits4)", "action": true, "method": "", "step": 29, "children": []},
-        {"token": "(declare_states_from TopModule S0)", "action": false, "method": "m_declare_states_listed_more", "children": [
-          {"token": "(write_state_param TopModule S0 n0 bits4)", "action": true, "method": "", "step": 30, "children": []},
-          {"token": "(declare_states_from TopModule S1)", "action": false, "method": "m_declare_states_listed_more", "children": [
-            {"token": "(write_state_param TopModule S1 n1 bits4)", "action": true, "method": "", "step": 31, "children": []},
-            {"token": "(declare_states_from TopModule S2)", "action": false, "method": "m_declare_states_listed_more", "children": [
-              {"token": "(write_state_param TopModule S2 n2 bits4)", "action": true, "method": "", "step": 32, "children": []},
-              {"token": "(declare_states_from TopModule S3)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                {"token": "(write_state_param TopModule S3 n3 bits4)", "action": true, "method": "", "step": 33, "children": []},
-                {"token": "(declare_states_from TopModule S4)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                  {"token": "(write_state_param TopModule S4 n4 bits4)", "action": true, "method": "", "step": 34, "children": []},
-                  {"token": "(declare_states_from TopModule S5)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                    {"token": "(write_state_param TopModule S5 n5 bits4)", "action": true, "method": "", "step": 35, "children": []},
-                    {"token": "(declare_states_from TopModule S6)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                      {"token": "(write_state_param TopModule S6 n6 bits4)", "action": true, "method": "", "step": 36, "children": []},
-                      {"token": "(declare_states_from TopModule SERR)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                        {"token": "(write_state_param TopModule SERR n7 bits4)", "action": true, "method": "", "step": 37, "children": []},
-                        {"token": "(declare_states_from TopModule SDISC)", "action": false, "method": "m_declare_states_listed_more", "children": [
-                          {"token": "(write_state_param TopModule SDISC n8 bits4)", "action": true, "method": "", "step": 38, "children": []},
-                          {"token": "(declare_states_from TopModule SFLAG)", "action": false, "method": "m_declare_states_listed_last", "children": [
-                            {"token": "(write_state_param TopModule SFLAG n9 bits4)", "action": true, "method": "", "step": 39, "children": []}
+        {"token": "(analyze_choose_state_encoding TopModule S_START bits4)", "action": true, "method": "", "step": 41, "children": []},
+        {"token": "(declare_states_from TopModule S_START)", "action": false, "method": "m_declare_states_listed_more", "children": [
+          {"token": "(write_state_param TopModule S_START n0 bits4)", "action": true, "method": "", "step": 42, "children": []},
+          {"token": "(declare_states_from TopModule S_0)", "action": false, "method": "m_declare_states_listed_more", "children": [
+            {"token": "(write_state_param TopModule S_0 n1 bits4)", "action": true, "method": "", "step": 43, "children": []},
+            {"token": "(declare_states_from TopModule S_01)", "action": false, "method": "m_declare_states_listed_more", "children": [
+              {"token": "(write_state_param TopModule S_01 n2 bits4)", "action": true, "method": "", "step": 44, "children": []},
+              {"token": "(declare_states_from TopModule S_011)", "action": false, "method": "m_declare_states_listed_more", "children": [
+                {"token": "(write_state_param TopModule S_011 n3 bits4)", "action": true, "method": "", "step": 45, "children": []},
+                {"token": "(declare_states_from TopModule S_0111)", "action": false, "method": "m_declare_states_listed_more", "children": [
+                  {"token": "(write_state_param TopModule S_0111 n4 bits4)", "action": true, "method": "", "step": 46, "children": []},
+                  {"token": "(declare_states_from TopModule S_01111)", "action": false, "method": "m_declare_states_listed_more", "children": [
+                    {"token": "(write_state_param TopModule S_01111 n5 bits4)", "action": true, "method": "", "step": 47, "children": []},
+                    {"token": "(declare_states_from TopModule S_011111)", "action": false, "method": "m_declare_states_listed_more", "children": [
+                      {"token": "(write_state_param TopModule S_011111 n6 bits4)", "action": true, "method": "", "step": 48, "children": []},
+                      {"token": "(declare_states_from TopModule S_0111110)", "action": false, "method": "m_declare_states_listed_more", "children": [
+                        {"token": "(write_state_param TopModule S_0111110 n7 bits4)", "action": true, "method": "", "step": 49, "children": []},
+                        {"token": "(declare_states_from TopModule S_0111111)", "action": false, "method": "m_declare_states_listed_more", "children": [
+                          {"token": "(write_state_param TopModule S_0111111 n8 bits4)", "action": true, "method": "", "step": 50, "children": []},
+                          {"token": "(declare_states_from TopModule S_01111110)", "action": false, "method": "m_declare_states_listed_more", "children": [
+                            {"token": "(write_state_param TopModule S_01111110 n9 bits4)", "action": true, "method": "", "step": 51, "children": []},
+                            {"token": "(declare_states_from TopModule S_01111111)", "action": false, "method": "m_declare_states_listed_last", "children": [
+                              {"token": "(write_state_param TopModule S_01111111 n10 bits4)", "action": true, "method": "", "step": 52, "children": []}
+                            ]}
                           ]}
                         ]}
                       ]}
@@ -150,33 +295,36 @@
             ]}
           ]}
         ]},
-        {"token": "(write_state_regs TopModule bits4)", "action": true, "method": "", "step": 40, "children": []}
+        {"token": "(write_state_regs TopModule bits4)", "action": true, "method": "", "step": 53, "children": []}
       ]},
       {"token": "(write_state_register TopModule)", "action": false, "method": "m_state_register_sync", "children": [
-        {"token": "(write_state_register_sync TopModule clk reset active_high S0)", "action": true, "method": "", "step": 41, "children": []}
+        {"token": "(write_state_register_sync TopModule clk reset active_high S_0)", "action": true, "method": "", "step": 54, "children": []}
       ]},
       {"token": "(write_next_state_logic TopModule)", "action": false, "method": "m_write_next_state_logic_listed", "children": [
-        {"token": "(write_next_state_open TopModule)", "action": true, "method": "", "step": 42, "children": []},
-        {"token": "(write_state_cases_from TopModule S0)", "action": false, "method": "m_state_cases_listed_more", "children": [
-          {"token": "(write_state_case TopModule S0 in S0 S1)", "action": true, "method": "", "step": 43, "children": []},
-          {"token": "(write_state_cases_from TopModule S1)", "action": false, "method": "m_state_cases_listed_more", "children": [
-            {"token": "(write_state_case TopModule S1 in S0 S2)", "action": true, "method": "", "step": 44, "children": []},
-            {"token": "(write_state_cases_from TopModule S2)", "action": false, "method": "m_state_cases_listed_more", "children": [
-              {"token": "(write_state_case TopModule S2 in S0 S3)", "action": true, "method": "", "step": 45, "children": []},
-              {"token": "(write_state_cases_from TopModule S3)", "action": false, "method": "m_state_cases_listed_more", "children": [
-                {"token": "(write_state_case TopModule S3 in S0 S4)", "action": true, "method": "", "step": 46, "children": []},
-                {"token": "(write_state_cases_from TopModule S4)", "action": false, "method": "m_state_cases_listed_more", "children": [
-                  {"token": "(write_state_case TopModule S4 in S0 S5)", "action": true, "method": "", "step": 47, "children": []},
-                  {"token": "(write_state_cases_from TopModule S5)", "action": false, "method": "m_state_cases_listed_more", "children": [
-                    {"token": "(write_state_case TopModule S5 in SDISC S6)", "action": true, "method": "", "step": 48, "children": []},
-                    {"token": "(write_state_cases_from TopModule S6)", "action": false, "method": "m_state_cases_listed_more", "children": [
-                      {"token": "(write_state_case TopModule S6 in SFLAG SERR)", "action": true, "method": "", "step": 49, "children": []},
-                      {"token": "(write_state_cases_from TopModule SERR)", "action": false, "method": "m_state_cases_listed_more", "children": [
-                        {"token": "(write_state_case TopModule SERR in S0 SERR)", "action": true, "method": "", "step": 50, "children": []},
-                        {"token": "(write_state_cases_from TopModule SDISC)", "action": false, "method": "m_state_cases_listed_more", "children": [
-                          {"token": "(write_state_case TopModule SDISC in S0 S1)", "action": true, "method": "", "step": 51, "children": []},
-                          {"token": "(write_state_cases_from TopModule SFLAG)", "action": false, "method": "m_state_cases_listed_last", "children": [
-                            {"token": "(write_state_case TopModule SFLAG in S0 S1)", "action": true, "method": "", "step": 52, "children": []}
+        {"token": "(write_next_state_open TopModule)", "action": true, "method": "", "step": 55, "children": []},
+        {"token": "(write_state_cases_from TopModule S_START)", "action": false, "method": "m_state_cases_listed_more", "children": [
+          {"token": "(write_state_case TopModule S_START in S_0 S_START)", "action": true, "method": "", "step": 56, "children": []},
+          {"token": "(write_state_cases_from TopModule S_0)", "action": false, "method": "m_state_cases_listed_more", "children": [
+            {"token": "(write_state_case TopModule S_0 in S_0 S_01)", "action": true, "method": "", "step": 57, "children": []},
+            {"token": "(write_state_cases_from TopModule S_01)", "action": false, "method": "m_state_cases_listed_more", "children": [
+              {"token": "(write_state_case TopModule S_01 in S_0 S_011)", "action": true, "method": "", "step": 58, "children": []},
+              {"token": "(write_state_cases_from TopModule S_011)", "action": false, "method": "m_state_cases_listed_more", "children": [
+                {"token": "(write_state_case TopModule S_011 in S_0 S_0111)", "action": true, "method": "", "step": 59, "children": []},
+                {"token": "(write_state_cases_from TopModule S_0111)", "action": false, "method": "m_state_cases_listed_more", "children": [
+                  {"token": "(write_state_case TopModule S_0111 in S_0 S_01111)", "action": true, "method": "", "step": 60, "children": []},
+                  {"token": "(write_state_cases_from TopModule S_01111)", "action": false, "method": "m_state_cases_listed_more", "children": [
+                    {"token": "(write_state_case TopModule S_01111 in S_0 S_011111)", "action": true, "method": "", "step": 61, "children": []},
+                    {"token": "(write_state_cases_from TopModule S_011111)", "action": false, "method": "m_state_cases_listed_more", "children": [
+                      {"token": "(write_state_case TopModule S_011111 in S_0111110 S_0111111)", "action": true, "method": "", "step": 62, "children": []},
+                      {"token": "(write_state_cases_from TopModule S_0111110)", "action": false, "method": "m_state_cases_listed_more", "children": [
+                        {"token": "(write_state_case TopModule S_0111110 in S_0 S_01)", "action": true, "method": "", "step": 63, "children": []},
+                        {"token": "(write_state_cases_from TopModule S_0111111)", "action": false, "method": "m_state_cases_listed_more", "children": [
+                          {"token": "(write_state_case TopModule S_0111111 in S_01111110 S_01111111)", "action": true, "method": "", "step": 64, "children": []},
+                          {"token": "(write_state_cases_from TopModule S_01111110)", "action": false, "method": "m_state_cases_listed_more", "children": [
+                            {"token": "(write_state_case TopModule S_01111110 in S_0 S_01)", "action": true, "method": "", "step": 65, "children": []},
+                            {"token": "(write_state_cases_from TopModule S_01111111)", "action": false, "method": "m_state_cases_listed_last", "children": [
+                              {"token": "(write_state_case TopModule S_01111111 in S_0 S_01111111)", "action": true, "method": "", "step": 66, "children": []}
+                            ]}
                           ]}
                         ]}
                       ]}
@@ -187,8 +335,8 @@
             ]}
           ]}
         ]},
-        {"token": "(write_next_state_default TopModule S0)", "action": true, "method": "", "step": 53, "children": []},
-        {"token": "(write_next_state_close TopModule)", "action": true, "method": "", "step": 54, "children": []}
+        {"token": "(write_next_state_default TopModule S_0)", "action": true, "method": "", "step": 67, "children": []},
+        {"token": "(write_next_state_close TopModule)", "action": true, "method": "", "step": 68, "children": []}
       ]},
       {"token": "(write_output_logic TopModule)", "action": false, "method": "m_write_moore_outputs", "children": [
         {"token": "(write_moore_outputs_from TopModule clk)", "action": false, "method": "m_moore_outputs_more", "children": [
@@ -196,15 +344,15 @@
             {"token": "(write_moore_outputs_from TopModule in)", "action": false, "method": "m_moore_outputs_more", "children": [
               {"token": "(write_moore_outputs_from TopModule disc)", "action": false, "method": "m_moore_outputs_more", "children": [
                 {"token": "(write_moore_output TopModule disc)", "action": false, "method": "m_moore_output_assign", "children": [
-                  {"token": "(write_moore_output_assign TopModule disc SDISC)", "action": true, "method": "", "step": 55, "children": []}
+                  {"token": "(write_moore_output_assign TopModule disc S_0111110)", "action": true, "method": "", "step": 69, "children": []}
                 ]},
                 {"token": "(write_moore_outputs_from TopModule flag)", "action": false, "method": "m_moore_outputs_more", "children": [
                   {"token": "(write_moore_output TopModule flag)", "action": false, "method": "m_moore_output_assign", "children": [
-                    {"token": "(write_moore_output_assign TopModule flag SFLAG)", "action": true, "method": "", "step": 56, "children": []}
+                    {"token": "(write_moore_output_assign TopModule flag S_01111110)", "action": true, "method": "", "step": 70, "children": []}
                   ]},
                   {"token": "(write_moore_outputs_from TopModule err)", "action": false, "method": "m_moore_outputs_last", "children": [
                     {"token": "(write_moore_output TopModule err)", "action": false, "method": "m_moore_output_assign", "children": [
-                      {"token": "(write_moore_output_assign TopModule err SERR)", "action": true, "method": "", "step": 57, "children": []}
+                      {"token": "(write_moore_output_assign TopModule err S_01111111)", "action": true, "method": "", "step": 71, "children": []}
                     ]}
                   ]}
                 ]}
@@ -216,7 +364,7 @@
           {"token": "(write_moore_output TopModule clk)", "action": false, "method": "m_moore_output_skip_input", "children": []}
         ]}
       ]},
-      {"token": "(write_module_end TopModule)", "action": true, "method": "", "step": 58, "children": []}
+      {"token": "(write_module_end TopModule)", "action": true, "method": "", "step": 72, "children": []}
     ]}
   ]}
 ]}

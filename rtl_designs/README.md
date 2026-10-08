@@ -80,7 +80,7 @@ plan helps an LLM write the code at all.
 | Mealy sequence detector | Every transition, from the pattern alone (above) |
 | Moore sequence detector | The same, plus an accepting state whose output is 1 |
 | Moore FSM from a state table or diagram | Nothing beyond reading the table; the plan is the code's structure |
-| Run classifier (HDLC framing) | Every transition, from the run of 1s and the rules that end one |
+| Sequence recogniser (HDLC framing) | Every transition, from the bit sequences alone. The problem file lists the sequences and their outputs; the compiler expands them into one state per distinct prefix; the planner derives where each state goes when its sequences break off (the single pattern's derivation, carried to several) |
 | Wrap-around counter with an enable | The wrap point |
 | Triangle-wave generator | Where the direction turns |
 

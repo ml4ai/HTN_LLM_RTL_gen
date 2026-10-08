@@ -3,7 +3,6 @@
   (:objects
     run_len - module
     clk reset bit_in pair long_run - port
-    R0 R1 R2 RLONG RPAIR - fsm_state
   )
   (:htn
     :parameters ()
@@ -25,22 +24,11 @@
     (reset_of run_len reset)
     (reset_polarity reset active_high)
     (data_input_of run_len bit_in)
-    (run_classifier run_len)
+    (sequence_recogniser run_len)
     (moore run_len)
-    (initial_state run_len R0)
-    (zero_run_state run_len R0)
-    (first_listed run_len R0)
-    (listed_after R0 R1)
-    (listed_after R1 R2)
-    (listed_after R2 RLONG)
-    (listed_after RLONG RPAIR)
-    (last_listed run_len RPAIR)
-    (ones_next R0 R1)
-    (ones_next R1 R2)
-    (zero_rule R2 RPAIR)
-    (one_rule R2 RLONG)
-    (holds_on_one RLONG)
-    (asserted_in pair RPAIR)
-    (asserted_in long_run RLONG)
+    (recognises run_len pair seq0110)
+    (recognises run_len long_run seq0111)
+    (keeps_while long_run one)
+    (reset_as_previous run_len zero)
   )
 )

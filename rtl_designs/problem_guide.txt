@@ -25,15 +25,21 @@ OBJECTS AND THEIR TYPES
   port        an input or output. Use the names the description gives.
   fsm_state   a state of a state machine. Use the description's names if it names its states; otherwise s0, s1, s2, ...
   register    an internal register the description names.
-  width       a number of bits, named bitsN: bits4 is 4 bits.
-  value       a number, named nN: n11 is the number 11.
+
+Three kinds of object are named for what they are and are not declared:
+
+  bitsN       a number of bits: bits4 is 4 bits.
+  nN          a number: n11 is the number 11.
+  seqBITS     a bit sequence, first bit first: seq0110 is the sequence 0, 1, 1, 0.
 
 The bit values zero and one and the reset polarities active_high and active_low are constants. Use them without declaring them.
 
 FACTS FOR EVERY DESIGN
 
-  (first_port <module> <p>) (next_port <p> <q>) ... (last_port <module> <p>)
-        the ports, chained in the order the description lists them
+  (first_port <module> <p>)     the first port the description lists
+  (next_port <p> <q>)           for every port <p> and the port <q> listed right after it: with N ports
+                                there are N-1 of these, the last one ending at the last port
+  (last_port <module> <p>)      the last port, in addition to the (next_port ...) that leads to it
   (input_port <p>) or (output_port <p>)     for every port
   (port_width <p> bitsN)                     only for a port wider than one bit
   (clock_of <module> <p>)                    the clock
@@ -77,22 +83,22 @@ B. State machine given by a table or diagram: a Moore machine with a one-bit inp
   (table_next <s> zero <t>) and (table_next <s> one <t>)     for every state: where it goes on 0 and on 1
   (asserted_in <output> <s>)                   the state in which the output is 1
 
-C. Run classifier: a Moore machine that counts consecutive 1s on a one-bit input and reports how a run ends. Its recognised sequences each start after a 0.
+C. Sequence recogniser: a Moore machine that watches a one-bit input for several fixed bit sequences, with one output per sequence.
 
-  (run_classifier <module>) (moore <module>)
+  (sequence_recogniser <module>) (moore <module>)
   (data_input_of <module> <p>)
-  States: one for "previous input was 0" and one for each count of consecutive 1s that has to be told apart, then one state for each recognised sequence.
-  (zero_run_state <module> <s>)                the state for "previous input was 0"
-  (initial_state <module> <s>)                 the state after reset
-  (first_listed <module> <s>) (listed_after <s> <t>) ... (last_listed <module> <s>)
-        all the states: the counting states in order, then the sequence states
-  (ones_next <s> <t>)                          one more 1 takes counting state <s> to counting state <t>
-  (zero_rule <s> <t>)                          in counting state <s>, a 0 completes a recognised sequence: go to its state <t>
-  (one_rule <s> <t>)                           in counting state <s>, a 1 completes a recognised sequence: go to its state <t>
-  (holds_on_one <t>)                           sequence state <t> persists while 1s keep arriving
-  (asserted_in <output> <t>)                   the sequence state in which the output is 1
+  (recognises <module> <output> seqBITS)       one for each sequence the description lists: the output is asserted
+                                               once the bits BITS have arrived in that order. Copy the bits from
+                                               the description into the name, first bit first.
+  (keeps_while <output> one) or (keeps_while <output> zero)
+                                               only if the description says the sequence goes on, such as "7 or
+                                               more 1s" or a trailing "...": the output stays asserted while
+                                               more of that bit arrive
+  (reset_as_previous <module> zero) or (reset_as_previous <module> one)
+                                               only if the description says that after reset the machine behaves
+                                               as though the previous input was that bit
 
-  Do not write any other transitions. The planner derives them.
+  Do not write any states or transitions. They are derived from the sequences.
 
 D. Wrap-around counter with an enable.
 
@@ -113,5 +119,5 @@ E. Triangle-wave generator: an output that steps up to a maximum and back down t
 RULES
 
   - Use only the facts listed above, spelled exactly as shown.
-  - Declare every object you use, with its type, and nothing else.
-  - Do not write (state_code ...) or (state_width ...), and do not declare values or widths for state codes: those are added automatically.
+  - Declare every module, port, state and register you use, with its type, and nothing else.
+  - Do not write (state_code ...) or (state_width ...): the state encoding is added automatically.

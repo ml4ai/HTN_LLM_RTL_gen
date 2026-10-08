@@ -3,8 +3,6 @@
   (:objects
     dec_count - module
     clk rst en count - port
-    bits4 - width
-    n0 n9 - value
   )
   (:htn
     :parameters ()

@@ -23,8 +23,8 @@
 ;      whose output is 1.
 ;   3. Moore FSM given by a state table or diagram: the planner reads the
 ;      table into transitions.
-;   4. Run classifier (HDLC-style): a Moore FSM that counts consecutive 1s and
-;      classifies how a run ends.
+;   4. Sequence recogniser (HDLC framing): a Moore FSM that recognises several
+;      bit sequences at once, with an output for each.
 ;   5. Wrap-around counter with an enable.
 ;   6. Triangle-wave generator: an up/down counter steered by a direction
 ;      register.
@@ -64,10 +64,41 @@
 ; ---- families 3 and 4: listed states ----
 ;
 ; The states are listed in the order to declare them, (first_listed m s),
-; (listed_after s t), (last_listed m s). A table FSM gives (table_next s b t);
-; a run classifier gives the run of 1s, (ones_next s t), and the rules that
-; end one, (zero_rule s t), (one_rule s t), (holds_on_one s); the planner
-; derives the rest. Each output is 1 in exactly one state, (asserted_in o s).
+; (listed_after s t), (last_listed m s). Each output is 1 in exactly one
+; state, (asserted_in o s).
+;
+; A table FSM gives every transition, (table_next s b t), and the planner
+; reads them.
+;
+; A sequence recogniser gives only the sequences and their outputs:
+;
+;   (recognises m o seqBITS)    output o reports the sequence BITS
+;   (keeps_while o b)           o's sequence goes on while b keeps arriving
+;   (reset_as_previous m b)     after reset it is as though the last input was b
+;
+; A sequence is an object named for its bits, seq0111110. The problem compiler
+; (problem_compiler.py) expands the sequences into the states they need, one
+; for every distinct prefix, and says how the prefixes extend one another:
+;
+;   (sequence_start m s)        the state for "nothing of any sequence yet"
+;   (child s b t)               t's prefix is s's followed by b
+;   (no_child s b)              no sequence continues from s with b
+;   (holds_on s b)              s is the end of a sequence that goes on while b
+;
+; That is bookkeeping on the description's own bits. The design is not in it:
+; where a state goes when its sequences break off is derived here, by the
+; Aho-Corasick construction, which is the single pattern's derivation above
+; carried to several patterns:
+;
+;   fallback(t)   = start                       for a child t of start
+;                 = next(fallback(s), b)        for t = child(s, b), s /= start
+;   next(s, b)    = s                           if s holds on b
+;                 = child(s, b)                 if there is one
+;                 = start                       if there is none and s = start
+;                 = next(fallback(s), b)        if there is none, otherwise
+;
+; fallback(s) is the state for the longest proper suffix of s's prefix that
+; is itself a prefix of some sequence, so each call is on a shorter prefix.
 
 (define (domain rtl_fsm)
   (:requirements :typing :hierarchy :negative-preconditions
@@ -75,7 +106,7 @@
                  :method-preconditions)
 
   (:types
-    module port register fsm_state bitval polarity width value - object
+    module port register fsm_state bitval polarity width value bitseq - object
   )
 
   (:constants
@@ -102,7 +133,7 @@
     ; ---- given by the problem: what kind of design ----
     (sequence_detector ?m - module)
     (table_fsm ?m - module)
-    (run_classifier ?m - module)
+    (sequence_recogniser ?m - module)
     (wrap_counter ?m - module)
     (triangle_generator ?m - module)
     (mealy ?m - module)
@@ -129,11 +160,16 @@
     ; problem file computes both (rtl_designs/state_encoding.py) ----
     (state_code ?s - fsm_state ?c - value)
     (state_width ?m - module ?w - width)
-    (zero_run_state ?m - module ?s - fsm_state)
-    (ones_next ?s ?t - fsm_state)
-    (zero_rule ?s ?t - fsm_state)
-    (one_rule ?s ?t - fsm_state)
-    (holds_on_one ?s - fsm_state)
+
+    ; ---- given: sequence recognisers, as the description states them ----
+    (recognises ?m - module ?o - port ?q - bitseq)
+    (keeps_while ?o - port ?b - bitval)
+    (reset_as_previous ?m - module ?b - bitval)
+    ; ---- and as the problem compiler expands them ----
+    (sequence_start ?m - module ?s - fsm_state)
+    (child ?s - fsm_state ?b - bitval ?t - fsm_state)
+    (no_child ?s - fsm_state ?b - bitval)
+    (holds_on ?s - fsm_state ?b - bitval)
 
     ; ---- given: counters and generators ----
     (count_output ?m - module ?p - port)
@@ -187,10 +223,13 @@
   (:task conclude_accept_restart :parameters (?m - module ?s - fsm_state ?b - bitval ?s0 - fsm_state))
   (:task read_state_table :parameters (?m - module))
   (:task read_table_from :parameters (?m - module ?s - fsm_state))
-  (:task design_run_classifier :parameters (?m - module))
-  (:task classify_from :parameters (?m - module ?s - fsm_state))
-  (:task classify_on_zero :parameters (?m - module ?s - fsm_state))
-  (:task classify_on_one :parameters (?m - module ?s - fsm_state))
+  (:task design_recogniser :parameters (?m - module))
+  (:task recognise_from :parameters (?m - module ?s - fsm_state))
+  (:task derive_sequence_next :parameters (?m - module ?s - fsm_state ?b - bitval))
+  (:task derive_sequence_fallback :parameters (?m - module ?s - fsm_state))
+  (:task derive_sequence_fallback_step :parameters (?m - module ?s ?p - fsm_state ?b - bitval))
+  (:task derive_via_sequence_fallback :parameters (?m - module ?s - fsm_state ?b - bitval))
+  (:task conclude_sequence_fallback :parameters (?m - module ?s ?p - fsm_state ?b - bitval ?fp - fsm_state))
   (:task design_generator :parameters (?m - module))
 
   ; phase 2: write the code
@@ -265,13 +304,13 @@
     )
   )
 
-  (:method m_implement_run_classifier
+  (:method m_implement_sequence_recogniser
     :parameters (?m - module)
     :task (implement_module ?m)
-    :precondition (and (run_classifier ?m) (moore ?m))
+    :precondition (and (sequence_recogniser ?m) (moore ?m))
     :ordered-subtasks (and
       (t1 (analyze_choose_moore_fsm ?m))
-      (t2 (design_run_classifier ?m))
+      (t2 (design_recogniser ?m))
       (t3 (write_interface ?m))
       (t4 (write_state_declarations ?m))
       (t5 (write_state_register ?m))
@@ -675,131 +714,178 @@
   )
 
   ;; =====================================================================
-  ;; Phase 1, family 4: derive a run classifier's transitions
+  ;; Phase 1, family 4: derive a sequence recogniser's transitions
   ;; =====================================================================
 
-  (:method m_design_run_classifier
+  (:method m_design_recogniser
     :parameters (?m - module ?s - fsm_state)
-    :task (design_run_classifier ?m)
-    :precondition (and (run_classifier ?m) (first_listed ?m ?s))
-    :ordered-subtasks (and (t1 (classify_from ?m ?s)))
+    :task (design_recogniser ?m)
+    :precondition (and (sequence_recogniser ?m) (first_listed ?m ?s))
+    :ordered-subtasks (and (t1 (recognise_from ?m ?s)))
   )
 
-  (:method m_classify_more
+  ; Walk the states in the order they are listed, fixing both transitions
+  ; out of each.
+  (:method m_recognise_more
     :parameters (?m - module ?s ?t - fsm_state)
-    :task (classify_from ?m ?s)
+    :task (recognise_from ?m ?s)
     :precondition (listed_after ?s ?t)
     :ordered-subtasks (and
-      (t1 (classify_on_zero ?m ?s))
-      (t2 (classify_on_one ?m ?s))
-      (t3 (classify_from ?m ?t))
+      (t1 (derive_sequence_next ?m ?s zero))
+      (t2 (derive_sequence_next ?m ?s one))
+      (t3 (recognise_from ?m ?t))
     )
   )
 
-  (:method m_classify_last
+  (:method m_recognise_last
     :parameters (?m - module ?s - fsm_state)
-    :task (classify_from ?m ?s)
+    :task (recognise_from ?m ?s)
     :precondition (last_listed ?m ?s)
     :ordered-subtasks (and
-      (t1 (classify_on_zero ?m ?s))
-      (t2 (classify_on_one ?m ?s))
+      (t1 (derive_sequence_next ?m ?s zero))
+      (t2 (derive_sequence_next ?m ?s one))
     )
   )
 
-  ; A 0 that completes a recognised sequence goes to that sequence's state.
-  (:method m_on_zero_rule
-    :parameters (?m - module ?s ?t - fsm_state)
-    :task (classify_on_zero ?m ?s)
-    :precondition (zero_rule ?s ?t)
-    :ordered-subtasks (and (t1 (analyze_complete_on_zero ?m ?s ?t)))
+  ; ---- next(s, b) ----
+
+  ; Already derived, while working out another state's fallback.
+  (:method m_sequence_next_known
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_sequence_next ?m ?s ?b)
+    :precondition (transition_known ?s ?b)
+    :ordered-subtasks ()
   )
 
-  ; Any other 0 ends the run: back to the state for "previous input 0".
-  (:method m_on_zero_restart
-    :parameters (?m - module ?s ?z - fsm_state)
-    :task (classify_on_zero ?m ?s)
-    :precondition (and (zero_run_state ?m ?z)
-                       (not (exists (?x - fsm_state) (zero_rule ?s ?x))))
-    :ordered-subtasks (and (t1 (analyze_restart_on_zero ?m ?s ?z)))
+  ; The end of a sequence that goes on while b keeps arriving: stay.
+  (:method m_sequence_next_hold
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_sequence_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b)) (holds_on ?s ?b))
+    :ordered-subtasks (and (t1 (analyze_keep_while ?m ?s ?b)))
   )
 
-  ; A 1 that completes a recognised sequence goes to that sequence's state.
-  (:method m_on_one_rule
-    :parameters (?m - module ?s ?t - fsm_state)
-    :task (classify_on_one ?m ?s)
-    :precondition (one_rule ?s ?t)
-    :ordered-subtasks (and (t1 (analyze_complete_on_one ?m ?s ?t)))
+  ; b is the next bit of some sequence: one more bit is matched.
+  (:method m_sequence_next_extend
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?t - fsm_state)
+    :task (derive_sequence_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b)) (not (holds_on ?s ?b)) (child ?s ?b ?t))
+    :ordered-subtasks (and (t1 (analyze_extend_sequence ?m ?s ?b ?t)))
   )
 
-  ; A state that persists while 1s keep coming stays put on a 1.
-  (:method m_on_one_hold
+  ; No sequence starts with b: stay at the start.
+  (:method m_sequence_next_stay
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_sequence_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b)) (sequence_start ?m ?s) (no_child ?s ?b))
+    :ordered-subtasks (and (t1 (analyze_stay_at_start ?m ?s ?b)))
+  )
+
+  ; No sequence continues with b: the longest matched suffix that still
+  ; begins a sequence decides where to go.
+  (:method m_sequence_next_fallback
+    :parameters (?m - module ?s - fsm_state ?b - bitval)
+    :task (derive_sequence_next ?m ?s ?b)
+    :precondition (and (not (transition_known ?s ?b)) (not (holds_on ?s ?b))
+                       (no_child ?s ?b) (not (sequence_start ?m ?s)))
+    :ordered-subtasks (and
+      (t1 (derive_sequence_fallback ?m ?s))
+      (t2 (derive_via_sequence_fallback ?m ?s ?b))
+    )
+  )
+
+  (:method m_via_sequence_fallback
+    :parameters (?m - module ?s - fsm_state ?b - bitval ?f - fsm_state)
+    :task (derive_via_sequence_fallback ?m ?s ?b)
+    :precondition (fallback ?s ?f)
+    :ordered-subtasks (and
+      (t1 (derive_sequence_next ?m ?f ?b))
+      (t2 (conclude_fall_back ?m ?s ?b ?f))
+    )
+  )
+
+  ; ---- fallback(s) ----
+
+  (:method m_sequence_fallback_known
     :parameters (?m - module ?s - fsm_state)
-    :task (classify_on_one ?m ?s)
-    :precondition (holds_on_one ?s)
-    :ordered-subtasks (and (t1 (analyze_hold_on_one ?m ?s)))
+    :task (derive_sequence_fallback ?m ?s)
+    :precondition (fallback_known ?s)
+    :ordered-subtasks ()
   )
 
-  ; Otherwise a 1 lengthens the run by one.
-  (:method m_on_one_count
-    :parameters (?m - module ?s ?t - fsm_state)
-    :task (classify_on_one ?m ?s)
-    :precondition (and (ones_next ?s ?t)
-                       (not (exists (?x - fsm_state) (one_rule ?s ?x))))
-    :ordered-subtasks (and (t1 (analyze_count_one ?m ?s ?t)))
+  (:method m_sequence_fallback_first
+    :parameters (?m - module ?s ?r - fsm_state ?b - bitval)
+    :task (derive_sequence_fallback ?m ?s)
+    :precondition (and (not (fallback_known ?s)) (child ?r ?b ?s) (sequence_start ?m ?r))
+    :ordered-subtasks (and (t1 (analyze_sequence_fallback_first ?m ?s ?r)))
   )
 
-  ; A state entered on a 0 (a sequence that ended in 0) behaves on a 1 like
-  ; the "previous input 0" state, whose 1-transition is already derived.
-  (:method m_on_one_resume
-    :parameters (?m - module ?s ?p ?z ?t - fsm_state)
-    :task (classify_on_one ?m ?s)
-    :precondition (and (zero_rule ?p ?s) (zero_run_state ?m ?z) (transition ?z one ?t))
-    :ordered-subtasks (and (t1 (analyze_resume_after_zero ?m ?s ?z ?t)))
+  (:method m_sequence_fallback_extend
+    :parameters (?m - module ?s ?p - fsm_state ?b - bitval)
+    :task (derive_sequence_fallback ?m ?s)
+    :precondition (and (not (fallback_known ?s)) (child ?p ?b ?s) (not (sequence_start ?m ?p)))
+    :ordered-subtasks (and
+      (t1 (derive_sequence_fallback ?m ?p))
+      (t2 (derive_sequence_fallback_step ?m ?s ?p ?b))
+    )
   )
 
-  ; In ?state, a 0 completes a recognised sequence: go to ?sequence_state.
-  (:action analyze_complete_on_zero
-    :parameters (?module - module ?state ?sequence_state - fsm_state)
-    :precondition (and (architecture_chosen ?module) (zero_rule ?state ?sequence_state))
-    :effect (and (transition ?state zero ?sequence_state) (transition_known ?state zero))
+  (:method m_sequence_fallback_step
+    :parameters (?m - module ?s ?p - fsm_state ?b - bitval ?fp - fsm_state)
+    :task (derive_sequence_fallback_step ?m ?s ?p ?b)
+    :precondition (fallback ?p ?fp)
+    :ordered-subtasks (and
+      (t1 (derive_sequence_next ?m ?fp ?b))
+      (t2 (conclude_sequence_fallback ?m ?s ?p ?b ?fp))
+    )
   )
 
-  ; In ?state, a 0 ends the run of 1s: go to ?zero_state, the state for
-  ; "previous input 0".
-  (:action analyze_restart_on_zero
-    :parameters (?module - module ?state ?zero_state - fsm_state)
-    :precondition (and (architecture_chosen ?module) (zero_run_state ?module ?zero_state))
-    :effect (and (transition ?state zero ?zero_state) (transition_known ?state zero))
+  (:method m_conclude_sequence_fallback
+    :parameters (?m - module ?s ?p - fsm_state ?b - bitval ?fp ?t - fsm_state)
+    :task (conclude_sequence_fallback ?m ?s ?p ?b ?fp)
+    :precondition (transition ?fp ?b ?t)
+    :ordered-subtasks (and (t1 (analyze_sequence_fallback_extend ?m ?s ?p ?b ?fp ?t)))
   )
 
-  ; In ?state, a 1 completes a recognised sequence: go to ?sequence_state.
-  (:action analyze_complete_on_one
-    :parameters (?module - module ?state ?sequence_state - fsm_state)
-    :precondition (and (architecture_chosen ?module) (one_rule ?state ?sequence_state))
-    :effect (and (transition ?state one ?sequence_state) (transition_known ?state one))
+  ; ---- phase 1 actions, family 4 ----
+
+  ; In ?state, input ?bit is the next bit of a sequence: go to ?next_state.
+  (:action analyze_extend_sequence
+    :parameters (?module - module ?state - fsm_state ?bit - bitval ?next_state - fsm_state)
+    :precondition (and (architecture_chosen ?module) (child ?state ?bit ?next_state))
+    :effect (and (transition ?state ?bit ?next_state) (transition_known ?state ?bit))
   )
 
-  ; ?state persists while 1s keep coming: on a 1, stay in it.
-  (:action analyze_hold_on_one
-    :parameters (?module - module ?state - fsm_state)
-    :precondition (and (architecture_chosen ?module) (holds_on_one ?state))
-    :effect (and (transition ?state one ?state) (transition_known ?state one))
+  ; In the start state, no sequence begins with ?bit: stay there.
+  (:action analyze_stay_at_start
+    :parameters (?module - module ?state - fsm_state ?bit - bitval)
+    :precondition (and (sequence_start ?module ?state) (no_child ?state ?bit))
+    :effect (and (transition ?state ?bit ?state) (transition_known ?state ?bit))
   )
 
-  ; In ?state, a 1 lengthens the run of 1s by one: go to ?next_state.
-  (:action analyze_count_one
-    :parameters (?module - module ?state ?next_state - fsm_state)
-    :precondition (and (architecture_chosen ?module) (ones_next ?state ?next_state))
-    :effect (and (transition ?state one ?next_state) (transition_known ?state one))
+  ; ?state ends a sequence that goes on while ?bit keeps arriving: stay in it.
+  (:action analyze_keep_while
+    :parameters (?module - module ?state - fsm_state ?bit - bitval)
+    :precondition (and (architecture_chosen ?module) (holds_on ?state ?bit))
+    :effect (and (transition ?state ?bit ?state) (transition_known ?state ?bit))
   )
 
-  ; ?state was entered on a 0, so on a 1 it goes where ?zero_state (previous
-  ; input 0) goes on a 1, which is ?next_state.
-  (:action analyze_resume_after_zero
-    :parameters (?module - module ?state ?zero_state ?next_state - fsm_state)
-    :precondition (and (architecture_chosen ?module) (zero_run_state ?module ?zero_state)
-                       (transition ?zero_state one ?next_state))
-    :effect (and (transition ?state one ?next_state) (transition_known ?state one))
+  ; ?state has matched one bit; its fallback is the start state.
+  (:action analyze_sequence_fallback_first
+    :parameters (?module - module ?state ?start_state - fsm_state)
+    :precondition (sequence_start ?module ?start_state)
+    :effect (and (fallback ?state ?start_state) (fallback_known ?state))
+  )
+
+  ; ?state is reached from ?previous_state on ?bit; its fallback is where the
+  ; previous state's fallback goes on ?bit, which is ?fallback_state.
+  (:action analyze_sequence_fallback_extend
+    :parameters (?module - module ?state ?previous_state - fsm_state ?bit - bitval
+                 ?previous_fallback ?fallback_state - fsm_state)
+    :precondition (and (architecture_chosen ?module) (child ?previous_state ?bit ?state)
+                       (fallback ?previous_state ?previous_fallback)
+                       (transition ?previous_fallback ?bit ?fallback_state))
+    :effect (and (fallback ?state ?fallback_state) (fallback_known ?state))
   )
 
   ;; =====================================================================
