@@ -118,6 +118,14 @@ def parse_sexpr(text):
     return read()
 
 
+class InvalidProblem(Exception):
+    """A problem file that reads, and is wrong before the planner sees it."""
+
+    def __init__(self, message, text):
+        super().__init__(message)
+        self.text = text
+
+
 def extract_problem(reply):
     """The reply's problem file as text: the last fenced block that holds a
     (define ...), else the reply from its first (define. None if neither."""
@@ -175,7 +183,10 @@ def canonical(problem_text):
     lines += [f"    ({' '.join(f)})" for f in facts]
     lines += ["  )", ")"]
     text = "\n".join(lines) + "\n"
-    found = state_encoding.states_of(text)
+    try:
+        found = state_encoding.states_of(text)
+    except ValueError as e:
+        raise InvalidProblem(str(e), text)
     if found:
         declared = {n for names, _ in objects for n in names}
         enc_objects, enc_facts = state_encoding.encoding(*found)
@@ -216,6 +227,8 @@ def score_reply(reply, bench, pid, ctx):
         return {"outcome": "no_problem", "detail": "no (define ...) in the reply"}
     try:
         problem_text, facts = canonical(text)
+    except InvalidProblem as e:
+        return {"outcome": "invalid", "detail": str(e), "problem": e.text}
     except ValueError as e:
         return {"outcome": "no_problem", "detail": str(e)}
     out = {"problem": problem_text, "differs_from_reference": predicate_difference(facts, ctx["reference"][(bench, pid)])}
@@ -237,8 +250,10 @@ def score_reply(reply, bench, pid, ctx):
         try:
             steps = plan_to_verilog.read_plan(run.stdout)
             verilog = plan_to_verilog.render(steps)
-        except SystemExit as e:
-            return dict(out, outcome="wrong", detail=f"the plan does not render: {e}")
+        except (SystemExit, Exception) as e:
+            # The templates assume a plan from a sound problem. One from a
+            # translation may lack what they need, say a port's width.
+            return dict(out, outcome="wrong", detail=f"the plan does not render: {type(e).__name__}: {e}")
         v = os.path.join(w, "from_plan.v")
         with open(v, "w") as f:
             f.write(verilog)

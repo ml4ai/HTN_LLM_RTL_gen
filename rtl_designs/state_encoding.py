@@ -35,7 +35,8 @@ def encoding(module, states):
 
 
 def states_of(text):
-    """(module, states in declaration order) of a problem, or None."""
+    """(module, states in declaration order) of a problem, or None. Raises
+    ValueError if the chain of states loops back on itself."""
     listed = re.search(r"\(first_listed (\S+) (\S+)\)", text)
     start = listed or re.search(r"\(initial_state (\S+) (\S+)\)", text)
     if not start:
@@ -47,7 +48,7 @@ def states_of(text):
     while states[-1] in after:
         states.append(after[states[-1]])
         if len(states) > len(after) + 1:
-            sys.exit("the states form a cycle")
+            raise ValueError("the states form a cycle")
     return module, states
 
 
@@ -91,7 +92,10 @@ if __name__ == "__main__":
     for path in sys.argv[1:]:
         with open(path) as f:
             old = f.read()
-        new = rewrite(old)
+        try:
+            new = rewrite(old)
+        except ValueError as e:
+            sys.exit(f"{path}: {e}")
         if new != old:
             with open(path, "w") as f:
                 f.write(new)
