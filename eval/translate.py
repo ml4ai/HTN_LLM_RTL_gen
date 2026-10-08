@@ -21,8 +21,10 @@ benchmark's own testbench runs on the result. Each attempt ends as one of
   wrong        it plans, and the rendered module fails the testbench
   pass         it plans, and the rendered module passes
 
-The state width and codes are not the translator's to write: they are
-computed (rtl_designs/state_encoding.py) and added before planning.
+Before planning, the translated file goes through the problem compiler
+(rtl_designs/problem_compiler.py), which does what can be computed: it
+declares numbers and widths, names a state machine's data input when only one
+port can be it, and works out the state encoding.
 
     python eval/translate.py show exemplars rtllm-2 fsm
     python eval/translate.py build      # requests, for both conditions
@@ -53,8 +55,8 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "rtl_designs"))
 
 import plan_to_verilog  # noqa: E402
+import problem_compiler  # noqa: E402
 import rtl_eval  # noqa: E402
-import state_encoding  # noqa: E402
 
 MANIFEST = os.path.join(ROOT, "rtl_designs", "pilot", "pilot.json")
 GUIDE = os.path.join(ROOT, "rtl_designs", "problem_guide.txt")
@@ -93,42 +95,10 @@ def build_prompt(condition, description):
 # ---------------------------------------------------------------------------
 # Reading a reply back into a problem.
 
-def parse_sexpr(text):
-    """The first complete s-expression in `text`, as nested lists of tokens."""
-    tokens = re.findall(r"\(|\)|[^\s()]+", re.sub(r";[^\n]*", "", text))
-    pos = 0
-
-    def read():
-        nonlocal pos
-        if pos >= len(tokens):
-            raise ValueError("unbalanced parentheses")
-        tok = tokens[pos]
-        pos += 1
-        if tok == "(":
-            out = []
-            while pos < len(tokens) and tokens[pos] != ")":
-                out.append(read())
-            if pos >= len(tokens):
-                raise ValueError("unbalanced parentheses")
-            pos += 1
-            return out
-        if tok == ")":
-            raise ValueError("unbalanced parentheses")
-        return tok
-    return read()
-
-
-class InvalidProblem(Exception):
-    """A problem file that reads, and is wrong before the planner sees it."""
-
-    def __init__(self, message, text):
-        super().__init__(message)
-        self.text = text
-
-
 def extract_problem(reply):
     """The reply's problem file as text: the last fenced block that holds a
-    (define ...), else the reply from its first (define. None if neither."""
+    (define ...), else the reply from its first (define. None if neither.
+    Reading it is the problem compiler's."""
     blocks = re.findall(r"```[^\n]*\n(.*?)```", reply, re.S)
     for block in reversed(blocks):
         if "(define" in block:
@@ -138,76 +108,15 @@ def extract_problem(reply):
     return None
 
 
-def canonical(problem_text):
-    """The problem re-emitted in the layout the hand-written ones have, with
-    the state encoding computed and added. Raises ValueError if it cannot be
-    read as (define (problem ..) (:domain ..) (:objects ..) (:htn ..) (:init ..))."""
-    tree = parse_sexpr(problem_text)
-    if not (isinstance(tree, list) and tree and tree[0] == "define"):
-        raise ValueError("not a (define ...)")
-    sections = {s[0]: s for s in tree[1:] if isinstance(s, list) and s and isinstance(s[0], str)}
-    for need in ("problem", ":objects", ":htn", ":init"):
-        if need not in sections:
-            raise ValueError(f"no ({need} ...)")
-    name = sections["problem"][1] if len(sections["problem"]) > 1 else "translated"
-    # Typed object list: names ... - type, repeated.
-    objects, pending = [], []
-    items = sections[":objects"][1:]
-    i = 0
-    while i < len(items):
-        if items[i] == "-" and i + 1 < len(items):
-            objects.append((pending, items[i + 1]))
-            pending = []
-            i += 2
-        else:
-            if not isinstance(items[i], str):
-                raise ValueError("malformed (:objects ...)")
-            pending.append(items[i])
-            i += 1
-    if pending:
-        raise ValueError("an object without a type")
-    module = None
-    flat = json.dumps(sections[":htn"])
-    m = re.search(r'\["implement_module", "([^"]+)"\]', flat)
-    if m:
-        module = m.group(1)
-    if not module:
-        raise ValueError("no (implement_module ...) task")
-    facts = [f for f in sections[":init"][1:] if isinstance(f, list) and f and all(isinstance(x, str) for x in f)]
-    # The encoding is computed, whatever the translator wrote about it.
-    facts = [f for f in facts if f[0] not in ("state_code", "state_width")]
-    lines = [f"(define (problem {name})", "  (:domain rtl_fsm)", "  (:objects"]
-    lines += [f"    {' '.join(names)} - {type_}" for names, type_ in objects if names]
-    lines += ["  )", "  (:htn", "    :parameters ()", f"    :subtasks (and (implement_module {module}))", "  )",
-              "  (:init"]
-    lines += [f"    ({' '.join(f)})" for f in facts]
-    lines += ["  )", ")"]
-    text = "\n".join(lines) + "\n"
-    try:
-        found = state_encoding.states_of(text)
-    except ValueError as e:
-        raise InvalidProblem(str(e), text)
-    if found:
-        declared = {n for names, _ in objects for n in names}
-        enc_objects, enc_facts = state_encoding.encoding(*found)
-        keep = []
-        for line in enc_objects:
-            names, type_ = line.rsplit(" - ", 1)
-            names = [n for n in names.split() if n not in declared]
-            if names:
-                keep.append(f"    {' '.join(names)} - {type_}")
-        at = lines.index("  )")                      # end of (:objects
-        lines = lines[:at] + keep + lines[at:]
-        at = len(lines) - 2                          # end of (:init
-        lines = lines[:at] + [f"    {f}" for f in enc_facts] + lines[at:]
-        text = "\n".join(lines) + "\n"
-    return text, facts
+def stated(facts):
+    """The facts without the computed state encoding, for comparing files."""
+    return [f for f in facts if f[0] not in ("state_code", "state_width")]
 
 
 def reference_facts(bench, pid):
     with open(os.path.join(ROOT, "rtl_designs", "pilot", bench, pid + ".hddl")) as f:
-        _, facts = canonical(f.read())
-    return facts
+        _, facts, _ = problem_compiler.compile_text(f.read())
+    return stated(facts)
 
 
 def predicate_difference(facts, reference):
@@ -226,12 +135,13 @@ def score_reply(reply, bench, pid, ctx):
     if text is None:
         return {"outcome": "no_problem", "detail": "no (define ...) in the reply"}
     try:
-        problem_text, facts = canonical(text)
-    except InvalidProblem as e:
-        return {"outcome": "invalid", "detail": str(e), "problem": e.text}
-    except ValueError as e:
+        problem_text, facts, computed = problem_compiler.compile_text(text)
+    except problem_compiler.Invalid as e:
+        return {"outcome": "invalid", "detail": str(e), "problem": text}
+    except problem_compiler.Unreadable as e:
         return {"outcome": "no_problem", "detail": str(e)}
-    out = {"problem": problem_text, "differs_from_reference": predicate_difference(facts, ctx["reference"][(bench, pid)])}
+    out = {"problem": problem_text, "computed": computed,
+           "differs_from_reference": predicate_difference(stated(facts), ctx["reference"][(bench, pid)])}
     p = manifest["planner"]
     with tempfile.TemporaryDirectory() as w:
         path = os.path.join(w, "problem.hddl")

@@ -19,6 +19,9 @@ and each plan step is left in symbolic form.
 | `fsm/fsm_from_plan.v` | What those templates produce from the plan. Passes `fsm/testbench.v` |
 | `rtl_domain_gloss.json` | One sentence per action, used to present a plan to an LLM (`eval/pseries.py`) |
 | `state_encoding.py` | Computes an FSM's state width and codes and writes them into a problem file as facts. Counting is arithmetic, not planning, so the planner is given it |
+| `problem_compiler.py` | Everything about a problem file that can be computed, done before the planner reads it: declares numbers and widths, names a state machine's data input when only one port can be it, and adds the state encoding |
+| `problem_guide.txt` | The domain's facts explained for whoever writes a problem file. It is the prompt of the translation test (`eval/translate.py`) |
+| `exemplars/` | One worked example per design family: a description and its problem file. Written for the translation test; none is a benchmark problem |
 | `pilot/` | Eight benchmark problems restated as facts, with their saved plans and task trees (below) |
 | `check_pilot.py` | Plans the pilot problems, renders each plan and runs the benchmark's own testbench on it |
 

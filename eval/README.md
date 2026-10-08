@@ -15,6 +15,7 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | `eval_config.json` | Every evaluation setting, pinned: tool paths and versions, flags, timeouts, benchmark commits, ladder |
 | `rtl_eval.py` | The command-line driver: `selftest`, `generate`, `evaluate`, `report`, `breakdown`, `compare` |
 | `pseries.py` | The P-series: the 32 ways of presenting a planner's plan to the executor, on the pilot problems (below) |
+| `translate.py` | The translation test: the model writes the planner's problem file from a design description (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
 | `passk.py` | The estimator, ladders, the syntax/conditional split, bootstrap, McNemar |
@@ -120,6 +121,38 @@ work on it.
 - **Time** (32B executor): about 7 minutes for a single-prompt request of 20
   samples on an FSM problem, and 17 for a micro-prompt one. The whole
   factorial, sampled and greedy, is about two days.
+
+## The translation test: from a description to a problem file
+
+`translate.py` asks the model to write the HDDL problem for each pilot problem,
+given the design description and a guide to the domain's facts
+(`rtl_designs/problem_guide.txt`). There are two conditions: `guide`, the guide
+alone, and `exemplars`, the guide followed by one worked example per design
+family (`rtl_designs/exemplars/`).
+
+    $PY eval/translate.py show exemplars rtllm-2 fsm   # print one prompt
+    $PY eval/translate.py build      # requests, for both conditions
+    $PY eval/translate.py generate   # one executor process; resumes
+    $PY eval/translate.py score      # plan, render, test; writes summary.md
+
+Each takes `--greedy`. Runs are in `eval/runs/translate/` and
+`eval/runs/translate_greedy/`.
+
+A translation is scored with no judgement involved:
+
+1. It goes through the problem compiler (`rtl_designs/problem_compiler.py`),
+   which adds what can be computed: declarations of numbers and widths, a state
+   machine's data input when only one port can be it, and the state encoding.
+2. The planner plans it.
+3. The plan is rendered with `plan_to_verilog.py`'s fixed templates.
+4. The benchmark's own testbench runs on the result.
+
+It ends as `no_problem` (nothing readable), `invalid` (the loader rejects it),
+`no_plan`, `wrong` (it plans, and the module fails) or `pass`. The first three
+can be detected without a testbench; `wrong` cannot.
+
+This measures the translation alone. The executor is not asked to write Verilog
+from these plans; that is the P-series.
 
 ## What each check means
 
