@@ -16,6 +16,7 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | `rtl_eval.py` | The command-line driver: `selftest`, `generate`, `evaluate`, `report`, `breakdown`, `compare` |
 | `pseries.py` | The P-series: the 32 ways of presenting a planner's plan to the executor, on the pilot problems (below) |
 | `translate.py` | The translation test: the model writes the planner's problem file from a design description (below) |
+| `pipeline.py` | The pipeline end to end, with a fall-back to the direct prompt when the translation gives no usable plan (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
 | `passk.py` | The estimator, ladders, the syntax/conditional split, bootstrap, McNemar |
@@ -153,6 +154,32 @@ can be detected without a testbench; `wrong` cannot.
 
 This measures the translation alone. The executor is not asked to write Verilog
 from these plans; that is the P-series.
+
+## The pipeline end to end
+
+`pipeline.py` runs the whole chain on the pilot problems: a greedy translation
+of the description, the problem compiler, the planner, and then the executor's
+measured call.
+
+    $PY eval/pipeline.py translate   # the greedy translations
+    $PY eval/pipeline.py build       # route each problem; write its request
+    $PY eval/pipeline.py generate    # the executor: n = 20, or --greedy
+    $PY eval/pipeline.py evaluate
+    $PY eval/pipeline.py summary     # beside the direct baseline
+
+- **The route.** A problem whose translation yields a usable plan gets the plan
+  prompt (NL, one prompt, with the description). Otherwise it gets the direct
+  prompt, the description alone.
+- **When it falls back.** The reply holds no readable problem file; the
+  compiler or the planner's loader rejects it; the planner finds no plan; the
+  templates cannot render the plan; or the module they render does not compile.
+- **What it cannot catch.** A translation that plans to a wrong design. Nothing
+  short of a testbench can tell, and the routing never uses one.
+- **Each problem's route** and the reason are in its `route.json` and in
+  `run.json`.
+
+The run directories, `eval/runs/pipeline` and `eval/runs/pipeline_greedy`, are
+ordinary ones, so `report` and `compare` work on them.
 
 ## What each check means
 

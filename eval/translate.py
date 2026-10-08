@@ -127,21 +127,30 @@ def predicate_difference(facts, reference):
     return {p: a[p] - b[p] for p in sorted(set(a) | set(b)) if a[p] != b[p]}
 
 
-def score_reply(reply, bench, pid, ctx):
-    """One translation's outcome, with what explains it."""
-    manifest, cfg, tools, adapter, problem = ctx["manifest"], ctx["cfg"], ctx["tools"], ctx["adapters"][bench], \
-        ctx["problems"][(bench, pid)]
+def plan_translation(reply, manifest):
+    """From a reply to a plan, using nothing but the reply: read the problem,
+    compile it, plan it, and render the plan with the fixed templates. No
+    testbench and no reference is involved, so everything this reports can be
+    known at run time.
+
+    Returns a dict with "status":
+      no_problem   nothing in the reply reads as a problem file
+      invalid      it reads, and is rejected before or by the planner's loader
+      no_plan      it loads, and the planner finds no plan
+      unrendered   it plans, and the templates cannot render the plan
+      planned      it plans and renders: "steps" and "verilog" are set
+    and, where they exist, "problem" (the compiled file), "facts", "computed"
+    (what the compiler added) and "detail" (why it stopped)."""
     text = extract_problem(reply)
     if text is None:
-        return {"outcome": "no_problem", "detail": "no (define ...) in the reply"}
+        return {"status": "no_problem", "detail": "no (define ...) in the reply"}
     try:
         problem_text, facts, computed = problem_compiler.compile_text(text)
     except problem_compiler.Invalid as e:
-        return {"outcome": "invalid", "detail": str(e), "problem": text}
+        return {"status": "invalid", "detail": str(e), "problem": text}
     except problem_compiler.Unreadable as e:
-        return {"outcome": "no_problem", "detail": str(e)}
-    out = {"problem": problem_text, "computed": computed,
-           "differs_from_reference": predicate_difference(stated(facts), ctx["reference"][(bench, pid)])}
+        return {"status": "no_problem", "detail": str(e)}
+    out = {"problem": problem_text, "facts": facts, "computed": computed}
     p = manifest["planner"]
     with tempfile.TemporaryDirectory() as w:
         path = os.path.join(w, "problem.hddl")
@@ -151,24 +160,40 @@ def score_reply(reply, bench, pid, ctx):
                os.path.join(ROOT, p["binary"]), "-D", os.path.join(ROOT, manifest["domain"]), "-P", path,
                "-F", p["score_fun"], "-T", str(p["time_limit_ms"]), "-r", str(p["simulations"]), "-s", str(p["seed"])]
         run = subprocess.run(cmd, capture_output=True, text=True)
-        errors = [line for line in run.stderr.splitlines() if not line.startswith("warning:")]
-        if run.returncode != 0 or "Plan:" not in run.stdout or "Plan found at depth 0" in run.stdout:
-            message = " ".join(errors)[:300] or f"planner stopped (exit {run.returncode})"
-            searching = re.search(r"no applicable decomposition|time limit|decision|rollout|no plan", message, re.I)
-            timed_out = run.returncode < 0 or run.returncode == 142
-            return dict(out, outcome="no_plan" if (searching or timed_out) else "invalid", detail=message)
-        try:
-            steps = plan_to_verilog.read_plan(run.stdout)
-            verilog = plan_to_verilog.render(steps)
-        except (SystemExit, Exception) as e:
-            # The templates assume a plan from a sound problem. One from a
-            # translation may lack what they need, say a port's width.
-            return dict(out, outcome="wrong", detail=f"the plan does not render: {type(e).__name__}: {e}")
+    errors = [line for line in run.stderr.splitlines() if not line.startswith("warning:")]
+    if run.returncode != 0 or "Plan:" not in run.stdout or "Plan found at depth 0" in run.stdout:
+        message = " ".join(errors)[:300] or f"planner stopped (exit {run.returncode})"
+        searching = re.search(r"no applicable decomposition|time limit|decision|rollout|no plan", message, re.I)
+        timed_out = run.returncode < 0 or run.returncode == 142
+        return dict(out, status="no_plan" if (searching or timed_out) else "invalid", detail=message)
+    try:
+        steps = plan_to_verilog.read_plan(run.stdout)
+        verilog = plan_to_verilog.render(steps)
+    except (SystemExit, Exception) as e:
+        # The templates assume a plan from a sound problem. One from a
+        # translation may lack what they need, say a port's width.
+        return dict(out, status="unrendered", detail=f"the plan does not render: {type(e).__name__}: {e}")
+    return dict(out, status="planned", steps=steps, verilog=verilog)
+
+
+def score_reply(reply, bench, pid, ctx):
+    """One translation's outcome, with what explains it: plan_translation,
+    then the benchmark's testbench on the rendered module."""
+    t = plan_translation(reply, ctx["manifest"])
+    out = {k: t[k] for k in ("problem", "computed", "detail") if k in t}
+    if "facts" in t:
+        out["differs_from_reference"] = predicate_difference(stated(t["facts"]), ctx["reference"][(bench, pid)])
+    if t["status"] != "planned":
+        # A plan the templates cannot render is a wrong plan, as it was scored
+        # before the two were told apart.
+        return dict(out, outcome="wrong" if t["status"] == "unrendered" else t["status"])
+    with tempfile.TemporaryDirectory() as w:
         v = os.path.join(w, "from_plan.v")
         with open(v, "w") as f:
-            f.write(verilog)
-        passed, code, log = adapter.functional(problem, v, w, tools, cfg["timeouts_s"])
-    out["steps"] = len(steps)
+            f.write(t["verilog"])
+        passed, code, log = ctx["adapters"][bench].functional(ctx["problems"][(bench, pid)], v, w, ctx["tools"],
+                                                              ctx["cfg"]["timeouts_s"])
+    out["steps"] = len(t["steps"])
     if passed:
         return dict(out, outcome="pass")
     return dict(out, outcome="wrong", detail=" ".join(log.strip().splitlines()[-3:])[:300])
