@@ -31,6 +31,9 @@ Three kinds of object are named for what they are and are not declared:
   bitsN       a number of bits: bits4 is 4 bits.
   nN          a number: n11 is the number 11.
   seqBITS     a bit sequence, first bit first: seq0110 is the sequence 0, 1, 1, 0.
+              A run of one bit may be written with its count, the parts joined by underscores:
+              seq0_1x7 is a 0 and then seven 1s, and seq0_1x6_0 is a 0, six 1s and a 0.
+              Write a long run this way, with the count the description gives.
 
 The bit values zero and one and the reset polarities active_high and active_low are constants. Use them without declaring them.
 

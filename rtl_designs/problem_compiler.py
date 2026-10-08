@@ -14,11 +14,13 @@ have to supply: they lacked only what is listed here.
      port that is neither the clock nor the reset.
   3. The sequences of a sequence recogniser are expanded into its states. The
      file says only which bit sequences are recognised, each as an object
-     named for its bits, (recognises m flag seq01111110). A state is needed
+     named for its bits, (recognises m flag seq01111110), or with a count for
+     a run, seq0_1x6_0. A state is needed
      for every distinct prefix of them, and the states are related by which
      prefix extends which. That is bookkeeping on the description's own
      bits; where a state goes when its sequences break off is the planner's
-     to derive (rtl_domain.hddl, family 4).
+     to derive (rtl_domain.hddl, family 4). The states listed for the code
+     are the ones the machine can be in, the reset state first.
   4. The state encoding is computed (state_encoding.py): state k in
      declaration order has code k, in the smallest width that holds them all.
      Anything the file says about codes or widths of states is replaced.
@@ -42,12 +44,35 @@ import state_encoding
 
 FSM_KINDS = ("sequence_detector", "table_fsm", "sequence_recogniser")
 NAMED_TYPES = ((re.compile(r"n\d+$"), "value"), (re.compile(r"bits\d+$"), "width"),
-               (re.compile(r"seq[01]+$"), "bitseq"))
+               (re.compile(r"seq[01x_\d]+$"), "bitseq"))
 BIT = {"0": "zero", "1": "one"}
 # What the expansion of a recogniser's sequences writes. A file that states
 # any of these for a recogniser has them replaced.
 EXPANDED = ("sequence_start", "child", "no_child", "holds_on", "first_listed", "listed_after",
             "last_listed", "initial_state", "asserted_in")
+
+
+def sequence_bits(name):
+    """The bits a sequence object stands for, or None if its name is not one.
+
+    seq0110 is 0, 1, 1, 0. A run may carry a count, seq0_1x7 for a 0 and then
+    seven 1s, with the parts joined by underscores: seq0_1x6_0. The count is
+    there for the translator. Asked to copy 01111111 from a description, a
+    model wrote 0111111 in 21 translations of 21; the description said "7 or
+    more 1s", and a count can be restated where a run of digits has to be
+    counted (LLM_RTL_code_generation.md 8.6.7)."""
+    if not name.startswith("seq") or len(name) == 3:
+        return None
+    bits = ""
+    for part in name[3:].split("_"):
+        run = re.fullmatch(r"([01])x(\d+)", part)
+        if run:
+            bits += run.group(1) * int(run.group(2))
+        elif re.fullmatch(r"[01]+", part):
+            bits += part
+        else:
+            return None
+    return bits or None
 
 
 def state_names(prefixes, recognised):
@@ -78,15 +103,50 @@ def state_names(prefixes, recognised):
     return names
 
 
+def reachable_prefixes(prefixes, holding, start):
+    """The prefixes the recogniser can be in, starting from `start`.
+
+    This follows the machine's transitions, which are the planner's to derive
+    and are derived there, step by step, in the plan (rtl_domain.hddl, family
+    4). They are worked out here as well for one purpose only: to know which
+    prefixes are states of the machine at all, since the state list and the
+    state encoding are fixed before planning."""
+    present = set(prefixes)
+    fail = {}
+
+    def step(x, b):
+        if (x, b) in holding:
+            return x
+        if x + b in present:
+            return x + b
+        return "" if x == "" else step(fail[x], b)
+    for x in prefixes:                              # shortest first
+        if x:
+            fail[x] = "" if len(x) == 1 else step(fail[x[:-1]], x[-1])
+    seen, todo = {start}, [start]
+    while todo:
+        x = todo.pop()
+        for b in "01":
+            y = step(x, b)
+            if y not in seen:
+                seen.add(y)
+                todo.append(y)
+    return seen
+
+
 def expand_sequences(problem, declared, notes):
     """Step 3: the states of a sequence recogniser, from its (recognises ...)
-    facts. One state per distinct prefix, listed shortest first."""
+    facts. One state per distinct prefix; listed are the ones the machine can
+    be in, the reset state first."""
     facts = problem["facts"]
     module = problem["module"]
-    recognised = [(f[2], f[3][3:]) for f in facts if f[0] == "recognises" and len(f) == 4
-                  and re.fullmatch(r"seq[01]+", f[3])]
-    if not recognised:
+    stated = [f for f in facts if f[0] == "recognises" and len(f) == 4]
+    if not stated:
         return
+    for f in stated:
+        if sequence_bits(f[3]) is None:
+            raise Invalid(f"{f[3]} does not name a bit sequence (seq0110, or with counts seq0_1x7)")
+    recognised = [(f[2], sequence_bits(f[3])) for f in stated]
     for kind in ("sequence_recogniser", "moore"):
         if [kind, module] not in facts:
             facts.append([kind, module])
@@ -114,10 +174,6 @@ def expand_sequences(problem, declared, notes):
                 facts.append(["child", state_name(x), BIT[b], state_name(x + b)])
             else:
                 facts.append(["no_child", state_name(x), BIT[b]])
-    facts.append(["first_listed", module, states[0]])
-    facts += [["listed_after", a, b] for a, b in zip(states, states[1:])]
-    facts.append(["last_listed", module, states[-1]])
-
     # Each output is 1 in the state where its sequence has just completed. The
     # domain decodes an output from one state, so a sequence that also
     # completes inside a longer one cannot be expressed.
@@ -144,7 +200,30 @@ def expand_sequences(problem, declared, notes):
             raise Invalid(f"({' '.join(previous[0])}): no sequence begins with that bit")
         start = bit
     facts.append(["initial_state", module, state_name(start)])
-    notes.append(f"expanded {len(recognised)} sequences into {len(states)} states")
+
+    # The machine's states are the prefixes it can be in: the reset state
+    # first, then the rest that can be reached from it, shortest first. A
+    # prefix it can never be in stays an object, because the planner's
+    # derivation passes through it, and is not listed, so no code is written
+    # for it. With reset "as though the last input was 0" that is the empty
+    # prefix. Listed, and declared first with code 0, it drew the executor's
+    # reset: 17 replies of 20 reset into it against the plan
+    # (LLM_RTL_code_generation.md 8.6.7).
+    holding = {(bits, b) for f in facts if f[0] == "keeps_while" and len(f) == 3
+               for out, bits in recognised if out == f[1]
+               for b, word in BIT.items() if word == f[2]}
+    reachable = reachable_prefixes(prefixes, holding, start)
+    listed = [start] + [x for x in prefixes if x in reachable and x != start]
+    names_listed = [state_name(x) for x in listed]
+    facts.append(["first_listed", module, names_listed[0]])
+    facts += [["listed_after", a, b] for a, b in zip(names_listed, names_listed[1:])]
+    facts.append(["last_listed", module, names_listed[-1]])
+    for out, bits in recognised:
+        if bits not in reachable:
+            raise Invalid(f"the sequence of output {out} can never complete")
+    notes.append(f"expanded {len(recognised)} sequences into {len(listed)} states"
+                 + (f", and {len(prefixes) - len(listed)} more that the machine is never in"
+                    if len(listed) < len(prefixes) else ""))
 
 
 

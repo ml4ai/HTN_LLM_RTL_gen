@@ -27,7 +27,7 @@
     (sequence_recogniser run_len)
     (moore run_len)
     (recognises run_len pair seq0110)
-    (recognises run_len long_run seq0111)
+    (recognises run_len long_run seq0_1x4)
     (keeps_while long_run one)
     (reset_as_previous run_len zero)
   )

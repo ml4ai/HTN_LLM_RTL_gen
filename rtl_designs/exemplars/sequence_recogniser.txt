@@ -1,6 +1,6 @@
 Module run_len has inputs clk, reset and bit_in and outputs pair and long_run. Build a Moore state machine that looks at runs of consecutive 1s on bit_in:
 
   (1) 0110: a run of exactly two 1s. Signal pair.
-  (2) 0111...: a run of three or more 1s. Signal long_run, and keep signalling it while 1s continue.
+  (2) 01111...: a run of four or more 1s. Signal long_run, and keep signalling it while 1s continue.
 
 Each output is high for one full cycle starting on the cycle after its condition occurs. After reset the machine behaves as if the previous input was 0. reset is active high and synchronous.
