@@ -78,7 +78,8 @@
 ;
 ; A sequence is an object named for its bits, seq0111110. The problem compiler
 ; (problem_compiler.py) expands the sequences into the states they need, one
-; for every distinct prefix, and says how the prefixes extend one another:
+; for every distinct prefix (named M3 for three bits matched, or S_FLAG where
+; flag's sequence completes), and says how the prefixes extend one another:
 ;
 ;   (sequence_start m s)        the state for "nothing of any sequence yet"
 ;   (child s b t)               t's prefix is s's followed by b

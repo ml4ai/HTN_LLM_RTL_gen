@@ -384,6 +384,11 @@ def cmd_report(args, cfg, tools):
           f"Run `{args.run_dir}`: arm **{meta['arm']}**, {meta['mode']}, n = {meta['n']}.", ""]
     for bench in ([args.bench] if args.bench else meta["benchmarks"]):
         _, by_pid, excluded, st, flags = load_results(args.run_dir, bench, args.selftest)
+        if not by_pid:
+            # A run that generated only some of its problems can leave a
+            # benchmark with nothing evaluated: say so rather than divide by it.
+            md += [f"## {bench}", "", "No evaluated samples.", ""]
+            continue
         s = summarize(meta, by_pid, cfg, flags)
         s["excluded_by_selftest"] = excluded
         s["selftest"] = st

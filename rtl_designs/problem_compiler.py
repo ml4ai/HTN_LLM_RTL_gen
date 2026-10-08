@@ -50,9 +50,32 @@ EXPANDED = ("sequence_start", "child", "no_child", "holds_on", "first_listed", "
             "last_listed", "initial_state", "asserted_in")
 
 
-def state_name(prefix):
-    """The state for having matched `prefix`: S_0111 for 0111, S_START for nothing."""
-    return "S_" + prefix if prefix else "S_START"
+def state_names(prefixes, recognised):
+    """A name for the state of each prefix: short, and unlike the others.
+
+    A state in which a sequence has just completed is named for its output,
+    S_FLAG. Any other is named for how many bits are matched, M3, with a
+    letter added where two prefixes of one length have to be told apart.
+
+    The names were once the prefixes themselves, S_0111110 beside S_0111111.
+    The executor mixed those up: with them it wrote fsm_hdlc correctly in 12
+    replies of 20, swapping the branches of the states whose names differ in
+    one digit, and it reset into the state then called S_START, which reset
+    never enters (LLM_RTL_code_generation.md 8.6.7)."""
+    names = {}
+    by_length = {}
+    for x in prefixes:
+        outs = [out for out, bits in recognised if bits == x]
+        if outs:
+            names[x] = "S_" + "_".join(o.upper() for o in outs)
+        else:
+            by_length.setdefault(len(x), []).append(x)
+    for length, group in by_length.items():
+        for i, x in enumerate(group):
+            names[x] = f"M{length}" + (chr(ord("a") + i) if len(group) > 1 else "")
+    if len(set(names.values())) != len(names):
+        raise Invalid("two states of the recogniser would share a name")
+    return names
 
 
 def expand_sequences(problem, declared, notes):
@@ -79,6 +102,8 @@ def expand_sequences(problem, declared, notes):
 
     prefixes = sorted({bits[:k] for _, bits in recognised for k in range(len(bits) + 1)},
                       key=lambda x: (len(x), x))
+    names = state_names(prefixes, recognised)
+    state_name = names.__getitem__
     states = [state_name(x) for x in prefixes]
     problem["objects"].append((states, "fsm_state"))
     declared.update(states)
