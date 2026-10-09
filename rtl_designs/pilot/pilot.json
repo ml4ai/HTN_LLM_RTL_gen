@@ -1,7 +1,7 @@
 {
   "description": "The P-series feasibility pilot (LLM_RTL_code_generation.md 8.6.5): two problems per benchmark that the direct-prompt baseline fails and a plan should help ('poor'), and two it handles ('adequate'), as a check that a plan does no harm. Problems and domain are hand-written for the pilot.",
   "domain": "rtl_designs/rtl_domain.hddl",
-  "planner": {"binary": "build/apps/planners/MCTS_planner", "score_fun": "simple", "time_limit_ms": 200, "simulations": 1, "seed": 1},
+  "planner": {"binary": "build/apps/planners/MCTS_planner", "score_fun": "simple", "iterations": 100, "simulations": 1, "seed": 1},
   "problems": [
     {"bench": "rtllm-2", "pid": "fsm", "role": "poor"},
     {"bench": "rtllm-2", "pid": "sequence_detector", "role": "poor"},

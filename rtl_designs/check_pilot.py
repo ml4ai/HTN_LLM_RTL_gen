@@ -47,7 +47,7 @@ def plan(manifest, problem, tree_path):
     with tempfile.NamedTemporaryFile("w", suffix=".hddl", delete=False) as f:
         f.write(compiled)
     cmd = [os.path.join(ROOT, p["binary"]), "-D", os.path.join(ROOT, manifest["domain"]),
-           "-P", f.name, "-F", p["score_fun"], "-T", str(p["time_limit_ms"]),
+           "-P", f.name, "-F", p["score_fun"], "-i", str(p["iterations"]),
            "-r", str(p["simulations"]), "-s", str(p["seed"]), "-g", "-f", tree_path]
     run = subprocess.run(cmd, capture_output=True, text=True)
     os.unlink(f.name)

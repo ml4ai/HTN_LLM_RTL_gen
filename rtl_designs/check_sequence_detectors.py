@@ -15,12 +15,13 @@ rotated so that all four (async/sync x active-high/low) occur. Exits non-zero
 if any configuration fails to plan or fails simulation.
 
 Needs the planner built (build/apps/planners/MCTS_planner, or --planner) and
-iverilog/vvp on PATH. --time-limit is the planner's budget per decision. Every
-decision in this domain is forced, and the planner commits a forced decision as
-soon as it is known, so the budget is a cap and the default of 100 ms costs no
-more than a smaller one (planner_doc.md 8.26). It must fit one rollout, about
-9 ms for an 8-bit pattern; running jobs in parallel slows each rollout, so
-raise it if a run reports that the planner exhausted its time limit.
+iverilog/vvp on PATH. --iterations is the planner's budget per decision, as a
+count of search iterations. Every decision in this domain is forced, and the
+planner commits a forced decision as soon as it is known, so the budget is a
+cap and the default of 100 costs no more than a smaller one (planner_doc.md
+8.26). It is a count and not a time so that a run gives the same plans however
+busy the machine is (planner_doc.md 8.31): a time budget that fits a rollout
+when one job runs may not when several do.
 """
 
 import argparse
@@ -119,7 +120,7 @@ def check(cfg, args, workdir, seed):
     with open(base + ".hddl", "w") as f:
         f.write(problem(pat, overlap, async_, pol))
     run = subprocess.run([args.planner, "-D", DOMAIN, "-P", base + ".hddl", "-F", "simple",
-                          "-T", str(args.time_limit), "-r", "1", "-s", "1"],
+                          "-i", str(args.iterations), "-r", "1", "-s", "1"],
                          capture_output=True, text=True)
     try:
         verilog = render(read_plan(run.stdout))
@@ -149,8 +150,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--max-len", type=int, default=5,
                     help="test every pattern up to this many bits (default 5)")
-    ap.add_argument("--time-limit", "-T", type=int, default=100,
-                    help="planner budget per decision in ms (default 100)")
+    ap.add_argument("--iterations", "-i", type=int, default=100,
+                    help="planner budget per decision, in search iterations (default 100)")
     ap.add_argument("--cycles", type=int, default=300, help="input bits simulated (default 300)")
     ap.add_argument("--jobs", "-j", type=int, default=4, help="configurations run at once (default 4)")
     ap.add_argument("--planner", default=DEFAULT_PLANNER, help="MCTS_planner binary")

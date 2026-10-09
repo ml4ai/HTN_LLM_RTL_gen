@@ -43,6 +43,10 @@ and a 2.6 s run. With less, the planner stops with "exhausted its time limit
 before evaluating any option at the root". An 8-bit pattern takes about 9 ms
 per rollout and plans in about 4 s at `-T 25 -r 1`.
 
+For a plan that does not depend on how busy the machine is, give `-i 100` in
+place of `-T`: a count of search iterations a decision, not a time
+(`docs/planner_doc.md` §8.31). The check scripts below do.
+
 ## What the steps mean
 
 There are two kinds of step. `analyze_*` steps are design decisions the planner
@@ -118,8 +122,11 @@ the benchmark's own testbench on the result. All eight pass, so each plan
 carries every fact its code needs.
 
 It needs the evaluation harness set up (`eval/README.md`). It plans with
-`-T 200`: one rollout of the longest plan does not fit the 25 ms that is
-enough for `fsm`.
+`-i 100`, a budget of 100 search iterations a decision in place of a time
+limit, as the manifest says. A time limit gives the same plan only while every
+decision is forced, and it must fit a rollout, which takes longer when several
+planners run at once. A count is indifferent to both (`docs/planner_doc.md`
+§8.31). The translation test and the pipeline plan the same way.
 
 The saved plans are what `eval/pseries.py` presents to the LLM: in four
 formats, as one prompt or a conversation, with or without the task tree and

@@ -165,12 +165,12 @@ def plan_translation(reply, manifest):
             f.write(problem_text)
         cmd = ["perl", "-e", "alarm shift; exec @ARGV", str(PLANNER_SECONDS),
                os.path.join(ROOT, p["binary"]), "-D", os.path.join(ROOT, manifest["domain"]), "-P", path,
-               "-F", p["score_fun"], "-T", str(p["time_limit_ms"]), "-r", str(p["simulations"]), "-s", str(p["seed"])]
+               "-F", p["score_fun"], "-i", str(p["iterations"]), "-r", str(p["simulations"]), "-s", str(p["seed"])]
         run = subprocess.run(cmd, capture_output=True, text=True)
     errors = [line for line in run.stderr.splitlines() if not line.startswith("warning:")]
     if run.returncode != 0 or "Plan:" not in run.stdout or "Plan found at depth 0" in run.stdout:
         message = " ".join(errors)[:300] or f"planner stopped (exit {run.returncode})"
-        searching = re.search(r"no applicable decomposition|time limit|decision|rollout|no plan", message, re.I)
+        searching = re.search(r"no applicable decomposition|time limit|iteration budget|decision|rollout|no plan", message, re.I)
         timed_out = run.returncode < 0 or run.returncode == 142
         return dict(out, status="no_plan" if (searching or timed_out) else "invalid", detail=message)
     try:
