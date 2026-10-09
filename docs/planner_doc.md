@@ -3712,6 +3712,81 @@ suites pass.
 constant and a parameter share a name. **Payoff:** the last place the `?` was
 lost.
 
+### 8.31 `--iterations`: a plan that is a function of the seed — **done**
+
+The planner was not repeatable. With the same domain, problem, flags and seed
+it could return different plans from one run to the next:
+
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      MCTS_planner -D rtl_designs/rtl_domain.hddl -P choice.hddl -F simple -T 200 -r 1 -s 1
+    done
+
+On a problem with one open decision, five runs in ten returned one plan and
+five the other, run one at a time on an idle machine. The problem was a Moore
+sequence detector whose accepting state also had an `(expects ...)` fact, so
+that two methods of `derive_next` applied to it. The RTL pipeline met it in a
+translated problem file, where it changed which translations agreed with which.
+
+**Cause.** `-T` bounds a decision by wall-clock time, so the number of MCTS
+iterations a decision gets depends on how fast the machine happens to run
+them. When every option but one is refuted that does not matter, and early
+commit (§8.26) ends the decision at the same point every time. When two
+options are both live, the scores at the moment the clock runs out pick one,
+and the moment differs. Nothing else varies: the random stream is seeded, and
+the same run printed the same initial state and the same forced decisions.
+§6.5 had found this for the benchmark harness and added a fixed-iteration
+mode to the library for it; the planner's command line never offered it.
+
+**Change.** `MCTS_planner --iterations N` (`-i N`) passes N to `cppMCTShop`'s
+`max_iterations`. Each decision is then bounded by N iterations and `-T` is
+not consulted. The default is 0, the time limit, so no existing invocation
+changes. A decision still ends early when it is forced, so N is a cap in the
+same way `-T` is. The graph's caption shows whichever bound was used.
+
+If the budget is spent before the root has a successor, the error now names
+the iteration budget rather than the time limit. One iteration always does
+that: it is the root's own rollout and expands nothing.
+
+**Measured.**
+
+| | `-T 200` | `-i N` |
+|---|---|---|
+| the problem above, same seed | 2 plans in 10 runs | 1 plan in 8 runs, at each of N = 2, 4, 8, 16, 64, 256 |
+| the eight RTL pilot problems | the saved plans | the saved plans, at each of N = 2, 3, 4, 8, 32, 1000 |
+| time, pilot problems | 0.1–0.9 s; 40 s for `fsm_hdlc` | the same at every N |
+
+Which plan the open problem gets depends on N and on the seed, as it should:
+its two options score the same, and the seeded tie-break chooses. Five seeds in
+six at N = 64 took one option and one took the other.
+
+**What it does not do.** It does not make an open decision a good one. With a
+score function that cannot tell the options apart, the choice is the seed's.
+A problem file that leaves such a choice open by contradicting itself is
+better refused before planning, which `rtl_designs/problem_compiler.py` now
+does for the case above.
+
+**A second effect.** A time budget must fit at least one rollout, and a
+rollout slows down when other jobs share the machine. `check_sequence_detectors.py`
+warned that `-j` could make the planner report an exhausted time limit, and the
+pipeline plans eight translations at once. An iteration budget is indifferent
+to load. The RTL tools now use `-i 100`: the two manifests under
+`rtl_designs/pilot/`, `check_pilot.py`, `check_sequence_detectors.py` and
+`eval/translate.py`.
+
+**Tests.** `test_fixed_iterations_repeat_an_open_choice` plans a domain in
+which each of six items may go left or right. For each of eight seeds, four
+runs at 20 iterations must agree step for step; over the eight seeds more than
+one plan must appear, so the test would notice a choice that had stopped being
+the seed's; and one iteration must fail naming the iteration budget.
+
+**Checked.** All six test suites pass. `check_sequence_detectors.py -j 8`: 134
+configurations, 0 failed. `check_pilot.py`: 8 problems, 0 failed, and the saved
+plans and task trees are unchanged.
+
+**Depends on:** §6.5 (the library's fixed-iteration mode), §8.26. **Risk:**
+low: opt-in, and one line of plumbing. **Payoff:** a caller that needs the
+same plan twice can ask for it.
+
 ---
 
 ## 9. Remaining work
@@ -3739,7 +3814,8 @@ what was left of performance (§8.24), followed by the evaluator's
 representation (§8.25). What remains below came out of those last two.
 §8.26, early commit and precondition look-ahead, came afterwards out of the
 first RTL domain; the heuristic question it raised is under "Not on this list".
-§8.27–§8.30 came out of the RTL domain as well.
+§8.27–§8.30 came out of the RTL domain as well, and §8.31 out of the
+pipeline built on it.
 
 ---
 

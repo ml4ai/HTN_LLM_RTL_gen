@@ -22,6 +22,7 @@ using namespace std;
 
 int main(int argc, char* argv[]) {
   int time_limit = 1000;
+  int iterations = 0;
   int r = 5;
   double c = sqrt(2.0);
   int seed = 2022;
@@ -46,6 +47,7 @@ int main(int argc, char* argv[]) {
     desc.add_options()
       ("help,h", "produce help message")
       ("time_limit,T", po::value<int>(), "Time limit (in milliseconds) allowed for each search decision (int), default = 1000. A decision spends all of it unless every option but one is refuted first (see --early_commit)")
+      ("iterations,i", po::value<int>(), "Bound each search decision by this many MCTS iterations rather than by --time_limit (int), default = 0: use the time limit. A time-limited run is not repeatable, since a busier machine fits fewer iterations into the same budget and may commit to a different plan; with this set, the plan is a function of the seed alone")
       ("simulations,r", po::value<int>(), "Number of simulations per MCTS cycle (int), default = 5")
       ("exp_param,c",po::value<double>(),"The exploration parameter for the planner (double), default = sqrt(2)")
       ("precondition_mode",po::value<std::string>(),"How method preconditions are read (string): at_start (default; must also hold at the method's first real action), protected (must hold throughout from the check to that action), or compiled (HDDL's own semantics, for conformance; accepts plans that break a precondition before the method starts)")
@@ -73,6 +75,14 @@ int main(int argc, char* argv[]) {
 
     if (vm.count("time_limit")) {
       time_limit = vm["time_limit"].as<int>();
+    }
+
+    if (vm.count("iterations")) {
+      iterations = vm["iterations"].as<int>();
+      if (iterations < 0) {
+        std::cerr << "error: --iterations must not be negative\n";
+        return 1;
+      }
     }
 
     if (vm.count("simulations")) {
@@ -176,7 +186,7 @@ int main(int argc, char* argv[]) {
       //after the whole search.
       task_graph::format_of(graph_file);
       auto start = std::chrono::high_resolution_clock::now();
-      auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions,0,2,early_commit,lookahead);
+      auto results = cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions,0,2,early_commit,lookahead);
       auto stop = std::chrono::high_resolution_clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
       cout << "Time taken by planner: "
@@ -192,7 +202,8 @@ int main(int argc, char* argv[]) {
       opts.facts = {"score function " + score_fun + " = " + score.str(),
                     "precondition mode " + precondition_mode,
                     "seed " + std::to_string(seed),
-                    "-T " + std::to_string(time_limit) + " ms"};
+                    iterations > 0 ? "-i " + std::to_string(iterations) + " iterations"
+                                   : "-T " + std::to_string(time_limit) + " ms"};
       opts.colour_by = graph_colour;
       opts.objects = &problem.objects;
       generate_graph(end.plan,end.treeRoots,domain,results.tasktree,graph_file,opts);
@@ -200,7 +211,7 @@ int main(int argc, char* argv[]) {
     }
     else {
       auto start = std::chrono::high_resolution_clock::now();
-      cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,0,max_depth,max_decisions,0,2,early_commit,lookahead);
+      cppMCTShop(domain,problem,scorers[score_fun],time_limit,r,c,seed,iterations,max_depth,max_decisions,0,2,early_commit,lookahead);
       auto stop = std::chrono::high_resolution_clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
       cout << "Time taken by planner: "

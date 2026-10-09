@@ -582,6 +582,69 @@ BOOST_AUTO_TEST_CASE(test_lookahead_respects_interleaving) {
     }
 }
 
+//A fixed iteration count makes the plan a function of the seed (planner_doc.md
+//8.31). The domain leaves every decision open: each of six items may go left
+//or right, and both score the same, so nothing but the random tie-break picks.
+//Bounded by time, such a search commits to whatever the iterations that fit
+//the budget happened to favour, and the same seed returned different plans
+//from run to run. Bounded by count, two runs must agree step for step, and
+//the choice must still be the seed's: over a handful of seeds, more than one
+//plan appears.
+BOOST_AUTO_TEST_CASE(test_fixed_iterations_repeat_an_open_choice) {
+    std::string const dom = R"(
+(define (domain open_choice)
+  (:requirements :typing :hierarchy)
+  (:types item - object)
+  (:predicates (left ?i - item) (right ?i - item))
+  (:task place :parameters (?i - item))
+  (:method m_left
+    :parameters (?i - item)
+    :task (place ?i)
+    :ordered-subtasks (and (t1 (put_left ?i))))
+  (:method m_right
+    :parameters (?i - item)
+    :task (place ?i)
+    :ordered-subtasks (and (t1 (put_right ?i))))
+  (:action put_left :parameters (?i - item) :precondition () :effect (left ?i))
+  (:action put_right :parameters (?i - item) :precondition () :effect (right ?i))
+))";
+    std::string const prob = R"(
+(define (problem open_choice_p)
+  (:domain open_choice)
+  (:objects a b c d e f - item)
+  (:htn :parameters ()
+        :ordered-subtasks (and (t1 (place a)) (t2 (place b)) (t3 (place c))
+                               (t4 (place d)) (t5 (place e)) (t6 (place f))))
+  (:init)
+))";
+    auto plan_with = [&](int seed, int iterations) {
+        auto [domain,problem] = load_hddl(dom, prob);
+        domain.narration = nullptr;
+        auto results = cppMCTShop(domain,problem,scorers["simple"],0,1,sqrt(2.0),seed,iterations);
+        return results.t[results.end].plan;
+    };
+    std::set<std::vector<std::string>> distinct;
+    for (int seed = 1; seed <= 8; seed++) {
+        BOOST_TEST_CONTEXT("seed " << seed) {
+            auto first = plan_with(seed, 20);
+            BOOST_TEST(first.size() == 6u);
+            for (int again = 0; again < 3; again++) {
+                BOOST_TEST(plan_with(seed, 20) == first, boost::test_tools::per_element());
+            }
+            distinct.insert(first);
+        }
+    }
+    BOOST_TEST(distinct.size() > 1u);
+
+    //One iteration is the root's own rollout and expands nothing. The planner
+    //must name the budget that ran out, which is not the time limit here.
+    BOOST_CHECK_EXCEPTION(
+        plan_with(1, 1), std::logic_error,
+        [](std::logic_error const& e) {
+            return std::string(e.what()).find("iteration budget") != std::string::npos;
+        });
+}
+
 //The RTL demo's plan (rtl_designs/), as a regression test of both 8.26 changes
 //on the domain they were made for. Every decision in it is forced and its plan
 //is unique, so early commit, which may only ever skip search that could not

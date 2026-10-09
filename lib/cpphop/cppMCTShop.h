@@ -651,13 +651,14 @@ seek_planMCTS(pTree& t,
     auto start = std::chrono::high_resolution_clock::now();
     auto stop = std::chrono::high_resolution_clock::now();
     //max_iterations > 0 replaces the wall-clock budget with a fixed number of
-    //MCTS iterations. The time-limited search is the real one, but it is not
-    //reproducible -- a busier machine fits fewer iterations into the same
-    //budget and commits to a different plan -- so there is no way to tell a
-    //refactor that changed behaviour from one that merely ran on a loaded
-    //machine. Counting iterations instead makes a whole planner run a
-    //deterministic function of the seed, which is what the benchmark harness
-    //needs to regression-test the tree search. Nothing else should use it.
+    //MCTS iterations. The time-limited search is not reproducible -- a busier
+    //machine fits fewer iterations into the same budget and commits to a
+    //different plan -- so there is no way to tell a refactor that changed
+    //behaviour from one that merely ran on a loaded machine. Counting
+    //iterations instead makes a whole planner run a deterministic function of
+    //the seed. The benchmark harness needs that to regression-test the tree
+    //search, and so does any caller whose result must be repeatable: the
+    //planner's --iterations (8.31).
     int iterations = 0;
     while (max_iterations > 0 ? (iterations < max_iterations)
                               : (std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count() < time_limit)) {
@@ -803,6 +804,11 @@ seek_planMCTS(pTree& t,
         //look-ahead makes common when no binding can hold (8.26). Testing
         //successors alone blamed the time limit for those proofs.
         if (m[w].successors.empty() && !m[w].deadend) {
+          if (max_iterations > 0) {
+            throw std::logic_error(
+                "Planner exhausted its iteration budget before evaluating any option "
+                "at the root. Raise --iterations (-i) and try again!");
+          }
           throw std::logic_error(
               "Planner exhausted its time limit before evaluating any option at the "
               "root. Raise --time_limit (-T) and try again!");

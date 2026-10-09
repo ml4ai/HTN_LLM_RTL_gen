@@ -221,6 +221,17 @@ same run needed `-T 20000` and about 17 minutes before that change. See
 If the budget is too small to evaluate even one option, the planner says so and
 exits non-zero rather than reporting an empty plan.
 
+A time-limited run is not repeatable. A decision with a real choice takes
+whichever option is ahead when the clock runs out, and a busier machine gets
+through fewer iterations by then, so the same seed can give different plans.
+For the same plan every time, bound each decision by a count instead:
+
+    ./apps/planners/MCTS_planner --iterations 100 -s 1 ...
+
+With `--iterations` (or `-i`) the time limit is not used, and the plan is a
+function of the seed alone. A forced decision still commits early, so the
+count is a cap as well. See [docs/planner\_doc.md](docs/planner_doc.md) §8.31.
+
 ## Using the planner from your own code
 
 The planner is a header-only library: include `cpphop/loader.h` and
