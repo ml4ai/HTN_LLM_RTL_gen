@@ -3,7 +3,8 @@ plan -> prompt -> Verilog, on the pilot problems.
 
     description --(translate, greedy)--> problem file --(compile)--> --(plan)-->
         a usable plan?  yes: the plan prompt        (NL, one prompt, with the description)
-                        no:  the direct prompt       (the description alone)
+                        no:  the direct prompt       (the description alone; with
+                                                      VerilogEval's rules on, for its problems)
     --(executor, the measured call)--> Verilog
 
 Everything before the executor's call is deterministic, and nothing in it
@@ -16,6 +17,10 @@ to the direct prompt when
   - the planner finds no plan,
   - the fixed templates cannot render the plan, or
   - the module they render does not compile.
+
+The direct prompt it falls back to is the rules-on one where the benchmark
+has rules: VerilogEval's five-rule suffix. It is the stronger direct baseline
+there. RTLLM has no such option.
 
 A translation that plans to a wrong design is not caught by any of that:
 nothing short of a testbench can tell. The agreement rule is aimed at it.
@@ -158,7 +163,7 @@ def route(bench, pid, ctx, votes=1):
     (--votes K), a plan is used only if more than half of the K translations
     agree on it: a wrong translation is usually one of several different
     wrong ones, and a right one is usually repeated (LLM_RTL_code_generation.md
-    8.6.9). A translation with no usable plan agrees with nothing."""
+    8.6.10). A translation with no usable plan agrees with nothing."""
     d = translation_dir(bench, pid)
     paths = [os.path.join(d, f"sample_{i:02d}.response.txt") for i in range(votes)]
     if not all(os.path.exists(x) for x in paths):
@@ -196,6 +201,20 @@ def route(bench, pid, ctx, votes=1):
             "reason": f"no plan has a majority: the largest group of agreeing translations is {best} of {votes}"}
 
 
+def fallback_request(bench, pid, ctx):
+    """The prompt for a problem no plan is used for: the direct prompt, with
+    VerilogEval's own rules suffix on where the benchmark has one. That is the
+    stronger of the two direct baselines there, so a problem the pipeline
+    declines is not left worse off than without it. RTLLM has no such option,
+    and gets its direct prompt. Returns the request and which prompt it is."""
+    problem, kind = ctx["problems"][(bench, pid)], "direct"
+    if bench == "verilog-eval-v2":
+        cfg = dict(ctx["cfg"], benchmarks=dict(ctx["cfg"]["benchmarks"],
+                                               **{bench: dict(ctx["cfg"]["benchmarks"][bench], rules=True)}))
+        problem, kind = rtl_eval.bench_adapter(cfg, bench).load(pid), "direct_rules"
+    return {"system": problem.system, "user": problem.user}, kind
+
+
 def cmd_build(args, ctx):
     mode = "greedy" if args.greedy else "sampled"
     n = 1 if args.greedy else ctx["cfg"]["ladder"]["n"]
@@ -208,7 +227,7 @@ def cmd_build(args, ctx):
         if r["route"] == "plan":
             request = pseries.build_request(PLAN_ARM, bench, problem, domain, r["steps"], None)
         else:
-            request = {"system": problem.system, "user": problem.user}
+            request, r["prompt"] = fallback_request(bench, pid, ctx)
         d = os.path.join(root, bench, pid)
         os.makedirs(d, exist_ok=True)
         body = json.dumps(request, indent=1)
@@ -221,7 +240,7 @@ def cmd_build(args, ctx):
         saved = dict(r, steps=["(" + " ".join([name] + a) + ")" for name, a in r["steps"]]) if "steps" in r else r
         with open(os.path.join(d, "route.json"), "w") as f:
             json.dump(saved, f, indent=1)
-        routes[f"{bench}/{pid}"] = {k: saved[k] for k in ("route", "status", "reason", "ballot") if k in saved}
+        routes[f"{bench}/{pid}"] = {k: saved[k] for k in ("route", "prompt", "status", "reason", "ballot") if k in saved}
         if "ballot" in routes[f"{bench}/{pid}"]:
             routes[f"{bench}/{pid}"]["ballot"] = routes[f"{bench}/{pid}"]["ballot"]["groups"]
         print(f"{bench:16} {pid:24} {r['route']:6} " + (f"{len(r['steps'])} steps" if r["route"] == "plan"
@@ -246,12 +265,12 @@ def cmd_build(args, ctx):
 
 
 def reuse(d, bench, pid, n, mode, roots):
-    """Samples already generated from this very request, under the direct
+    """Samples already generated from this very request, under a direct
     baseline or a run named with --reuse, copied in place of generating them
     again. A request is its bytes, and the seeds are fixed, so they are the
     samples this run would produce."""
     req = os.path.join(d, "request.json")
-    for root in [BASELINE[mode]] + [os.path.join(r, "") for r in roots]:
+    for root in [BASELINE[mode], RULES[mode]] + [os.path.join(r, "") for r in roots]:
         other = os.path.join(root, bench, pid)
         if os.path.abspath(other) == os.path.abspath(d) or not os.path.exists(os.path.join(other, "request.json")):
             continue
@@ -293,6 +312,7 @@ def cmd_summary(args, ctx):
                                                       "than half agree on it")
     md = ["# The pipeline end to end, with the fall-back", "",
           f"Plan prompt: `{PLAN_ARM}`. Translation: {how}, the `{CONDITION}` prompt. "
+          "Fall-back: the direct prompt, with VerilogEval's rules on for its problems. "
           "Passes are functional passes of the executor's samples.", "",
           "| problem | role | route | pipeline, of 20 | direct, of 20 | rules on, of 20 | pipeline, greedy "
           "| direct, greedy | rules on, greedy |",
@@ -315,14 +335,16 @@ def cmd_summary(args, ctx):
             if c is None:
                 return "—"
             return ("pass" if c[0] else "fail") if greedy else str(c[0])
-        why = "" if r["route"] != "direct" else f" ({r.get('status')})"
+        why = "" if r["route"] != "direct" else (", rules on" if r.get("prompt") == "direct_rules" else "") \
+            + f" ({r.get('status')})"
         if r.get("ballot"):
             why += f" [{r['ballot']['groups'][0] if r['ballot']['groups'] else 0} of {r['ballot']['translations']} agree]"
         md.append(f"| {pid} | {role} | {r['route']}{why} | {show(cells[('pipeline', 'sampled')])} | "
                   f"{show(cells[('direct', 'sampled')])} | {show(cells[('rules', 'sampled')])} | "
                   f"{show(cells[('pipeline', 'greedy')], True)} | {show(cells[('direct', 'greedy')], True)} | "
                   f"{show(cells[('rules', 'greedy')], True)} |")
-        out["problems"][f"{bench}/{pid}"] = {"role": role, "route": r.get("route"), "status": r.get("status"),
+        out["problems"][f"{bench}/{pid}"] = {"role": role, "route": r.get("route"), "prompt": r.get("prompt"),
+                                             "status": r.get("status"),
                                              **{f"{a}_{m}": v for (a, m), v in cells.items()}}
     md.append("")
     for role in ("poor", "adequate"):

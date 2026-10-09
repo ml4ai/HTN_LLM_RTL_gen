@@ -170,6 +170,10 @@ measured call.
 - **The route.** A problem whose translation yields a usable plan gets the plan
   prompt (NL, one prompt, with the description). Otherwise it gets the direct
   prompt, the description alone.
+- **Which direct prompt.** For a VerilogEval problem, the one with the
+  benchmark's rules suffix on (`generate --rules`), since that is the stronger
+  baseline there. RTLLM has no rules option, so its problems get the plain
+  direct prompt. `route.json` records which, as `prompt`.
 - **When it falls back.** The reply holds no readable problem file; the
   compiler or the planner's loader rejects it; the planner finds no plan; the
   templates cannot render the plan; or the module they render does not compile.
@@ -198,7 +202,7 @@ Options go before the command:
 - **`--reuse DIR`** (with `generate`) copies the samples of any problem whose
   request is byte for byte the one in `DIR`, in place of generating them again.
   The seeds are fixed, so they are the samples this run would produce. The
-  direct baseline is always looked in. Give it once per directory.
+  direct baselines, rules off and on, are always looked in. Give it once per directory.
 
 ## What each check means
 
