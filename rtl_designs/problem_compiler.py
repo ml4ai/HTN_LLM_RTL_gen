@@ -28,7 +28,10 @@ have to supply: they lacked only what is listed here.
 Nothing here guesses. Each step either follows from the file or is left
 alone: with two unassigned input ports, no data input is named. What it
 cannot express it refuses: an output that would be asserted in two states is
-Invalid, since the domain decodes each output from one.
+Invalid, since the domain decodes each output from one. So is a file that
+contradicts itself: a Moore detector whose accepting state also expects a
+bit plans to two different designs, and which one is not the file's to leave
+open.
 
     python rtl_designs/problem_compiler.py PROBLEM.hddl     # compiled, to stdout
 
@@ -333,6 +336,16 @@ def complete(problem):
             problem["objects"].append((missing, type_))
             declared.update(missing)
             notes.append(f"declared {' '.join(missing)} as {type_}")
+
+    # A Moore detector's accepting state stands for the whole pattern, so no
+    # bit is expected in it. A file that gives it one can be read as the Moore
+    # machine or as the Mealy one, which are different designs; the planner
+    # has a method for each and nothing to choose between them by.
+    accepting = {f[2] for f in facts if f[0] == "accept_state" and len(f) == 3}
+    for f in facts:
+        if f[0] == "expects" and len(f) == 3 and f[1] in accepting:
+            raise Invalid(f"({' '.join(f)}): {f[1]} is the accepting state, which stands for the whole "
+                          f"pattern and expects no further bit")
 
     # 2. The data input of a state machine, when only one port can be it.
     kinds = {f[0] for f in facts}
