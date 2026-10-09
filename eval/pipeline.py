@@ -17,9 +17,13 @@ to the direct prompt when
   - the fixed templates cannot render the plan, or
   - the module they render does not compile.
 
-A translation that plans to a wrong design is not caught: nothing short of a
-testbench can tell. That case is what the pipeline still risks, and the
-summary shows it beside the direct baseline.
+A translation that plans to a wrong design is not caught by any of that:
+nothing short of a testbench can tell. The agreement rule is aimed at it.
+With --votes K the description is translated K times, sampled, and a plan is
+used only if more than half of the K translations agree on it; otherwise the
+problem gets the direct prompt. A wrong translation is usually one of several
+different wrong ones, where a right one is usually repeated. The samples are
+seeded, so the route is still deterministic, and still sees no testbench.
 
     python eval/pipeline.py translate   # the greedy translations
     python eval/pipeline.py build       # route each problem; write its request
@@ -31,12 +35,16 @@ build, generate and evaluate take --greedy for the greedy line. The run
 directories are ordinary ones, eval/runs/pipeline and
 eval/runs/pipeline_greedy, so rtl_eval.py's report and compare work on them.
 The translations are in eval/runs/pipeline_translation. --manifest FILE runs
-other problems than the pilot's, and --tag NAME keeps that run apart.
+other problems than the pilot's, and --tag NAME keeps that run apart. --votes
+has to be the same for translate, build and summary. generate --reuse DIR copies the
+samples of an identical request from another run.
 """
 
 import argparse
+import concurrent.futures as cf
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -96,6 +104,8 @@ def done(d, n, mode):
 
 
 def cmd_translate(args, ctx):
+    """The translations: one greedy reply, or with --votes K, K sampled ones."""
+    greedy = args.votes == 1
     jobs = []
     for bench, pid, _ in ctx["pairs"]:
         d = translation_dir(bench, pid)
@@ -107,32 +117,83 @@ def cmd_translate(args, ctx):
         if not os.path.exists(req) or open(req).read() != body:
             with open(req, "w") as f:
                 f.write(body)
-        if not done(d, 1, "greedy"):
+        if not done(d, args.votes, "greedy" if greedy else "sampled"):
             jobs.append({"request": req, "out_dir": d})
-    run_executor(ctx, jobs, os.path.join(TRANSLATION, "batch.json"), True, 1)
+    run_executor(ctx, jobs, os.path.join(TRANSLATION, "batch.json"), greedy, args.votes)
 
 
-def route(bench, pid, ctx):
-    """Which prompt the executor gets for this problem, and why. Uses the
-    saved translation and nothing about the problem's testbench."""
-    reply_path = os.path.join(translation_dir(bench, pid), "sample_00.response.txt")
-    if not os.path.exists(reply_path):
-        sys.exit(f"error: no translation of {pid}; run translate first")
-    with open(reply_path, errors="replace") as f:
-        t = translate.plan_translation(f.read(), ctx["manifest"])
-    r = {"status": t["status"], "computed": t.get("computed", []), "problem": t.get("problem")}
+def usable_plan(reply, ctx):
+    """A translation taken as far as it goes without a testbench: read,
+    compiled, planned, rendered by the templates, and the rendering compiled.
+    Returns plan_translation's dict; "status" is "planned" only if all of
+    that held, and "detail" says why not otherwise."""
+    t = translate.plan_translation(reply, ctx["manifest"])
     if t["status"] != "planned":
-        return dict(r, route="direct", reason=t.get("detail", t["status"]))
+        return dict(t, detail=t.get("detail", t["status"]))
     with tempfile.TemporaryDirectory() as w:
         v = os.path.join(w, "from_plan.v")
         with open(v, "w") as f:
             f.write(t["verilog"])
         ok, log = checks.syntax(v, w, ctx["tools"], ctx["cfg"]["timeouts_s"])
     if not ok:
-        return dict(r, status="uncompilable", route="direct",
-                    reason="the module the templates render from the plan does not compile: "
+        return dict(t, status="uncompilable",
+                    detail="the module the templates render from the plan does not compile: "
                            + " ".join(log.strip().splitlines()[-2:])[:200])
-    return dict(r, route="plan", steps=t["steps"])
+    return t
+
+
+def plan_key(t):
+    """What two translations must share to count as agreeing: the plan, with
+    each state named by its code. So two that differ only in what they call
+    their states agree, and two that differ in any fact the plan uses do not."""
+    codes = {f[1]: "state" + f[2] for f in t["facts"] if f[0] == "state_code" and len(f) == 3}
+    return tuple((name,) + tuple(codes.get(a, a) for a in args) for name, args in t["steps"])
+
+
+def route(bench, pid, ctx, votes=1):
+    """Which prompt the executor gets for this problem, and why. Uses the
+    saved translations and nothing about the problem's testbench.
+
+    With one translation, its plan is used if it is usable. With several
+    (--votes K), a plan is used only if more than half of the K translations
+    agree on it: a wrong translation is usually one of several different
+    wrong ones, and a right one is usually repeated (LLM_RTL_code_generation.md
+    8.6.9). A translation with no usable plan agrees with nothing."""
+    d = translation_dir(bench, pid)
+    paths = [os.path.join(d, f"sample_{i:02d}.response.txt") for i in range(votes)]
+    if not all(os.path.exists(x) for x in paths):
+        sys.exit(f"error: {pid} has fewer than {votes} translations; run translate with the same --votes")
+
+    def one(path):
+        with open(path, errors="replace") as f:
+            return usable_plan(f.read(), ctx)
+    with cf.ThreadPoolExecutor(8) as ex:
+        ts = list(ex.map(one, paths))
+    if votes == 1:
+        t = ts[0]
+        r = {"status": t["status"], "computed": t.get("computed", []), "problem": t.get("problem")}
+        if t["status"] != "planned":
+            return dict(r, route="direct", reason=t["detail"])
+        return dict(r, route="plan", steps=t["steps"])
+
+    groups = {}
+    for i, t in enumerate(ts):
+        if t["status"] == "planned":
+            groups.setdefault(plan_key(t), []).append(i)
+    ranked = sorted(groups.values(), key=lambda g: (-len(g), g[0]))
+    ballot = {"translations": votes, "usable": sum(len(g) for g in ranked),
+              "groups": [len(g) for g in ranked],
+              "per_translation": [{"status": t["status"],
+                                   "group": next((k for k, g in enumerate(ranked) if i in g), None)}
+                                  for i, t in enumerate(ts)]}
+    if ranked and 2 * len(ranked[0]) > votes:
+        t = ts[ranked[0][0]]
+        return {"route": "plan", "status": "agreed", "steps": t["steps"], "problem": t["problem"],
+                "computed": t["computed"], "ballot": ballot,
+                "reason": f"{len(ranked[0])} of {votes} translations agree on this plan"}
+    best = len(ranked[0]) if ranked else 0
+    return {"route": "direct", "status": "no_majority", "ballot": ballot, "problem": None, "computed": [],
+            "reason": f"no plan has a majority: the largest group of agreeing translations is {best} of {votes}"}
 
 
 def cmd_build(args, ctx):
@@ -143,7 +204,7 @@ def cmd_build(args, ctx):
     routes = {}
     for bench, pid, _ in ctx["pairs"]:
         problem = ctx["problems"][(bench, pid)]
-        r = route(bench, pid, ctx)
+        r = route(bench, pid, ctx, args.votes)
         if r["route"] == "plan":
             request = pseries.build_request(PLAN_ARM, bench, problem, domain, r["steps"], None)
         else:
@@ -160,7 +221,9 @@ def cmd_build(args, ctx):
         saved = dict(r, steps=["(" + " ".join([name] + a) + ")" for name, a in r["steps"]]) if "steps" in r else r
         with open(os.path.join(d, "route.json"), "w") as f:
             json.dump(saved, f, indent=1)
-        routes[f"{bench}/{pid}"] = {k: saved[k] for k in ("route", "status", "reason") if k in saved}
+        routes[f"{bench}/{pid}"] = {k: saved[k] for k in ("route", "status", "reason", "ballot") if k in saved}
+        if "ballot" in routes[f"{bench}/{pid}"]:
+            routes[f"{bench}/{pid}"]["ballot"] = routes[f"{bench}/{pid}"]["ballot"]["groups"]
         print(f"{bench:16} {pid:24} {r['route']:6} " + (f"{len(r['steps'])} steps" if r["route"] == "plan"
                                                        else "<- " + r["reason"][:90]))
     benches = sorted({b for b, _, _ in ctx["pairs"]})
@@ -173,13 +236,31 @@ def cmd_build(args, ctx):
                                "settings": ctx["cfg"]["benchmarks"][b]} for b in benches},
             "eval_config_sha256": rtl_eval.sha256_file(ctx["config"]),
             "executor_config_sha256": rtl_eval.sha256_file(os.path.join(ROOT, ctx["cfg"]["executor"]["config"])),
-            "pipeline": {"plan_arm": PLAN_ARM, "translation": CONDITION, "routes": routes,
+            "pipeline": {"plan_arm": PLAN_ARM, "translation": CONDITION, "votes": args.votes, "routes": routes,
                          "sha256": {k: rtl_eval.sha256_file(v) for k, v in files.items()}}}
     meta_path = os.path.join(root, "run.json")
     if os.path.exists(meta_path):
         meta["created"] = json.load(open(meta_path))["created"]
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=1)
+
+
+def reuse(d, bench, pid, n, mode, roots):
+    """Samples already generated from this very request, under the direct
+    baseline or a run named with --reuse, copied in place of generating them
+    again. A request is its bytes, and the seeds are fixed, so they are the
+    samples this run would produce."""
+    req = os.path.join(d, "request.json")
+    for root in [BASELINE[mode]] + [os.path.join(r, "") for r in roots]:
+        other = os.path.join(root, bench, pid)
+        if os.path.abspath(other) == os.path.abspath(d) or not os.path.exists(os.path.join(other, "request.json")):
+            continue
+        if open(os.path.join(other, "request.json")).read() == open(req).read() and done(other, n, mode):
+            for name in os.listdir(other):
+                if name == "gen.json" or (name.startswith("sample_") and not name.endswith(".v")):
+                    shutil.copy(os.path.join(other, name), os.path.join(d, name))
+            return True
+    return False
 
 
 def cmd_generate(args, ctx):
@@ -190,7 +271,7 @@ def cmd_generate(args, ctx):
         d = os.path.join(RUNS[mode], bench, pid)
         if not os.path.exists(os.path.join(d, "request.json")):
             sys.exit(f"error: no request for {pid}; run build first")
-        if not done(d, n, mode):
+        if not done(d, n, mode) and not reuse(d, bench, pid, n, mode, args.reuse or []):
             jobs.append({"request": os.path.join(d, "request.json"), "out_dir": d})
     run_executor(ctx, jobs, os.path.join(RUNS[mode], "batch.json"), args.greedy, n)
 
@@ -208,8 +289,10 @@ def cmd_evaluate(args, ctx):
 def cmd_summary(args, ctx):
     """Each problem's route and its passes, beside the direct baseline, for
     the sampled run and the greedy line."""
+    how = "one greedy reply" if args.votes == 1 else (f"{args.votes} sampled replies, a plan used only if more "
+                                                      "than half agree on it")
     md = ["# The pipeline end to end, with the fall-back", "",
-          f"Plan prompt: `{PLAN_ARM}`. Translation: one greedy reply, the `{CONDITION}` prompt. "
+          f"Plan prompt: `{PLAN_ARM}`. Translation: {how}, the `{CONDITION}` prompt. "
           "Passes are functional passes of the executor's samples.", "",
           "| problem | role | route | pipeline, of 20 | direct, of 20 | rules on, of 20 | pipeline, greedy "
           "| direct, greedy | rules on, greedy |",
@@ -233,6 +316,8 @@ def cmd_summary(args, ctx):
                 return "—"
             return ("pass" if c[0] else "fail") if greedy else str(c[0])
         why = "" if r["route"] != "direct" else f" ({r.get('status')})"
+        if r.get("ballot"):
+            why += f" [{r['ballot']['groups'][0] if r['ballot']['groups'] else 0} of {r['ballot']['translations']} agree]"
         md.append(f"| {pid} | {role} | {r['route']}{why} | {show(cells[('pipeline', 'sampled')])} | "
                   f"{show(cells[('direct', 'sampled')])} | {show(cells[('rules', 'sampled')])} | "
                   f"{show(cells[('pipeline', 'greedy')], True)} | {show(cells[('direct', 'greedy')], True)} | "
@@ -264,7 +349,15 @@ def main():
     sub.add_parser("summary")
     ap.add_argument("--manifest", help="the problems to run (default: the pilot's)")
     ap.add_argument("--tag", help="keep this run apart: eval/runs/pipeline_<tag>")
+    ap.add_argument("--votes", type=int, default=1,
+                    help="translate this many times, sampled, and use a plan only if more than half agree "
+                         "(default 1: one greedy translation)")
+    ap.add_argument("--reuse", action="append", metavar="DIR",
+                    help="a run directory to copy samples from where the request is identical (generate); "
+                         "may be given more than once")
     args = ap.parse_args()
+    if args.votes < 1:
+        sys.exit("error: --votes must be at least 1")
     if args.tag:
         retag(args.tag)
     ctx = translate.setup(os.path.abspath(args.config), args.manifest and os.path.abspath(args.manifest))

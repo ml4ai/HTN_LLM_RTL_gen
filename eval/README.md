@@ -181,6 +181,25 @@ measured call.
 The run directories, `eval/runs/pipeline` and `eval/runs/pipeline_greedy`, are
 ordinary ones, so `report` and `compare` work on them.
 
+Options go before the command:
+
+    $PY eval/pipeline.py --manifest rtl_designs/pilot/heldout.json --tag heldout build
+
+- **`--manifest`** runs other problems than the pilot's.
+- **`--tag`** keeps a run apart, in `eval/runs/pipeline_<tag>`.
+- **`--votes K`** is the agreement rule, a partial answer to the wrong
+  translation that plans. The description is translated K times, sampled, and
+  a plan is used only if more than half of the K translations give it.
+  Otherwise the problem gets the direct prompt. Two translations agree if
+  their plans are the same once each state is renamed by its code; a
+  translation with no usable plan agrees with nothing. Each problem's
+  `route.json` holds the ballot. It still uses no testbench, and it does not
+  catch a wrong translation that most of the samples share.
+- **`--reuse DIR`** (with `generate`) copies the samples of any problem whose
+  request is byte for byte the one in `DIR`, in place of generating them again.
+  The seeds are fixed, so they are the samples this run would produce. The
+  direct baseline is always looked in. Give it once per directory.
+
 ## What each check means
 
 For every sample, in order, stopping at the first failure:
