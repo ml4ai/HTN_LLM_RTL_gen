@@ -30,7 +30,8 @@ summary shows it beside the direct baseline.
 build, generate and evaluate take --greedy for the greedy line. The run
 directories are ordinary ones, eval/runs/pipeline and
 eval/runs/pipeline_greedy, so rtl_eval.py's report and compare work on them.
-The translations are in eval/runs/pipeline_translation.
+The translations are in eval/runs/pipeline_translation. --manifest FILE runs
+other problems than the pilot's, and --tag NAME keeps that run apart.
 """
 
 import argparse
@@ -54,10 +55,21 @@ CONDITION = "exemplars"                  # the translation prompt: the guide and
 TRANSLATION = os.path.join(HERE, "runs", "pipeline_translation")
 RUNS = {"sampled": os.path.join(HERE, "runs", "pipeline"), "greedy": os.path.join(HERE, "runs", "pipeline_greedy")}
 BASELINE = {"sampled": os.path.join(HERE, "runs", "direct"), "greedy": os.path.join(HERE, "runs", "direct_greedy")}
+# VerilogEval's rules-on baseline: the direct prompt with its own five-rule suffix.
+RULES = {"sampled": os.path.join(HERE, "runs", "direct_rules"),
+         "greedy": os.path.join(HERE, "runs", "direct_rules_greedy")}
 
 
 def translation_dir(bench, pid):
     return os.path.join(TRANSLATION, bench, pid)
+
+
+def retag(tag):
+    """Keep a run apart from the pilot's: eval/runs/pipeline_<tag> and so on."""
+    global TRANSLATION
+    TRANSLATION += "_" + tag
+    for mode in RUNS:
+        RUNS[mode] += "_" + tag
 
 
 def run_executor(ctx, jobs, batch_path, greedy, n):
@@ -199,15 +211,16 @@ def cmd_summary(args, ctx):
     md = ["# The pipeline end to end, with the fall-back", "",
           f"Plan prompt: `{PLAN_ARM}`. Translation: one greedy reply, the `{CONDITION}` prompt. "
           "Passes are functional passes of the executor's samples.", "",
-          "| problem | role | route | pipeline, of 20 | direct, of 20 | pipeline, greedy | direct, greedy |",
-          "|---|---|---|---|---|---|---|"]
+          "| problem | role | route | pipeline, of 20 | direct, of 20 | rules on, of 20 | pipeline, greedy "
+          "| direct, greedy | rules on, greedy |",
+          "|---|---|---|---|---|---|---|---|---|"]
     out = {"problems": {}}
-    tot = {k: {"poor": [], "adequate": []} for k in ("pipeline", "direct")}
+    tot = {k: {"poor": [], "adequate": []} for k in ("pipeline", "direct", "rules")}
     for bench, pid, role in ctx["pairs"]:
         rpath = os.path.join(RUNS["sampled"], bench, pid, "route.json")
         r = json.load(open(rpath)) if os.path.exists(rpath) else {"route": "—"}
         cells = {}
-        for label, runs in (("pipeline", RUNS), ("direct", BASELINE)):
+        for label, runs in (("pipeline", RUNS), ("direct", BASELINE), ("rules", RULES)):
             for mode in ("sampled", "greedy"):
                 c = pseries.counts(runs[mode], bench, pid)
                 cells[(label, mode)] = None if c is None else (c[1], c[2])
@@ -221,8 +234,9 @@ def cmd_summary(args, ctx):
             return ("pass" if c[0] else "fail") if greedy else str(c[0])
         why = "" if r["route"] != "direct" else f" ({r.get('status')})"
         md.append(f"| {pid} | {role} | {r['route']}{why} | {show(cells[('pipeline', 'sampled')])} | "
-                  f"{show(cells[('direct', 'sampled')])} | {show(cells[('pipeline', 'greedy')], True)} | "
-                  f"{show(cells[('direct', 'greedy')], True)} |")
+                  f"{show(cells[('direct', 'sampled')])} | {show(cells[('rules', 'sampled')])} | "
+                  f"{show(cells[('pipeline', 'greedy')], True)} | {show(cells[('direct', 'greedy')], True)} | "
+                  f"{show(cells[('rules', 'greedy')], True)} |")
         out["problems"][f"{bench}/{pid}"] = {"role": role, "route": r.get("route"), "status": r.get("status"),
                                              **{f"{a}_{m}": v for (a, m), v in cells.items()}}
     md.append("")
@@ -248,8 +262,12 @@ def main():
     for name in ("build", "generate", "evaluate"):
         sub.add_parser(name).add_argument("--greedy", action="store_true")
     sub.add_parser("summary")
+    ap.add_argument("--manifest", help="the problems to run (default: the pilot's)")
+    ap.add_argument("--tag", help="keep this run apart: eval/runs/pipeline_<tag>")
     args = ap.parse_args()
-    ctx = translate.setup(os.path.abspath(args.config))
+    if args.tag:
+        retag(args.tag)
+    ctx = translate.setup(os.path.abspath(args.config), args.manifest and os.path.abspath(args.manifest))
     {"translate": cmd_translate, "build": cmd_build, "generate": cmd_generate,
      "evaluate": cmd_evaluate, "summary": cmd_summary}[args.cmd](args, ctx)
 

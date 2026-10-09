@@ -33,6 +33,8 @@ port can be it, and works out the state encoding.
 
 Each takes --greedy for the single greedy translation. Runs are in
 eval/runs/translate/<condition> and eval/runs/translate_greedy/<condition>.
+--manifest FILE translates other problems than the pilot's, --tag NAME keeps
+that run apart, and --conditions picks one of the two.
 
 This measures the translation alone. The executor is not involved after it:
 whether it then writes correct Verilog from the plan is the P-series
@@ -114,7 +116,12 @@ def stated(facts):
 
 
 def reference_facts(bench, pid):
-    with open(os.path.join(ROOT, "rtl_designs", "pilot", bench, pid + ".hddl")) as f:
+    """The facts of the problem file written by hand for this problem, or
+    None: a problem outside the pilot has none, and is scored all the same."""
+    path = os.path.join(ROOT, "rtl_designs", "pilot", bench, pid + ".hddl")
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
         _, facts, _ = problem_compiler.compile_text(f.read())
     return stated(facts)
 
@@ -181,7 +188,7 @@ def score_reply(reply, bench, pid, ctx):
     then the benchmark's testbench on the rendered module."""
     t = plan_translation(reply, ctx["manifest"])
     out = {k: t[k] for k in ("problem", "computed", "detail") if k in t}
-    if "facts" in t:
+    if "facts" in t and ctx["reference"][(bench, pid)] is not None:
         out["differs_from_reference"] = predicate_difference(stated(t["facts"]), ctx["reference"][(bench, pid)])
     if t["status"] != "planned":
         # A plan the templates cannot render is a wrong plan, as it was scored
@@ -202,9 +209,9 @@ def score_reply(reply, bench, pid, ctx):
 # ---------------------------------------------------------------------------
 # Commands.
 
-def setup(config):
+def setup(config, manifest_path=None):
     cfg, tools = rtl_eval.load_config(config)
-    with open(MANIFEST) as f:
+    with open(manifest_path or MANIFEST) as f:
         manifest = json.load(f)
     pairs = [(e["bench"], e["pid"], e["role"]) for e in manifest["problems"]]
     adapters = {b: rtl_eval.bench_adapter(cfg, b) for b in sorted({b for b, _, _ in pairs})}
@@ -333,9 +340,13 @@ def cmd_score(args, ctx):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--config", default=os.path.join(HERE, "eval_config.json"))
+    ap.add_argument("--manifest", help="the problems to translate (default: the pilot's, "
+                                       "rtl_designs/pilot/pilot.json)")
+    ap.add_argument("--tag", help="keep this run apart: eval/runs/translate_<tag>")
+    ap.add_argument("--conditions", nargs="*", choices=("guide", "exemplars"), help="default: both")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("show")
-    s.add_argument("condition", choices=CONDITIONS)
+    s.add_argument("condition", choices=("guide", "exemplars"))
     s.add_argument("bench")
     s.add_argument("pid")
     for name in ("build", "generate", "score"):
@@ -345,7 +356,13 @@ def main():
             s.add_argument("--jobs", type=int, default=8)
     args = ap.parse_args()
     args.config = os.path.abspath(args.config)
-    ctx = setup(args.config)
+    global CONDITIONS
+    if args.conditions:
+        CONDITIONS = tuple(args.conditions)
+    if args.tag:
+        for mode in RUNS:
+            RUNS[mode] += "_" + args.tag
+    ctx = setup(args.config, args.manifest and os.path.abspath(args.manifest))
     {"show": cmd_show, "build": cmd_build, "generate": cmd_generate, "score": cmd_score}[args.cmd](args, ctx)
 
 

@@ -1,0 +1,12 @@
+{
+  "description": "Benchmark problems the six design families cover that were not used to write the domain's sentences, the problem guide, its examples or the problem compiler (LLM_RTL_code_generation.md 8.6.8). No problem file is written for them: the pipeline translates each description. All five fail the direct-prompt baseline in most or all samples, so all are 'poor'.",
+  "domain": "rtl_designs/rtl_domain.hddl",
+  "planner": {"binary": "build/apps/planners/MCTS_planner", "score_fun": "simple", "time_limit_ms": 200, "simulations": 1, "seed": 1},
+  "problems": [
+    {"bench": "rtllm-2", "pid": "pulse_detect", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob067_countslow", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob096_review2015_fsmseq", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob107_fsm1s", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob120_fsm3s", "role": "poor"}
+  ]
+}

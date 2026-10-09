@@ -147,6 +147,7 @@ cmake-build-debug
 !eval/eval_config.json
 # ...and the RTL pilot's manifest, task trees and action glosses
 !rtl_designs/pilot/pilot.json
+!rtl_designs/pilot/heldout.json
 !rtl_designs/pilot/**/*.tree.json
 !rtl_designs/rtl_domain_gloss.json
 *.rdb
