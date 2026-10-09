@@ -328,7 +328,7 @@ def complete(problem):
     # 1. Numbers and widths used in a fact are declared.
     for pattern, type_ in NAMED_TYPES:
         missing = sorted({a for f in facts for a in f[1:] if pattern.match(a)} - declared,
-                         key=lambda x: int(re.search(r"\d+", x).group()))
+                         key=lambda x: (int(re.search(r"\d+", x).group()), x))
         if missing:
             problem["objects"].append((missing, type_))
             declared.update(missing)
