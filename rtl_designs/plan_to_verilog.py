@@ -119,6 +119,11 @@ def render(steps):
         elif name == "write_moore_output_assign":
             _, o, st = a
             out.append(f"assign {o} = ({CUR} == {st});")
+        elif name == "write_moore_output_also":
+            _, o, st = a
+            # OR-ed into the assignment this output already has.
+            k = max(i for i, line in enumerate(out) if line.startswith(f"assign {o} = "))
+            out[k] = out[k][:-1] + f" | ({CUR} == {st});"
         elif name in ("write_clocked_block_open_async", "write_clocked_block_open_sync"):
             _, clk, rst, pol = a
             edge = "posedge" if pol == "active_high" else "negedge"
@@ -135,7 +140,9 @@ def render(steps):
             _, cnt, top, to = a
             out.append(f"    if ({cnt} == {lit(cnt, top)}) {cnt} <= {lit(cnt, to)};")
             out.append(f"    else {cnt} <= {cnt} + 1'b1;")
-        elif name == "write_counter_enable_close":
+        elif name == "write_counter_free_open":
+            out.append("  else begin")
+        elif name in ("write_counter_enable_close", "write_counter_free_close"):
             out.append("  end")
         elif name == "write_counter_hold":
             out.append(f"  else {a[1]} <= {a[1]};")

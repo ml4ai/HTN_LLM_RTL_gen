@@ -333,16 +333,112 @@
           {"token": "(write_moore_outputs_from TopModule reset)", "action": false, "method": "m_moore_outputs_more", "children": [
             {"token": "(write_moore_outputs_from TopModule in)", "action": false, "method": "m_moore_outputs_more", "children": [
               {"token": "(write_moore_outputs_from TopModule disc)", "action": false, "method": "m_moore_outputs_more", "children": [
-                {"token": "(write_moore_output TopModule disc)", "action": false, "method": "m_moore_output_assign", "children": [
-                  {"token": "(write_moore_output_assign TopModule disc S_DISC)", "action": true, "method": "", "step": 67, "children": []}
+                {"token": "(write_moore_output TopModule disc)", "action": false, "method": "m_moore_output_listed", "children": [
+                  {"token": "(write_moore_output_terms_from TopModule disc M1)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                    {"token": "(write_moore_output_terms_from TopModule disc M2)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                      {"token": "(write_moore_output_terms_from TopModule disc M3)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                        {"token": "(write_moore_output_terms_from TopModule disc M4)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                          {"token": "(write_moore_output_terms_from TopModule disc M5)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                            {"token": "(write_moore_output_terms_from TopModule disc M6)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                              {"token": "(write_moore_output_terms_from TopModule disc S_DISC)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                {"token": "(write_moore_output_term TopModule disc S_DISC)", "action": false, "method": "m_moore_output_term_first", "children": [
+                                  {"token": "(write_moore_output_assign TopModule disc S_DISC)", "action": true, "method": "", "step": 67, "children": []}
+                                ]},
+                                {"token": "(write_moore_output_terms_from TopModule disc M7)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                  {"token": "(write_moore_output_terms_from TopModule disc S_FLAG)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                    {"token": "(write_moore_output_terms_from TopModule disc S_ERR)", "action": false, "method": "m_moore_output_terms_last", "children": [
+                                      {"token": "(write_moore_output_term TopModule disc S_ERR)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                    ]},
+                                    {"token": "(write_moore_output_term TopModule disc S_FLAG)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                  ]},
+                                  {"token": "(write_moore_output_term TopModule disc M7)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                ]}
+                              ]},
+                              {"token": "(write_moore_output_term TopModule disc M6)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                            ]},
+                            {"token": "(write_moore_output_term TopModule disc M5)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                          ]},
+                          {"token": "(write_moore_output_term TopModule disc M4)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                        ]},
+                        {"token": "(write_moore_output_term TopModule disc M3)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                      ]},
+                      {"token": "(write_moore_output_term TopModule disc M2)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                    ]},
+                    {"token": "(write_moore_output_term TopModule disc M1)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                  ]},
+                  {"token": "(check_moore_output_assigned disc)", "action": false, "method": "m_moore_output_is_assigned", "children": []}
                 ]},
                 {"token": "(write_moore_outputs_from TopModule flag)", "action": false, "method": "m_moore_outputs_more", "children": [
-                  {"token": "(write_moore_output TopModule flag)", "action": false, "method": "m_moore_output_assign", "children": [
-                    {"token": "(write_moore_output_assign TopModule flag S_FLAG)", "action": true, "method": "", "step": 68, "children": []}
+                  {"token": "(write_moore_output TopModule flag)", "action": false, "method": "m_moore_output_listed", "children": [
+                    {"token": "(write_moore_output_terms_from TopModule flag M1)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                      {"token": "(write_moore_output_terms_from TopModule flag M2)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                        {"token": "(write_moore_output_terms_from TopModule flag M3)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                          {"token": "(write_moore_output_terms_from TopModule flag M4)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                            {"token": "(write_moore_output_terms_from TopModule flag M5)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                              {"token": "(write_moore_output_terms_from TopModule flag M6)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                {"token": "(write_moore_output_terms_from TopModule flag S_DISC)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                  {"token": "(write_moore_output_terms_from TopModule flag M7)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                    {"token": "(write_moore_output_terms_from TopModule flag S_FLAG)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                      {"token": "(write_moore_output_term TopModule flag S_FLAG)", "action": false, "method": "m_moore_output_term_first", "children": [
+                                        {"token": "(write_moore_output_assign TopModule flag S_FLAG)", "action": true, "method": "", "step": 68, "children": []}
+                                      ]},
+                                      {"token": "(write_moore_output_terms_from TopModule flag S_ERR)", "action": false, "method": "m_moore_output_terms_last", "children": [
+                                        {"token": "(write_moore_output_term TopModule flag S_ERR)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                      ]}
+                                    ]},
+                                    {"token": "(write_moore_output_term TopModule flag M7)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                  ]},
+                                  {"token": "(write_moore_output_term TopModule flag S_DISC)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                ]},
+                                {"token": "(write_moore_output_term TopModule flag M6)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                              ]},
+                              {"token": "(write_moore_output_term TopModule flag M5)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                            ]},
+                            {"token": "(write_moore_output_term TopModule flag M4)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                          ]},
+                          {"token": "(write_moore_output_term TopModule flag M3)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                        ]},
+                        {"token": "(write_moore_output_term TopModule flag M2)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                      ]},
+                      {"token": "(write_moore_output_term TopModule flag M1)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                    ]},
+                    {"token": "(check_moore_output_assigned flag)", "action": false, "method": "m_moore_output_is_assigned", "children": []}
                   ]},
                   {"token": "(write_moore_outputs_from TopModule err)", "action": false, "method": "m_moore_outputs_last", "children": [
-                    {"token": "(write_moore_output TopModule err)", "action": false, "method": "m_moore_output_assign", "children": [
-                      {"token": "(write_moore_output_assign TopModule err S_ERR)", "action": true, "method": "", "step": 69, "children": []}
+                    {"token": "(write_moore_output TopModule err)", "action": false, "method": "m_moore_output_listed", "children": [
+                      {"token": "(write_moore_output_terms_from TopModule err M1)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                        {"token": "(write_moore_output_terms_from TopModule err M2)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                          {"token": "(write_moore_output_terms_from TopModule err M3)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                            {"token": "(write_moore_output_terms_from TopModule err M4)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                              {"token": "(write_moore_output_terms_from TopModule err M5)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                {"token": "(write_moore_output_terms_from TopModule err M6)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                  {"token": "(write_moore_output_terms_from TopModule err S_DISC)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                    {"token": "(write_moore_output_terms_from TopModule err M7)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                      {"token": "(write_moore_output_terms_from TopModule err S_FLAG)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                                        {"token": "(write_moore_output_terms_from TopModule err S_ERR)", "action": false, "method": "m_moore_output_terms_last", "children": [
+                                          {"token": "(write_moore_output_term TopModule err S_ERR)", "action": false, "method": "m_moore_output_term_first", "children": [
+                                            {"token": "(write_moore_output_assign TopModule err S_ERR)", "action": true, "method": "", "step": 69, "children": []}
+                                          ]}
+                                        ]},
+                                        {"token": "(write_moore_output_term TopModule err S_FLAG)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                      ]},
+                                      {"token": "(write_moore_output_term TopModule err M7)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                    ]},
+                                    {"token": "(write_moore_output_term TopModule err S_DISC)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                  ]},
+                                  {"token": "(write_moore_output_term TopModule err M6)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                                ]},
+                                {"token": "(write_moore_output_term TopModule err M5)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                              ]},
+                              {"token": "(write_moore_output_term TopModule err M4)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                            ]},
+                            {"token": "(write_moore_output_term TopModule err M3)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                          ]},
+                          {"token": "(write_moore_output_term TopModule err M2)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                        ]},
+                        {"token": "(write_moore_output_term TopModule err M1)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                      ]},
+                      {"token": "(check_moore_output_assigned err)", "action": false, "method": "m_moore_output_is_assigned", "children": []}
                     ]}
                   ]}
                 ]}

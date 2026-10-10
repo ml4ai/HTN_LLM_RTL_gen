@@ -26,6 +26,8 @@ OBJECTS AND THEIR TYPES
   fsm_state   a state of a state machine. Use the description's names if it names its states; otherwise s0, s1, s2, ...
   register    an internal register the description names.
 
+Every name starts with a letter. If the description calls a state by a number, such as 011, write s before it: s011.
+
 Three kinds of object are named for what they are and are not declared:
 
   bitsN       a number of bits: bits4 is 4 bits.
@@ -84,7 +86,7 @@ B. State machine given by a table or diagram: a Moore machine with a one-bit inp
   (first_listed <module> <s>) (listed_after <s> <t>) ... (last_listed <module> <s>)
         all the states, chained in the order the description lists them
   (table_next <s> zero <t>) and (table_next <s> one <t>)     for every state: where it goes on 0 and on 1
-  (asserted_in <output> <s>)                   the state in which the output is 1
+  (asserted_in <output> <s>)                   one for each state in which the output is 1
 
 C. Sequence recogniser: a Moore machine that watches a one-bit input for several fixed bit sequences, with one output per sequence.
 
@@ -103,11 +105,12 @@ C. Sequence recogniser: a Moore machine that watches a one-bit input for several
 
   Do not write any states or transitions. They are derived from the sequences.
 
-D. Wrap-around counter with an enable.
+D. Wrap-around counter, with or without an enable.
 
   (wrap_counter <module>)
   (count_output <module> <p>)                  the output that holds the count; give its (port_width ...)
-  (enable_of <module> <p>)                     the input that enables counting
+  (enable_of <module> <p>)                     the input that enables counting. Leave it out if there is none:
+                                               the counter then counts on every clock edge
   (count_min <module> nN) (count_max <module> nN)     the first and last count values
 
 E. Triangle-wave generator: an output that steps up to a maximum and back down to a minimum, steered by a direction register.

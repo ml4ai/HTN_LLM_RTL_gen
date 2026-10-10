@@ -65,8 +65,16 @@
           {"token": "(write_moore_outputs_from TopModule areset)", "action": false, "method": "m_moore_outputs_more", "children": [
             {"token": "(write_moore_outputs_from TopModule in)", "action": false, "method": "m_moore_outputs_more", "children": [
               {"token": "(write_moore_outputs_from TopModule out)", "action": false, "method": "m_moore_outputs_last", "children": [
-                {"token": "(write_moore_output TopModule out)", "action": false, "method": "m_moore_output_assign", "children": [
-                  {"token": "(write_moore_output_assign TopModule out B)", "action": true, "method": "", "step": 21, "children": []}
+                {"token": "(write_moore_output TopModule out)", "action": false, "method": "m_moore_output_listed", "children": [
+                  {"token": "(write_moore_output_terms_from TopModule out B)", "action": false, "method": "m_moore_output_terms_more", "children": [
+                    {"token": "(write_moore_output_term TopModule out B)", "action": false, "method": "m_moore_output_term_first", "children": [
+                      {"token": "(write_moore_output_assign TopModule out B)", "action": true, "method": "", "step": 21, "children": []}
+                    ]},
+                    {"token": "(write_moore_output_terms_from TopModule out A)", "action": false, "method": "m_moore_output_terms_last", "children": [
+                      {"token": "(write_moore_output_term TopModule out A)", "action": false, "method": "m_moore_output_term_none", "children": []}
+                    ]}
+                  ]},
+                  {"token": "(check_moore_output_assigned out)", "action": false, "method": "m_moore_output_is_assigned", "children": []}
                 ]}
               ]},
               {"token": "(write_moore_output TopModule in)", "action": false, "method": "m_moore_output_skip_input", "children": []}

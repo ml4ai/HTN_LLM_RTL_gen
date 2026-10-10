@@ -25,7 +25,7 @@
 ;      table into transitions.
 ;   4. Sequence recogniser (HDLC framing): a Moore FSM that recognises several
 ;      bit sequences at once, with an output for each.
-;   5. Wrap-around counter with an enable.
+;   5. Wrap-around counter, with an enable input or counting every cycle.
 ;   6. Triangle-wave generator: an up/down counter steered by a direction
 ;      register.
 ;
@@ -64,8 +64,8 @@
 ; ---- families 3 and 4: listed states ----
 ;
 ; The states are listed in the order to declare them, (first_listed m s),
-; (listed_after s t), (last_listed m s). Each output is 1 in exactly one
-; state, (asserted_in o s).
+; (listed_after s t), (last_listed m s). An output is 1 in the states the
+; problem gives for it, (asserted_in o s): one or several, and at least one.
 ;
 ; A table FSM gives every transition, (table_next s b t), and the planner
 ; reads them.
@@ -197,6 +197,7 @@
     (port_declared ?p - port)
     (state_declared ?s - fsm_state)
     (state_case_written ?s - fsm_state)
+    (output_assigned ?p - port)
     (section_written ?m - module)
   )
 
@@ -246,6 +247,9 @@
   (:task write_output_reset :parameters (?m - module ?out - port))
   (:task write_moore_outputs_from :parameters (?m - module ?p - port))
   (:task write_moore_output :parameters (?m - module ?p - port))
+  (:task write_moore_output_terms_from :parameters (?m - module ?p - port ?s - fsm_state))
+  (:task write_moore_output_term :parameters (?m - module ?p - port ?s - fsm_state))
+  (:task check_moore_output_assigned :parameters (?p - port))
   (:task open_clocked_block :parameters (?m - module ?clk ?rst - port ?pol - polarity))
   (:task write_counter_logic :parameters (?m - module))
   (:task write_internal_registers :parameters (?m - module))
@@ -1367,11 +1371,72 @@
     :ordered-subtasks (and (t1 (write_moore_output ?m ?p)))
   )
 
+  ; A sequence detector's output is 1 in its one accepting state.
   (:method m_moore_output_assign
     :parameters (?m - module ?p - port ?s - fsm_state)
     :task (write_moore_output ?m ?p)
-    :precondition (and (output_port ?p) (asserted_in ?p ?s))
+    :precondition (and (output_port ?p) (sequence_detector ?m) (asserted_in ?p ?s))
     :ordered-subtasks (and (t1 (write_moore_output_assign ?m ?p ?s)))
+  )
+
+  ; With listed states an output may be 1 in several of them. They are taken
+  ; in the listed order, so the plan does not depend on which is found first:
+  ; the first gives the assignment and each later one is OR-ed into it. An
+  ; output that is 1 in no state has no plan, so a problem that leaves an
+  ; output's states out is refused rather than given an undriven output.
+  (:method m_moore_output_listed
+    :parameters (?m - module ?p - port ?s - fsm_state)
+    :task (write_moore_output ?m ?p)
+    :precondition (and (output_port ?p) (first_listed ?m ?s))
+    :ordered-subtasks (and
+      (t1 (write_moore_output_terms_from ?m ?p ?s))
+      (t2 (check_moore_output_assigned ?p))
+    )
+  )
+
+  (:method m_moore_output_terms_more
+    :parameters (?m - module ?p - port ?s ?t - fsm_state)
+    :task (write_moore_output_terms_from ?m ?p ?s)
+    :precondition (listed_after ?s ?t)
+    :ordered-subtasks (and
+      (t1 (write_moore_output_term ?m ?p ?s))
+      (t2 (write_moore_output_terms_from ?m ?p ?t))
+    )
+  )
+
+  (:method m_moore_output_terms_last
+    :parameters (?m - module ?p - port ?s - fsm_state)
+    :task (write_moore_output_terms_from ?m ?p ?s)
+    :precondition (last_listed ?m ?s)
+    :ordered-subtasks (and (t1 (write_moore_output_term ?m ?p ?s)))
+  )
+
+  (:method m_moore_output_term_first
+    :parameters (?m - module ?p - port ?s - fsm_state)
+    :task (write_moore_output_term ?m ?p ?s)
+    :precondition (and (asserted_in ?p ?s) (not (output_assigned ?p)))
+    :ordered-subtasks (and (t1 (write_moore_output_assign ?m ?p ?s)))
+  )
+
+  (:method m_moore_output_term_also
+    :parameters (?m - module ?p - port ?s - fsm_state)
+    :task (write_moore_output_term ?m ?p ?s)
+    :precondition (and (asserted_in ?p ?s) (output_assigned ?p))
+    :ordered-subtasks (and (t1 (write_moore_output_also ?m ?p ?s)))
+  )
+
+  (:method m_moore_output_term_none
+    :parameters (?m - module ?p - port ?s - fsm_state)
+    :task (write_moore_output_term ?m ?p ?s)
+    :precondition (not (asserted_in ?p ?s))
+    :ordered-subtasks ()
+  )
+
+  (:method m_moore_output_is_assigned
+    :parameters (?p - port)
+    :task (check_moore_output_assigned ?p)
+    :precondition (output_assigned ?p)
+    :ordered-subtasks ()
   )
 
   (:method m_moore_output_skip_input
@@ -1385,6 +1450,14 @@
   (:action write_moore_output_assign
     :parameters (?module - module ?output - port ?state - fsm_state)
     :precondition (and (moore ?module) (asserted_in ?output ?state) (state_declared ?state))
+    :effect (output_assigned ?output)
+  )
+
+  ; `... | (ST_cr == <state>)` -- OR-ed into the assignment of <output>.
+  (:action write_moore_output_also
+    :parameters (?module - module ?output - port ?state - fsm_state)
+    :precondition (and (moore ?module) (asserted_in ?output ?state) (state_declared ?state)
+                       (output_assigned ?output))
     :effect ()
   )
 
@@ -1447,6 +1520,25 @@
     )
   )
 
+  ; With no enable input the counter counts on every clock edge.
+  (:method m_write_counter_logic_free
+    :parameters (?m - module ?clk ?rst - port ?pol - polarity ?out - port
+                 ?top ?bottom - value)
+    :task (write_counter_logic ?m)
+    :precondition (and (clock_of ?m ?clk) (reset_of ?m ?rst) (reset_polarity ?rst ?pol)
+                       (count_output ?m ?out)
+                       (not (exists (?en - port) (enable_of ?m ?en)))
+                       (wraps_at ?m ?top ?bottom))
+    :ordered-subtasks (and
+      (t1 (open_clocked_block ?m ?clk ?rst ?pol))
+      (t2 (write_counter_reset ?m ?out ?rst ?pol ?bottom))
+      (t3 (write_counter_free_open ?m))
+      (t4 (write_counter_wrap ?m ?out ?top ?bottom))
+      (t5 (write_counter_free_close ?m))
+      (t6 (write_clocked_block_close ?m))
+    )
+  )
+
   ; `if (<reset> is active) <counter> <= <reset_value>;`
   (:action write_counter_reset
     :parameters (?module - module ?counter ?reset - port ?polarity - polarity
@@ -1472,6 +1564,21 @@
 
   ; `end`
   (:action write_counter_enable_close
+    :parameters (?module - module)
+    :precondition (architecture_chosen ?module)
+    :effect ()
+  )
+
+  ; `else begin` -- there is no enable: count on every clock edge.
+  (:action write_counter_free_open
+    :parameters (?module - module)
+    :precondition (and (wrap_counter ?module)
+                       (not (exists (?en - port) (enable_of ?module ?en))))
+    :effect ()
+  )
+
+  ; `end`
+  (:action write_counter_free_close
     :parameters (?module - module)
     :precondition (architecture_chosen ?module)
     :effect ()

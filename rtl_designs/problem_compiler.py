@@ -27,8 +27,8 @@ have to supply: they lacked only what is listed here.
 
 Nothing here guesses. Each step either follows from the file or is left
 alone: with two unassigned input ports, no data input is named. What it
-cannot express it refuses: an output that would be asserted in two states is
-Invalid, since the domain decodes each output from one. So is a file that
+cannot express it refuses: a recogniser output that would be asserted in two
+states is Invalid, since the expansion gives each sequence one. So is a file that
 contradicts itself: a Moore detector whose accepting state also expects a
 bit plans to two different designs, and which one is not the file's to leave
 open.
@@ -177,14 +177,15 @@ def expand_sequences(problem, declared, notes):
                 facts.append(["child", state_name(x), BIT[b], state_name(x + b)])
             else:
                 facts.append(["no_child", state_name(x), BIT[b]])
-    # Each output is 1 in the state where its sequence has just completed. The
-    # domain decodes an output from one state, so a sequence that also
-    # completes inside a longer one cannot be expressed.
+    # Each output is 1 in the state where its sequence has just completed. A
+    # sequence that also completes inside a longer one would need a second
+    # such state. The domain can decode an output from several states (it does
+    # for a state table), but this expansion names and lists one a sequence.
     for out, bits in recognised:
         ends = [x for x in prefixes if x.endswith(bits)]
         if len(ends) != 1:
             raise Invalid(f"output {out} would be asserted in {len(ends)} states: sequence {bits} also "
-                          f"completes inside another, which the domain cannot express")
+                          f"completes inside another, which the expansion does not handle")
         facts.append(["asserted_in", out, state_name(bits)])
     for f in [f for f in facts if f[0] == "keeps_while" and len(f) == 3]:
         ends = [bits for out, bits in recognised if out == f[1]]

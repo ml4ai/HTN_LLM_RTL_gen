@@ -1,0 +1,14 @@
+{
+  "description": "Seven VerilogEval problems the domain was extended to reach (LLM_RTL_code_generation.md 8.6.8, 8.6.11): four counters with no enable input, and three Moore state machines with an output that is 1 in more than one state. The extension was checked on generated designs (check_counters_and_tables.py), not on these. No problem file is written for them: the pipeline translates each description. All seven fail the direct-prompt baseline in most or all samples, so all are 'poor'.",
+  "domain": "rtl_designs/rtl_domain.hddl",
+  "planner": {"binary": "build/apps/planners/MCTS_planner", "score_fun": "simple", "iterations": 100, "simulations": 1, "seed": 1},
+  "problems": [
+    {"bench": "verilog-eval-v2", "pid": "Prob035_count1to10", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob037_review2015_count1k", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob038_count15", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob040_count10", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob121_2014_q3bfsm", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob136_m2014_q6", "role": "poor"},
+    {"bench": "verilog-eval-v2", "pid": "Prob138_2012_q2fsm", "role": "poor"}
+  ]
+}

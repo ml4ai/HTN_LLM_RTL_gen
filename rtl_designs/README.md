@@ -24,6 +24,7 @@ and each plan step is left in symbolic form.
 | `exemplars/` | One worked example per design family: a description and its problem file. Written for the translation test; none is a benchmark problem |
 | `pilot/` | Eight benchmark problems restated as facts, with their saved plans and task trees (below) |
 | `check_pilot.py` | Plans the pilot problems, renders each plan and runs the benchmark's own testbench on it |
+| `check_counters_and_tables.py` | Plans, renders and simulates generated counters and Moore state tables against a Python model |
 
 ## Running it
 
@@ -83,9 +84,9 @@ plan helps an LLM write the code at all.
 |---|---|
 | Mealy sequence detector | Every transition, from the pattern alone (above) |
 | Moore sequence detector | The same, plus an accepting state whose output is 1 |
-| Moore FSM from a state table or diagram | Nothing beyond reading the table; the plan is the code's structure |
+| Moore FSM from a state table or diagram | Nothing beyond reading the table; the plan is the code's structure. An output may be 1 in one state or in several |
 | Sequence recogniser (HDLC framing) | Every transition, from the bit sequences alone. The problem file lists the sequences and their outputs; the compiler expands them into one state per distinct prefix; the planner derives where each state goes when its sequences break off (the single pattern's derivation, carried to several) |
-| Wrap-around counter with an enable | The wrap point |
+| Wrap-around counter, with an enable or counting every cycle | The wrap point |
 | Triangle-wave generator | Where the direction turns |
 
 All of them have one clock and a reset that is asynchronous or synchronous, of
@@ -105,6 +106,14 @@ changing the domain:
 
 It needs the planner built and `iverilog` on `PATH`, and exits non-zero on any
 failure. `--keep DIR` keeps the generated problems, Verilog and testbenches.
+
+The counter and state-table families have a check of the same kind,
+`check_counters_and_tables.py`. It generates its designs: counters over six
+count ranges, with and without an enable, in all four reset styles; and forty
+random Moore machines of two to six states, with one or two outputs that are
+each 1 in a random set of states. All 88 pass.
+
+    python rtl_designs/check_counters_and_tables.py -j 8
 
 ## The pilot problems
 
