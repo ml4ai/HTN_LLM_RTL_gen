@@ -144,6 +144,7 @@ cmake-build-debug
 *.json
 # ...except the executor's frozen configuration
 !executor/executor_config.json
+!executor/proposer_config.json
 !eval/eval_config.json
 # ...and the RTL pilot's manifest, task trees and action glosses
 !rtl_designs/pilot/pilot.json

@@ -62,6 +62,13 @@ DOMAIN = os.path.join(RTL, "rtl_domain.hddl")
 GUIDE = os.path.join(RTL, "problem_guide.txt")
 PLANNER = os.path.join(ROOT, "build", "apps", "planners", "MCTS_planner")
 RUNS = os.path.join(HERE, "runs", "learn")
+SLICE = os.path.join(HERE, "runs", "learn", "slice.json")    # one cache, whatever the run's tag
+# How the proposing model is run. None: the executor's own frozen configuration,
+# whose samples are drawn at its ladder temperature. --proposer-config names
+# another, e.g. executor/proposer_config.json: the same model, sampled cooler,
+# with a context long enough to decode this prompt greedily.
+PROPOSER_CONFIG = None
+GREEDY = False
 PLAN_SECONDS = 60
 STAGES = ["format", "load", "plan", "ambiguous", "render", "simulate", "regression", "pass"]
 
@@ -373,7 +380,7 @@ def used(tree):
 def slice_domain():
     """For every probe, its family, its plan under the full domain, and the
     methods the plan uses. Cached: it is a function of the domain alone."""
-    cache = os.path.join(RUNS, "slice.json")
+    cache = SLICE
     sha = rtl_eval.sha256_file(DOMAIN)
     if os.path.exists(cache):
         saved = json.load(open(cache))
@@ -392,7 +399,7 @@ def slice_domain():
                 "methods": sorted(methods), "actions": sorted(actions)}
     with ThreadPoolExecutor(8) as pool:
         rows = list(pool.map(one, probes()))
-    os.makedirs(RUNS, exist_ok=True)
+    os.makedirs(os.path.dirname(SLICE), exist_ok=True)
     saved = {"domain_sha256": sha, "probes": rows}
     with open(cache, "w") as f:
         json.dump(saved, f, indent=1)
@@ -577,6 +584,10 @@ def validate(family, domain_path, tools):
 # ---------------------------------------------------------------------------
 # The loop
 
+def proposer_config(cfg):
+    return os.path.abspath(PROPOSER_CONFIG) if PROPOSER_CONFIG else os.path.join(ROOT, cfg["executor"]["config"])
+
+
 def executor(cfg, jobs, batch_path, n):
     if not jobs:
         return
@@ -585,8 +596,8 @@ def executor(cfg, jobs, batch_path, n):
     with open(batch_path, "w") as f:
         json.dump(jobs, f, indent=1)
     cmd = [os.path.join(ROOT, cfg["executor"]["binary"]), "--batch", batch_path,
-           "--config", os.path.join(ROOT, cfg["executor"]["config"]), "--n", str(n)]
-    print(f"{len(jobs)} request(s) to the model, {n} sample(s) each", flush=True)
+           "--config", proposer_config(cfg)] + (["--greedy"] if GREEDY else ["--n", str(n)])
+    print(f"{len(jobs)} request(s) to the model, " + ("greedy" if GREEDY else f"{n} sample(s) each"), flush=True)
     if subprocess.run(cmd, stdout=subprocess.DEVNULL).returncode != 0:
         sys.exit("error: the executor failed; see its message above. Rerun to resume.")
 
@@ -596,7 +607,8 @@ def generated(d, n):
     if not os.path.exists(gen):
         return False
     g = json.load(open(gen))
-    return g.get("n") == n and g.get("request_sha256") == rtl_eval.sha256_file(os.path.join(d, "request.json"))
+    return (g.get("n") == n and g.get("mode") == ("greedy" if GREEDY else "sampled")
+            and g.get("request_sha256") == rtl_eval.sha256_file(os.path.join(d, "request.json")))
 
 
 def write_request(d, user):
@@ -627,12 +639,17 @@ def cmd_run(args, cfg, tools):
     family, base = args.family, os.path.join(RUNS, args.family)
     os.makedirs(base, exist_ok=True)
     methods, tasks = removed(family)
+    with open(proposer_config(cfg)) as f:
+        proposer = json.load(f)
     meta = {"created": rtl_eval.now(), "family": family, "runs": args.runs, "rounds": args.rounds,
+            "proposer": {"config": proposer_config(cfg), "mode": "greedy" if GREEDY else "sampled",
+                         "sampling": proposer["sampling" if GREEDY else "ladder_sampling"],
+                         "n_ctx": proposer["context"]["n_ctx"]},
             "removed_methods": sorted(methods), "removed_tasks": sorted(tasks),
             "train": [c["tag"] for c in split(family)[0]],
             "sha256": {"domain": rtl_eval.sha256_file(DOMAIN), "guide": rtl_eval.sha256_file(GUIDE),
                        "learn_family": rtl_eval.sha256_file(os.path.abspath(__file__)),
-                       "executor_config": rtl_eval.sha256_file(os.path.join(ROOT, cfg["executor"]["config"]))}}
+                       "proposer_config": rtl_eval.sha256_file(proposer_config(cfg))}}
     with open(os.path.join(base, "run.json"), "w") as f:
         json.dump(meta, f, indent=1)
 
@@ -722,6 +739,9 @@ def cmd_summary(args, cfg, tools):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--config", default=os.path.join(HERE, "eval_config.json"))
+    ap.add_argument("--tag", help="keep this run apart: eval/runs/learn_<tag>")
+    ap.add_argument("--proposer-config", help="how the proposing model is run (default: the executor's "
+                                              "configuration)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("slice")
     s.add_argument("family", choices=sorted(FAMILIES))
@@ -730,8 +750,16 @@ def main():
     s.add_argument("family", choices=sorted(FAMILIES))
     s.add_argument("--runs", type=int, default=8, help="independent runs (default 8)")
     s.add_argument("--rounds", type=int, default=3, help="answers a run may give: the first and repairs (default 3)")
+    s.add_argument("--greedy", action="store_true", help="one run, decoded greedily (needs a --proposer-config "
+                                                         "whose context holds the prompt)")
     sub.add_parser("summary")
     args = ap.parse_args()
+    global RUNS, PROPOSER_CONFIG, GREEDY
+    if args.tag:
+        RUNS += "_" + args.tag
+    PROPOSER_CONFIG = args.proposer_config
+    if getattr(args, "greedy", False):
+        GREEDY, args.runs = True, 1
     cfg, tools = rtl_eval.load_config(os.path.abspath(args.config))
     {"slice": cmd_slice, "run": cmd_run, "summary": cmd_summary}[args.cmd](args, cfg, tools)
 
