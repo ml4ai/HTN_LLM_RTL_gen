@@ -3787,6 +3787,74 @@ plans and task trees are unchanged.
 low: opt-in, and one line of plumbing. **Payoff:** a caller that needs the
 same plan twice can ask for it.
 
+### 8.32 A malformed subtask is reported where it stands — **done**
+
+The first attempt to have a model write methods (`eval/learn_family.py`)
+failed mostly on one mistake, and the parser's report of it was no help. In 31
+of 72 answers the model wrote an expression in parentheses where an argument
+belongs:
+
+    :ordered-subtasks (and
+      (t1 (analyze_choose_counter_register ?m))
+      (t2 (analyze_wrap_point ?m (count_max ?m) (count_min ?m)))
+
+and the error was
+
+    line 1452: Error! Expecting: ')' here:
+      :ordered-subtasks (and
+
+with the caret after `(and`, on a line that is correct. The answers came back
+for repair with that message and were not repaired: 9 such answers in the
+first round, 11 in the second and 11 in the third.
+
+**Cause.** The subtask grammar was written with `>>` throughout, so nothing in
+it was an expectation. One item that did not parse failed the whole `(and ...)`
+list quietly, the list was optional, and the first expectation to fail was the
+method's closing parenthesis, at the list's start.
+
+**Change** (`parser_definitions.hpp`):
+
+* The list form is tried first and commits at `(and` followed by a space or a
+  parenthesis. Every item must then be a subtask. The lookahead leaves a task
+  whose name merely starts with `and` to the single-subtask form.
+* A labelled subtask commits at `(label (`. A task's own arguments never begin
+  with `(`, so nothing else starts that way.
+* A task's argument list ends in an expectation with a name of its own,
+  `args_end`, so the message can say what an argument may be. A method's
+  `:task` uses the same rule.
+
+`describe_expectation` (`error_handler.hpp`) gives three expectations a
+sentence instead of a rule name: the end of an argument list, a subtask, and a
+condition. The last had been printed as the mangled name of the quantifier
+table, `N6parser11quantifier_E`.
+
+The same answer now draws
+
+    line 1454: Error! Expecting: ')' to end the arguments. An argument is a
+    variable or a name; an expression in parentheses, such as (f ?x), cannot be
+    one. Bind a variable in the precondition instead, e.g. (f ?x ?y), and use ?y here:
+        (t2 (analyze_wrap_point ?m (count_max ?m) (count_min ?m)))
+    _______________________________^_
+
+**What is unchanged.** Every domain that parsed still parses, to the same
+syntax tree: `( and` with a space after the parenthesis, `AND`, subtasks with
+and without labels, a single subtask, and `()`. An empty `(and)` was read as
+a subtask named `and` and rejected later as undeclared; it is now rejected by
+the parser, which expects a subtask.
+
+**Tests.** `test_subtask_errors_point_at_the_subtask` parses eight ways of
+writing a method's subtasks, and checks the line and the wording of the error
+for an expression in a labelled subtask, in an unlabelled one, in a method's
+`:task` and in a condition.
+
+**Checked.** All six test suites pass. `check_sequence_detectors.py -j 8`: 134
+configurations, 0 failed. `check_counters_and_tables.py -j 8`: 88, 0 failed.
+`check_pilot.py`: 8 problems, 0 failed, with the saved plans unchanged.
+
+**Depends on:** §8.23. **Risk:** low: the grammar accepts what it accepted.
+**Payoff:** a writer of methods, model or person, is told which argument is
+wrong.
+
 ---
 
 ## 9. Remaining work
@@ -3814,8 +3882,9 @@ what was left of performance (§8.24), followed by the evaluator's
 representation (§8.25). What remains below came out of those last two.
 §8.26, early commit and precondition look-ahead, came afterwards out of the
 first RTL domain; the heuristic question it raised is under "Not on this list".
-§8.27–§8.30 came out of the RTL domain as well, and §8.31 out of the
-pipeline built on it.
+§8.27–§8.30 came out of the RTL domain as well, §8.31 out of the
+pipeline built on it, and §8.32 out of the first attempt to have a model
+write methods.
 
 ---
 

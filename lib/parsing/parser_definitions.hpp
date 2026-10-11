@@ -390,8 +390,21 @@ namespace parser {
     struct TAbstractTask: x3::annotate_on_success {};
 
 
+    //The ')' that ends a task's arguments. It is a rule of its own so that,
+    //when something else is there, the error can say what an argument may be
+    //(error_handler.hpp). A model writing a method reaches for a nested
+    //expression, (wrap_to (count_max ?m)), more often than for anything else
+    //that is not HDDL.
+    rule<struct TArgsEnd> const args_end = "args_end";
+    auto const args_end_def = lit(')');
+    BOOST_SPIRIT_DEFINE(args_end);
+
+    //A task with its arguments. Once "(name" and its terms are read, only
+    //the closing ')' can follow, so that is an expectation: a malformed
+    //argument is reported where it stands. Every use is in a position where
+    //"(name ..." can be nothing but a task.
     rule<struct TTaskSymbolWithTerms, MTask> const task_symbol_with_terms = "task_symbol_with_terms";
-    auto const task_symbol_with_terms_def = '(' >> name >> *term >> ')';
+    auto const task_symbol_with_terms_def = '(' >> name >> *term > args_end;
     BOOST_SPIRIT_DEFINE(task_symbol_with_terms);
     struct TTaskSymbolWithTerms: x3::annotate_on_success {};
 
@@ -404,17 +417,30 @@ namespace parser {
     struct TMTask: x3::annotate_on_success {};
 
     rule<struct TSubTaskWithId, SubTaskWithId> const subtask_with_id = "subtask_with_id";
-    auto const subtask_with_id_def = '(' >> name >> task_symbol_with_terms >> ')';
+    //"(label (" can only be a labelled subtask: a task's own arguments never
+    //begin with '('. From there on a failure is an error at that point, not
+    //a reason to try another reading of the whole list.
+    auto const subtask_with_id_def = '(' >> name >> &lit('(') > task_symbol_with_terms > ')';
     BOOST_SPIRIT_DEFINE(subtask_with_id);
     struct TSubTaskWithId: x3::annotate_on_success {};
 
     rule<struct TSubTask, SubTask> const subtask = "subtask";
-    auto const subtask_def = task_symbol_with_terms | subtask_with_id;
+    //The labelled form first: it backs out, at the lookahead, of a subtask
+    //with no label, where the other reading would not back out of this one.
+    auto const subtask_def = subtask_with_id | task_symbol_with_terms;
     BOOST_SPIRIT_DEFINE(subtask);
     struct TSubTask: x3::annotate_on_success {};
 
     rule<struct TSubTasks, SubTasks> const subtasks = "subtasks";
-    auto const subtasks_def = nil | subtask | '(' >> kw("and") >> +subtask >> ')';
+    //"(and" followed by a space or a parenthesis is the list form, and is
+    //tried before the single subtask, which would read "(and (t1 ..." as a
+    //subtask labelled "and". The lookahead leaves a task whose name merely
+    //starts with "and" to the single form. Inside the list every item must
+    //be a subtask, so a malformed one is reported where it is. It used to
+    //fail the whole list quietly, and the error pointed at ":ordered-subtasks".
+    auto const subtasks_def = nil
+                            | ('(' >> lexeme[kw("and") >> &(space | lit('(') | lit(')'))] > +subtask > ')')
+                            | subtask;
     BOOST_SPIRIT_DEFINE(subtasks);
     struct TSubTasks: x3::annotate_on_success {};
 

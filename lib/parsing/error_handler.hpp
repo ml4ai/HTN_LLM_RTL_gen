@@ -41,6 +41,20 @@ namespace parser {
     }
 
     inline std::string describe_expectation(std::string const& which) {
+        //Expectations that deserve more than their rule's name.
+        if (which == "args_end") {
+            return "')' to end the arguments. An argument is a variable or a name; "
+                   "an expression in parentheses, such as (f ?x), cannot be one. Bind "
+                   "a variable in the precondition instead, e.g. (f ?x ?y), and use ?y";
+        }
+        if (which == "subtask") {
+            return "a subtask, (task arg ...) or (label (task arg ...))";
+        }
+        if (which.find("quantifier_") != std::string::npos) {
+            return "a condition: (predicate arg ...) whose arguments are variables or "
+                   "names, or not, and, or, imply, =, forall or exists. An expression "
+                   "in parentheses cannot be an argument";
+        }
         if (which.rfind("N5boost", 0) != 0 && which.find("boost::spirit") == std::string::npos) {
             return which;
         }

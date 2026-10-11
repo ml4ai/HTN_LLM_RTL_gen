@@ -309,3 +309,66 @@ BOOST_AUTO_TEST_CASE(test_function_printing) {
     out2 << g;
     BOOST_TEST(out2.str() == "(g)");
 }
+
+//planner_doc.md 8.32: a malformed subtask is reported where it stands. The
+//list form "(and ..." used to fail as a whole when one item did not parse,
+//and the error pointed at ":ordered-subtasks" with nothing about the item.
+//A model writing methods makes one mistake above all: an expression in
+//parentheses where an argument should be.
+BOOST_AUTO_TEST_CASE(test_subtask_errors_point_at_the_subtask) {
+    auto domain_with = [](std::string const& precondition, std::string const& subtasks) {
+        return std::string("(define (domain d)\n"
+                           "  (:requirements :typing :hierarchy)\n"
+                           "  (:types thing - object)\n"
+                           "  (:predicates (top ?x ?y - thing))\n"
+                           "  (:task go :parameters (?x - thing))\n"
+                           "  (:task android :parameters (?x - thing))\n"
+                           "  (:method m\n"
+                           "    :parameters (?x ?y - thing)\n"
+                           "    :task (go ?x)\n"
+                           "    :precondition ") + precondition + "\n"
+                           "    :ordered-subtasks " + subtasks + ")\n"
+                           "  (:action step :parameters (?x ?y - thing) :precondition () :effect ())\n"
+                           ")\n";
+    };
+    //Every way of writing subtasks still parses.
+    for (std::string const subtasks : {"(and (t1 (step ?x ?y)) (t2 (android ?y)))",
+                                       "(and (step ?x ?y) (android ?y))",
+                                       "( and\n (t1 (step ?x ?y)))",
+                                       "(AND (t1 (step ?x ?y)))",
+                                       "(t1 (step ?x ?y))",
+                                       "(step ?x ?y)",
+                                       "(android ?y)",
+                                       "()"}) {
+        BOOST_TEST_CONTEXT(subtasks) {
+            BOOST_CHECK_NO_THROW(parse<Domain>(domain_with("(top ?x ?y)", subtasks)));
+        }
+    }
+    auto error_of = [&](std::string const& text) {
+        try {
+            parse<Domain>(text);
+        }
+        catch (ParseError const& e) {
+            return boost::diagnostic_information(e) + e.what();
+        }
+        return std::string();
+    };
+    //The subtask is on line 12 of the domain, the list opens on line 11.
+    for (std::string const subtasks : {"(and\n      (t1 (step ?x (top ?x))))",
+                                       "(and\n      (step ?x (top ?x)))"}) {
+        std::string const message = error_of(domain_with("(top ?x ?y)", subtasks));
+        BOOST_TEST_CONTEXT(message) {
+            BOOST_TEST(message.find("line 12") != std::string::npos);
+            BOOST_TEST(message.find("cannot be one") != std::string::npos);
+        }
+    }
+    //The same mistake in the method's own task, and in a condition.
+    std::string in_task = domain_with("(top ?x ?y)", "(step ?x ?y)");
+    in_task.replace(in_task.find(":task (go ?x)"), 13, ":task (go (top ?x))");
+    BOOST_TEST(error_of(in_task).find("cannot be one") != std::string::npos);
+    std::string const in_condition = error_of(domain_with("(and (top ?x (top ?y)))", "(step ?x ?y)"));
+    BOOST_TEST_CONTEXT(in_condition) {
+        BOOST_TEST(in_condition.find("line 10") != std::string::npos);
+        BOOST_TEST(in_condition.find("cannot be an argument") != std::string::npos);
+    }
+}
