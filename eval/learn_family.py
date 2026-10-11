@@ -274,12 +274,26 @@ def plan(domain_path, problem_text, seed=1, tree=None):
         if run.returncode != 0 or "Plan:" not in run.stdout:
             if run.returncode < 0 or run.returncode == 142:
                 return None, f"the planner did not finish in {PLAN_SECONDS} seconds", None
-            return None, " ".join(errors)[:600] or f"the planner stopped (exit {run.returncode})", None
+            message = "\n".join(errors).replace(domain_path, "the domain")[:3000]
+            return None, (message or f"the planner stopped (exit {run.returncode})") + warned(run.stderr, domain_path), None
         try:
             steps = plan_to_verilog.read_plan(run.stdout)
         except SystemExit as e:
             return None, str(e), None
         return steps, "", json.load(open(tree_path)) if tree else None
+
+
+def warned(stderr, domain_path):
+    """What the planner's validator warned about that bears on an answer: a
+    task with no method, and an action no plan can reach. The full domain
+    draws neither warning for the families it plans."""
+    lines = []
+    for line in stderr.splitlines():
+        if line.startswith("warning:") and re.search(r"has no method|is never reached", line):
+            lines.append(re.sub(r"^warning: \S+?:\d+: ", "", line))
+    if not lines:
+        return ""
+    return "\nThe planner also warned:\n" + "\n".join("- " + x for x in lines[:12])
 
 
 def simulate(verilog, tb, tools):
@@ -314,7 +328,7 @@ def try_case(domain_path, case, tools, seeds=(1,)):
         sys.exit(f"error: generated problem {case['tag']} does not compile: {e}")
     steps, message, _ = plan(domain_path, compiled, seeds[0])
     if steps is None:
-        loading = not re.search(r"no applicable decomposition|iteration budget|stuck|decisions without|did not finish",
+        loading = not re.search(r"no applicable decomposition|iteration budget|stuck|decisions without|did not finish|Invalid task",
                                 message)
         return ("load" if loading else "plan"), message
     for seed in seeds[1:]:
@@ -439,6 +453,8 @@ RULES
 - Write only (:task ...) declarations, for any new compound tasks you need, and (:method ...) definitions. Do not write or change actions, predicates or types, and do not repeat anything the domain already has.
 - Use the domain's existing tasks and actions wherever they fit. Follow the way its other methods are written.
 - Declare every variable a method uses in its :parameters, with its type. A variable must be bound by the method's task or by its precondition.
+- An argument of a task, an action or a predicate is a variable or a name, never an expression in parentheses. To use a value that a fact holds, name it with a variable in the precondition: with (colour_of ?x ?c) there, ?c can be an argument.
+- Every task you declare needs at least one method, and every method's :task must be a declared task with the same number of arguments.
 - An action can only be a step when its own precondition holds at that point in the plan.
 - For any one problem there must be exactly one plan. Where two of your methods decompose the same task, their preconditions must never both hold. Your methods must not apply to the other kinds of design.
 
