@@ -60,15 +60,70 @@ SYSTEM = "You plan the steps for writing a digital design. You answer with the l
 # ---------------------------------------------------------------------------
 # The domain's vocabulary, and a problem with a list of steps as its task
 
+def typed(tokens):
+    """[(name, type)] from a typed list's tokens: ?a ?b - t ?c - u."""
+    out, pending, i = [], [], 0
+    while i < len(tokens):
+        if tokens[i] == "-":
+            out += [(x, tokens[i + 1]) for x in pending]
+            pending, i = [], i + 2
+        else:
+            pending.append(tokens[i])
+            i += 1
+    return out + [(x, "object") for x in pending]
+
+
 def signatures(domain_text):
-    """{name: (kind, number of parameters)} for the domain's actions and for
-    its tasks that have at least one method."""
+    """{name: (kind, the types of its parameters)} for the domain's actions
+    and for its tasks that have at least one method."""
     with_methods = set(lf.method_tasks(domain_text).values())
     out = {}
     for start, end, kind, name in lf.top_forms(domain_text):
         if kind == ":action" or (kind == ":task" and name in with_methods):
             params = re.search(r":parameters\s*\(([^)]*)\)", domain_text[start:end])
-            out[name] = (kind[1:], len(re.findall(r"\?", params.group(1))) if params else 0)
+            out[name] = (kind[1:], [t for _, t in typed(params.group(1).split())] if params else [])
+    return out
+
+
+def action_forms(domain_text):
+    """{action: (parameter names, precondition, effects)}, the last two as
+    nested lists. Every effect in this domain adds one fact."""
+    out = {}
+    for start, end, kind, name in lf.top_forms(domain_text):
+        if kind != ":action":
+            continue
+        form = problem_compiler.parse_sexpr(domain_text[start:end])
+        part = {form[i]: form[i + 1] for i in range(2, len(form) - 1, 2)}
+        params = [x for x, _ in typed(part.get(":parameters", []))]
+        effect = part.get(":effect", [])
+        effects = effect[1:] if effect[:1] == ["and"] else ([effect] if effect else [])
+        out[name] = (params, part.get(":precondition", []), effects)
+    return out
+
+
+def unmet(domain_text, facts, plan, name, args):
+    """Which parts of an action's precondition do not hold after `plan`, as
+    far as that can be told without the planner: the plain facts it needs
+    that are missing, and the facts it needs absent that are there."""
+    forms = action_forms(domain_text)
+    state = {tuple(f) for f in facts}
+    for step, step_args in plan:
+        params, _, effects = forms[step]
+        bind = dict(zip(params, step_args))
+        state |= {tuple(bind.get(x, x) for x in e) for e in effects}
+    params, pre, _ = forms[name]
+    bind = dict(zip(params, args))
+    parts = pre[1:] if pre[:1] == ["and"] else ([pre] if pre else [])
+    out = []
+    for part in parts:
+        if part and all(isinstance(x, str) for x in part):
+            atom = tuple(bind.get(x, x) for x in part)
+            if atom not in state:
+                out.append(f"it needs the fact ({' '.join(atom)}), which is not true at this point")
+        elif len(part) == 2 and part[0] == "not" and all(isinstance(x, str) for x in part[1]):
+            atom = tuple(bind.get(x, x) for x in part[1])
+            if atom in state:
+                out.append(f"it needs ({' '.join(atom)}) not to be true, and it is")
     return out
 
 
@@ -94,13 +149,15 @@ def with_steps(compiled, steps):
 
 
 def objects_of(compiled):
-    """The names a step may use: the problem's objects and the domain's constants."""
+    """{name: type} of what a step may use: the problem's objects and the
+    domain's constants."""
     block = re.search(r"\(:objects(.*?)\n  \)", compiled, re.S).group(1)
-    names = set()
+    names = {"zero": "bitval", "one": "bitval", "active_high": "polarity", "active_low": "polarity"}
     for line in block.splitlines():
         if " - " in line:
-            names.update(line.rsplit(" - ", 1)[0].split())
-    return names | {"zero", "one", "active_high", "active_low"}
+            listed, type_ = line.rsplit(" - ", 1)
+            names.update({n: type_.strip() for n in listed.split()})
+    return names
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +258,7 @@ def test_steps(family, case, reply, workdir, tools):
         f.write(domain_text)
     with open(os.path.join(workdir, "steps.txt"), "w") as f:
         f.write(show(steps) + "\n")
-    compiled, _, _ = problem_compiler.compile_text(case["problem"])
+    compiled, facts, _ = problem_compiler.compile_text(case["problem"])
     known, names, of_method = signatures(domain_text), objects_of(compiled), lf.method_tasks(domain_text)
     wrong = []
     for i, (name, args) in enumerate(steps, 1):
@@ -217,10 +274,16 @@ def test_steps(family, case, reply, workdir, tools):
                 close = difflib.get_close_matches(name, known, n=3, cutoff=0.6)
                 hint = f" The nearest names the domain has are {', '.join(close)}." if close else ""
             wrong.append(f"{here} {name} is not an action of the domain, or a task of it that has a method.{hint}")
-        elif len(args) != known[name][1]:
-            wrong.append(f"{here} the {known[name][0]} {name} takes {known[name][1]} argument(s), not {len(args)}.")
+        elif len(args) != len(known[name][1]):
+            wrong.append(f"{here} the {known[name][0]} {name} takes {len(known[name][1])} argument(s), "
+                         f"not {len(args)}.")
         elif [a for a in args if a not in names]:
             wrong.append(f"{here} {', '.join(a for a in args if a not in names)} is not a name in this problem.")
+        else:
+            for j, (a, want) in enumerate(zip(args, known[name][1]), 1):
+                if want not in ("object", names[a]):
+                    wrong.append(f"{here} argument {j}, {a}, is a {names[a]}; the {known[name][0]} {name} takes "
+                                 f"a {want} there.")
     if wrong:
         return {"stage": "names", "diagnostic": "\n".join(wrong[:12]), "steps": len(steps)}
 
@@ -237,9 +300,13 @@ def test_steps(family, case, reply, workdir, tools):
                       f"({' '.join([name] + args)}).")
         if known[name][0] == "action":
             params, pre = precondition(domain_text, name)
-            diagnostic += (f" It is an action with parameters {params} and precondition {pre}. With this step's "
-                           f"arguments, that precondition does not hold at this point: a fact it needs is not in "
-                           f"the problem and no earlier step adds it, or the arguments are in the wrong order.")
+            before, _, _ = lf.plan(domain_path, with_steps(compiled, steps[:k])) if k else ([], "", None)
+            missing = unmet(domain_text, facts, before or [], name, args)
+            diagnostic += f" It is an action with parameters {params} and precondition {pre}. "
+            diagnostic += ("With this step's arguments, " + "; ".join(missing) + ". Either this is the wrong action "
+                           "here, or an earlier step that adds the fact is missing, or the arguments are wrong."
+                           if missing else
+                           "With this step's arguments, that precondition does not hold at this point.")
         else:
             diagnostic += (" It is a task, and none of its methods applies at this point with these arguments, "
                            "or a step inside it cannot be done.")
