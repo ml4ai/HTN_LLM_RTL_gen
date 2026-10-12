@@ -37,6 +37,7 @@ against a Python model. No benchmark testbench is read.
 import argparse
 import collections
 import difflib
+import itertools
 import json
 import os
 import re
@@ -136,6 +137,55 @@ def precondition(domain_text, name):
             p = re.search(r":parameters\s*(\([^)]*\))", body)
             return (p.group(1) if p else "()"), (" ".join(m.group(1).split()) if m else "()")
     return None
+
+
+def doable(domain_path, domain_text, compiled, facts, names, known, done):
+    """What can be done next, after the steps in `done`: every action and
+    task of the domain, with every choice of this problem's names of the
+    right types, that the planner can carry out at that point. Returned as
+    text for a diagnostic, or "" if `done` itself cannot be carried out.
+
+    This is the state a decomposition is proposed in (6.2.2), put as what it
+    allows. An action is first tried against the facts with unmet(), which is
+    cheap, and the planner confirms the rest."""
+    before, _, _ = lf.plan(domain_path, with_steps(compiled, done)) if done else ([], "", None)
+    if before is None:
+        return ""
+    by_type = collections.defaultdict(list)
+    for n, t in sorted(names.items()):
+        by_type[t].append(n)
+    candidates = []
+    for name, (kind, types) in sorted(known.items()):
+        pools = [by_type[t] if t != "object" else sorted(names) for t in types]
+        size = 1
+        for pool in pools:
+            size *= len(pool)
+        if size == 0 or size > 4000:
+            continue
+        for args in itertools.product(*pools):
+            if kind == "task" or not unmet(domain_text, facts, before, name, list(args)):
+                candidates.append((name, list(args)))
+    if len(candidates) > 3000:
+        return ""
+
+    def works(step):
+        return lf.plan(domain_path, with_steps(compiled, done + [step]))[0] is not None
+    with ThreadPoolExecutor(8) as pool:
+        ok = list(pool.map(works, candidates))
+    found = collections.defaultdict(list)
+    for (name, args), good in zip(candidates, ok):
+        if good:
+            found[name].append(args)
+    if not found:
+        return ""
+    lines = []
+    for name in sorted(found, key=lambda n: (known[n][0] != "task", n)):
+        shown = [f"({' '.join([name] + a)})" for a in found[name][:4]]
+        more = f" and {len(found[name]) - 4} more with other arguments" if len(found[name]) > 4 else ""
+        lines.append(f"- {known[name][0]} {name}: " + " ".join(shown) + more)
+    where = f"After your first {len(done)} step(s)" if done else "At the start"
+    return (f"\n\n{where}, these are all the steps that can be done next. A task is listed if one of its methods "
+            f"applies; an action, if its precondition holds:\n" + "\n".join(lines))
 
 
 def with_steps(compiled, steps):
@@ -260,7 +310,7 @@ def test_steps(family, case, reply, workdir, tools):
         f.write(show(steps) + "\n")
     compiled, facts, _ = problem_compiler.compile_text(case["problem"])
     known, names, of_method = signatures(domain_text), objects_of(compiled), lf.method_tasks(domain_text)
-    wrong = []
+    wrong, first_wrong = [], None
     for i, (name, args) in enumerate(steps, 1):
         here = f"step {i}, ({' '.join([name] + args)}):"
         if any(a.startswith("?") for a in args):
@@ -284,8 +334,12 @@ def test_steps(family, case, reply, workdir, tools):
                 if want not in ("object", names[a]):
                     wrong.append(f"{here} argument {j}, {a}, is a {names[a]}; the {known[name][0]} {name} takes "
                                  f"a {want} there.")
+        if wrong and first_wrong is None:
+            first_wrong = i - 1
     if wrong:
-        return {"stage": "names", "diagnostic": "\n".join(wrong[:12]), "steps": len(steps)}
+        return {"stage": "names", "steps": len(steps),
+                "diagnostic": "\n".join(wrong[:12]) + doable(domain_path, domain_text, compiled, facts, names, known,
+                                                             steps[:first_wrong])}
 
     plan, message, _ = lf.plan(domain_path, with_steps(compiled, steps))
     if plan is None:
@@ -310,6 +364,7 @@ def test_steps(family, case, reply, workdir, tools):
         else:
             diagnostic += (" It is a task, and none of its methods applies at this point with these arguments, "
                            "or a step inside it cannot be done.")
+        diagnostic += doable(domain_path, domain_text, compiled, facts, names, known, steps[:k])
         return {"stage": "plan", "diagnostic": diagnostic, "steps": len(steps), "failed_step": k + 1}
     other, _, _ = lf.plan(domain_path, with_steps(compiled, steps), seed=2)
     if other != plan:
