@@ -78,9 +78,16 @@ def stub(golden_path, top, out_path, workdir, tools, timeouts):
     ports), not by gutting the golden: deleting a module's cells leaves its
     plain connections, so a design that is only `assign out = in` or a
     constant came through unchanged and "passed". Parameters are not carried
-    over. Returns (ok, log)."""
+    over.
+
+    The golden is read with -lib, as an interface with no body. Only the
+    ports are wanted, and reading the body meant synthesising it, which
+    Yosys refuses for a golden that simulates but is not synthesisable as
+    written: a latch inferred in an always_comb, an event list it does not
+    support. Eight goldens were like that, and had no stub. Returns
+    (ok, log)."""
     js = os.path.join(workdir, "ports.json")
-    script = f"read_verilog -sv {golden_path}; hierarchy -top {top}; proc; write_json {js}"
+    script = f"read_verilog -sv -lib {golden_path}; write_json {js}"
     rc, log, t = run([tools["yosys"], "-q", "-p", script], workdir, timeouts["synth"])
     if rc != 0 or t or not os.path.exists(js):
         return False, log

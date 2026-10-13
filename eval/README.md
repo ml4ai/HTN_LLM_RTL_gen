@@ -364,7 +364,9 @@ Everything follows its own scripts, ported line for line:
 - **A stuck-at-0 stub must fail.** The stub is a module with the golden's ports
   and every output tied to 0. A testbench it passes cannot tell a working
   design from a dead one. Such problems are flagged, and the report adds a
-  functional ladder without them.
+  functional ladder without them. The stub is built from the golden's
+  interface alone, so there is one for every problem, the eight whose golden
+  Yosys cannot synthesise included.
 
 On the pinned tools and commits:
 
