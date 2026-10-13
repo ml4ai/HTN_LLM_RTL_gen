@@ -9,9 +9,11 @@ involved:
 
   1. Lists with the same sequence of step names are one case, and become one
      method.
-  2. Within a case, an argument becomes a variable unless it is one of the
-     domain's constants. Two argument places get the same variable when they
-     hold the same name in every example.
+  2. Within a case, an argument becomes a variable. Two argument places get
+     the same variable when they hold the same name in every example. One of
+     the domain's constants that is the same in every example stays a
+     constant, unless a fact of the problem ties it down (step 3): then it
+     too is a variable, since the examples may all have happened to share it.
   3. Each variable is tied to the module by facts of the problem: a fact
      pattern over variables already tied that, in every example, picks out
      exactly the name the variable stands for. Those patterns are the
@@ -103,12 +105,17 @@ def lift_case(examples, name):
     var_of, columns = {}, {}
     module = tuple(e["module"] for e in examples)
     columns[module] = "?m"
+    tentative = set()
     for p in places:
         col = value[p]
-        if len(set(col)) == 1 and col[0] in CONSTANTS:
-            continue
         if col not in columns:
             columns[col] = f"?v{len(columns)}"
+            if len(set(col)) == 1 and col[0] in CONSTANTS:
+                # A constant that never varies in the examples. It is made a
+                # variable all the same if a fact of the problem ties it down,
+                # as (reset_polarity ?r ?p) ties a polarity: the examples may
+                # simply all have had the same one. Otherwise it stays as it is.
+                tentative.add(columns[col])
         var_of[p] = columns[col]
     variables = {v: col for col, v in columns.items()}
     types = {}
@@ -143,6 +150,14 @@ def lift_case(examples, name):
                 candidate = (len(new), "?m" not in reading, sum(x.startswith("?") for x in reading), pred, reading)
                 if best is None or candidate < best:
                     best = candidate
+        if best is None and set(variables) - bound <= tentative:
+            for v in set(variables) - bound:          # nothing ties these down: constants after all
+                constant = variables.pop(v)[0]
+                types.pop(v)
+                for p in [p for p, x in var_of.items() if x == v]:
+                    del var_of[p]
+                assert constant in CONSTANTS
+            break
         if best is None:
             left = sorted(set(variables) - bound)
             raise CannotLift(f"{name}: no fact of the problem ties {', '.join(left)} "
@@ -291,12 +306,14 @@ def main():
         # the pilot's problem files. Planner only; the hand-written methods' plan is the test.
         rows = [r for r in lf.slice_domain()["probes"] if r["kind"] == args.family
                 and not any(r["name"] == c["tag"] for c in train)]
-        same = 0
+        same = planned = 0
         for r in rows:
             steps, _, _ = lf.plan(os.path.join(work, "domain.hddl"), r["problem"])
+            planned += steps is not None
             same += steps is not None and [[n, list(a)] for n, a in steps] == r["steps"]
-        verdict["other_problems"] = {"problems": len(rows), "same_plan_as_hand_written": same}
-        print(f"problems from outside the generator: {same} of {len(rows)} get the hand-written methods' plan")
+        verdict["other_problems"] = {"problems": len(rows), "planned": planned, "same_plan_as_hand_written": same}
+        print(f"problems from outside the generator: {planned} of {len(rows)} plan; {same} get the hand-written "
+              f"methods' plan")
     with open(os.path.join(work, "verdict.json"), "w") as f:
         json.dump(verdict, f, indent=1)
 
