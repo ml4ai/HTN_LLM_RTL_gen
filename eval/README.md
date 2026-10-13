@@ -19,6 +19,7 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | `pipeline.py` | The pipeline end to end, with a fall-back to the direct prompt when the translation gives no usable plan (below) |
 | `learn_family.py` | Leave one design family out: the model writes its methods back, and they are tested on generated designs (below) |
 | `learn_ground.py` | The same, asking for less: the model lists the steps for one problem at a time (below) |
+| `learn_steps.py` | The model builds a step list one step at a time, choosing among the steps that can be taken (below) |
 | `lift.py` | Turns checked step lists into methods, with no model involved (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
@@ -260,6 +261,31 @@ methods, with the problem's own names as arguments.
   found and named, with an action's precondition. The resulting plan is
   rendered and simulated as before.
 - **Steps may be written without parentheses.** The model leaves them off.
+
+`learn_steps.py` asks for less again. The model never writes a step. At each
+turn the planner works out every step that can be taken next, the templates
+work out what each would add to the module, and the model sees the module so
+far and that menu and answers with a number. It sees no HDDL.
+
+    $PY eval/learn_steps.py show wrap_counter                    # the first turn's prompt
+    $PY eval/learn_steps.py run wrap_counter                     # 4 lists a training problem
+    $PY eval/learn_steps.py --tag random run wrap_counter --policy random --runs 25
+    $PY eval/learn_steps.py summary
+
+- **A menu entry** is a step with the problem's names, the sentence of each
+  action it comes to, and the lines of Verilog it adds. A step that records a
+  decision adds no code and is shown with the code it makes possible.
+- **What is left off the menu:** a step that changes nothing; one that does
+  exactly what another does (the task is kept over the action); an action with
+  an argument nothing ties down, when there are more than two ways to fill it
+  in; and a step whose code cannot stand where it would go, because a port is
+  not declared yet, the module header is not written, or blocks would not nest.
+- **A list ends** at the step that writes `endmodule`, and is then simulated.
+  There is no repair.
+- **`--policy random`** chooses uniformly from the same menus, with no model.
+  It measures what the model's choices add.
+- Lists that pass are written where `lift.py` looks:
+  `--from runs --runs-dir eval/runs/steps`.
 
 `lift.py` generalises checked lists into methods symbolically:
 
