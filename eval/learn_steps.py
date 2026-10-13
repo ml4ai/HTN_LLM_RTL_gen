@@ -33,8 +33,9 @@ less four kinds of entry:
     argument down, and each way is a guess;
   - one whose code cannot stand where it would go: the templates cannot
     write it yet (it uses a port not yet declared), it would come before
-    the module header, it would end a block that is not open, or it would
-    end the module with a block still open.
+    the module header, it would end a block that is not open, it would
+    end the module with a block still open, or it would put an `else`
+    where no `if` precedes it.
 
 So a list is valid as it is built, in its names, its types and every
 precondition. What the model supplies is the order and the choice: which of
@@ -147,26 +148,15 @@ class Problem:
         """The Verilog the plan comes to, as lines, or None if it cannot
         stand: the templates cannot write it out at that point (a step uses
         a port that is not declared yet), it puts code before the module
-        header, or its blocks do not nest."""
+        header, or its blocks could not be the start of a module
+        (well_formed)."""
         try:
             lines = plan_to_verilog.render(plan).strip("\n").splitlines()
         except (SystemExit, Exception):
             return None
         if lines and not lines[0].startswith("module "):
             return None
-        # Blocks must nest: no `end` without a block to end, and no
-        # `endmodule` while one is open.
-        depth = 0
-        for line in lines:
-            for word in re.findall(r"\b(?:begin|case|end|endcase|endmodule)\b", line):
-                if word == "endmodule":
-                    if depth:
-                        return None
-                else:
-                    depth += 1 if word in ("begin", "case") else -1
-                    if depth < 0:
-                        return None
-        return lines
+        return lines if well_formed(lines) else None
 
     def menu(self, done):
         """What can be done after `done`: a list of entries, each with its
@@ -280,6 +270,53 @@ WHAT CAN BE DONE NEXT
 Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, so choose that step only when everything else is written.
 
 Answer with the number of the step and nothing else."""
+
+
+def well_formed(lines):
+    """Could these lines be the start of a module, as far as its blocks go?
+    Blocks must nest: no `end` without a block to end, and no `endmodule`
+    while one is open. And an `else` needs an `if`: it may come only straight
+    after an if-branch at the same depth, and not after another plain else.
+
+    This is syntax only, the part a compiler would refuse whatever came
+    next. Whether the module does what the design says is for the model."""
+    stack = []          # for each open block, what closing it leaves behind: may an else follow?
+    may_else = [False]  # at each depth, may the next statement be an else?
+    for line in lines:
+        text = line.strip()
+        while True:
+            if text.startswith("endmodule"):
+                if stack:
+                    return False
+                text = ""
+            elif re.match(r"(end|endcase)\b", text):
+                if not stack:
+                    return False
+                may_else.pop()
+                may_else[-1] = stack.pop()
+                text = re.sub(r"^(end|endcase)\b\s*", "", text)
+                continue
+            break
+        if not text:
+            continue
+        is_else = re.match(r"else\b", text) is not None
+        # An if may stand after a case label: "2'd1: if (x) y <= 0;".
+        is_if = re.match(r"(?:[\w']+\s*:\s*)?(else\s+)?if\b", text) is not None
+        if is_else and not may_else[-1]:
+            return False
+        opens = len(re.findall(r"\b(?:begin|case)\b", text)) - len(re.findall(r"\b(?:end|endcase)\b", text))
+        if opens > 0:
+            stack.append(is_if)              # closing an if-branch lets an else follow; closing an else does not
+            may_else[-1] = False
+            may_else.append(False)
+            for _ in range(opens - 1):       # e.g. "always @(*) begin case (x)" on one line
+                stack.append(False)
+                may_else.append(False)
+        elif opens < 0:
+            return False
+        else:
+            may_else[-1] = is_if             # "if (c) x <= 1;" may be followed by an else; anything else may not
+    return True
 
 
 def finish(problem, done, tools, why=None):
