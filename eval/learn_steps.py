@@ -19,15 +19,18 @@ the decisions recorded so far; the Verilog so far; and the menu. It sees no
 HDDL. A menu entry is a step with this problem's names, what it says (the
 sentence of each action it comes to, rtl_domain_gloss.json), and the lines of
 Verilog it adds. A step that records a decision adds no code, so it is shown
-with the code it makes possible: what comes onto the menu once it is taken.
+with what it is for: the code that comes onto the menu once it is taken, when
+that is cheap to work out, and always the code steps that use what it records
+(needed_for), worked out from preconditions alone.
 
 What is on the menu is everything the planner can carry out at that point,
 action or task, with every choice of the problem's names of the right types,
 less four kinds of entry:
 
   - one that changes nothing: no line of code and no new fact;
-  - one that does exactly what another does (a task is kept over the action
-    it comes to, so that a list reuses the domain's tasks);
+  - one that does exactly what another does, and says the same (a task is
+    kept over the action it comes to, so that a list reuses the domain's
+    tasks);
   - an action with an argument that no fact of its precondition mentions,
     when there are more than MAX_FREE ways to fill it in: nothing ties that
     argument down, and each way is a guess;
@@ -101,6 +104,8 @@ class Problem:
             gloss = json.load(f)
         self.sentences, self.legend = gloss["actions"], gloss["legend"]
         self._plans, self._menus = {(): []}, {}
+        # The kinds of fact some step records.
+        self.recorded = {e[0] for _, _, effects in self.actions.values() for e in effects}
         # Actions with a parameter that no plain fact of the precondition mentions.
         self.free = set()
         for name, (params, pre, _) in self.actions.items():
@@ -198,7 +203,10 @@ class Problem:
                      "facts": sorted(new_facts),
                      "says": [self.says(n, a) for n, a in added], "closes": bool(new_lines) and
                      new_lines[-1].strip() == "endmodule"}
-            same = (tuple(adds), new_facts)
+            # The same code, the same facts and the same sentences. Two steps that
+            # come to the same facts by different reasoning are both kept: their
+            # sentences say different things, and only one may fit the design.
+            same = (tuple(adds), new_facts, tuple(entry["says"]))
             if same in seen:                  # does what another does: keep the task
                 if entry["kind"] == "task" and seen[same]["kind"] != "task":
                     entries[entries.index(seen[same])] = entry
@@ -211,6 +219,51 @@ class Problem:
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
         return entries
+
+    def needed_for(self, done, entry):
+        """What code a decision is needed for: each way a write_* action can
+        use one of the facts the decision records, with its other plain
+        facts either true by then or ones some step records later. Worked out
+        from the preconditions alone, so it costs no planning, and it shows
+        what one decision of several is for: the case for a state needs both
+        of its transitions, and recording one makes nothing possible yet.
+        Arguments not known yet are shown as ?."""
+        state = self.state(self.plan(done)) | set(entry["facts"])
+        out = []
+        for name, (params, pre, _) in sorted(self.actions.items()):
+            if not name.startswith("write_"):
+                continue
+            parts = pre[1:] if pre[:1] == ["and"] else ([pre] if pre else [])
+            atoms = [p for p in parts if p and all(isinstance(x, str) for x in p)]
+            if set(params) - {x for a in atoms for x in a[1:]}:
+                continue                          # an argument nothing ties down
+            for fact in entry["facts"]:
+                for a in atoms:
+                    if a[0] != fact[0] or len(a) != len(fact):
+                        continue
+                    bind = {}
+                    if all(bind.setdefault(x, v) == v if x.startswith("?") else x == v for x, v in zip(a[1:], fact[1:])):
+                        for full in self._extend(bind, [b for b in atoms if b is not a], state):
+                            out.append(self.says(name, [full.get(x, "?") for x in params]))
+        return list(dict.fromkeys(out))
+
+    def _extend(self, bind, atoms, state):
+        """Bindings that match the atoms to facts in `state`, leaving an atom
+        unmatched only if some step records facts of its kind."""
+        if not atoms:
+            yield bind
+            return
+        a, rest = atoms[0], atoms[1:]
+        found = False
+        for fact in state:
+            if fact[0] != a[0] or len(fact) != len(a):
+                continue
+            b = dict(bind)
+            if all(b.setdefault(x, v) == v if x.startswith("?") else x == v for x, v in zip(a[1:], fact[1:])):
+                found = True
+                yield from self._extend(b, rest, state)
+        if not found and a[0] in self.recorded:
+            yield from self._extend(bind, rest, state)
 
     def opens(self, done, entry):
         """The code that a decision makes possible: the first line of each
@@ -243,6 +296,10 @@ class Problem:
                 if opened:
                     adds += ("\n   Makes it possible to write: " + "  |  ".join(f"`{x}`" for x in opened[:4])
                              + ("  | ..." if len(opened) > 4 else ""))
+                needed = self.needed_for(done, e)
+                if needed:
+                    adds += ("\n   Needed for: " + " ".join(needed[:3])
+                             + (f" (and {len(needed) - 3} more)" if len(needed) > 3 else ""))
             items.append(f"{i}. ({' '.join([e['step'][0]] + e['step'][1])})\n   Says: {says}\n   Adds:{adds}")
         so_far = "```verilog\n" + "\n".join(lines) + "\n```" if lines else "Nothing is written yet."
         return f"""You are writing a Verilog module one step at a time. At each turn you are shown the module so far and every step that can be taken next, and you choose one.
@@ -272,50 +329,74 @@ Choose the one step that should come next, so that the finished module is comple
 Answer with the number of the step and nothing else."""
 
 
-def well_formed(lines):
-    """Could these lines be the start of a module, as far as its blocks go?
-    Blocks must nest: no `end` without a block to end, and no `endmodule`
-    while one is open. And an `else` needs an `if`: it may come only straight
-    after an if-branch at the same depth, and not after another plain else.
+MODULE_ITEM = re.compile(r"(module|input|output|inout|reg|wire|parameter|localparam|assign|always|initial)\b")
+CASE_LABEL = re.compile(r"([\w']+|default)\s*:(?!=)\s*")
 
-    This is syntax only, the part a compiler would refuse whatever came
-    next. Whether the module does what the design says is for the model."""
-    stack = []          # for each open block, what closing it leaves behind: may an else follow?
+
+def well_formed(lines):
+    """Could these lines be the start of a module, as far as its structure
+    goes? This is syntax only, the part a compiler would refuse whatever came
+    next. Whether the module does what the design says is for the model.
+
+      - Blocks nest. An `end` closes a `begin` and an `endcase` a `case`, and
+        `endmodule` comes with every block closed.
+      - Module items (declarations, `assign`, `always`) stand only at module
+        level, and statements only inside a block.
+      - Inside a `case`, a statement is a case item, `label: ...`; a case
+        label stands only inside a `case`.
+      - An `else` needs an `if`: it may come only straight after an if-branch
+        at the same depth, and not after another plain else."""
+    stack = []          # open blocks: (kind, may an else follow it once it is closed?)
     may_else = [False]  # at each depth, may the next statement be an else?
     for line in lines:
         text = line.strip()
-        while True:
+        while True:                                  # closers at the start of the line
             if text.startswith("endmodule"):
                 if stack:
                     return False
                 text = ""
-            elif re.match(r"(end|endcase)\b", text):
-                if not stack:
+            elif re.match(r"endcase\b", text):
+                if not stack or stack[-1][0] != "case":
                     return False
                 may_else.pop()
-                may_else[-1] = stack.pop()
-                text = re.sub(r"^(end|endcase)\b\s*", "", text)
+                may_else[-1] = stack.pop()[1]
+                text = re.sub(r"^endcase\b\s*", "", text)
+                continue
+            elif re.match(r"end\b", text):
+                if not stack or stack[-1][0] != "begin":
+                    return False
+                may_else.pop()
+                may_else[-1] = stack.pop()[1]
+                text = re.sub(r"^end\b\s*", "", text)
                 continue
             break
         if not text:
             continue
-        is_else = re.match(r"else\b", text) is not None
-        # An if may stand after a case label: "2'd1: if (x) y <= 0;".
-        is_if = re.match(r"(?:[\w']+\s*:\s*)?(else\s+)?if\b", text) is not None
-        if is_else and not may_else[-1]:
+        if MODULE_ITEM.match(text):
+            if stack:
+                return False
+        elif not stack:
+            return False                             # a statement outside any block
+        label = CASE_LABEL.match(text) if stack and not MODULE_ITEM.match(text) else None
+        rest = text[label.end():] if label else text
+        is_else = re.match(r"else\b", rest) is not None
+        is_if = re.match(r"(else\s+)?if\b", rest) is not None
+        if label and stack[-1][0] != "case":
             return False
-        opens = len(re.findall(r"\b(?:begin|case)\b", text)) - len(re.findall(r"\b(?:end|endcase)\b", text))
-        if opens > 0:
-            stack.append(is_if)              # closing an if-branch lets an else follow; closing an else does not
+        if stack and stack[-1][0] == "case" and not label and not (is_else and may_else[-1]):
+            return False
+        if is_else and not label and not may_else[-1]:
+            return False
+        openers = re.findall(r"\b(begin|case)\b", rest)
+        if re.search(r"\b(end|endcase)\b", rest):
+            return False                             # the templates never close a block mid-line
+        if openers:
             may_else[-1] = False
-            may_else.append(False)
-            for _ in range(opens - 1):       # e.g. "always @(*) begin case (x)" on one line
-                stack.append(False)
+            for k, kind in enumerate(openers):
+                stack.append((kind, is_if and k == 0))   # closing an if-branch lets an else follow
                 may_else.append(False)
-        elif opens < 0:
-            return False
         else:
-            may_else[-1] = is_if             # "if (c) x <= 1;" may be followed by an else; anything else may not
+            may_else[-1] = is_if                     # "if (c) x <= 1;" may be followed by an else
     return True
 
 
