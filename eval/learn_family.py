@@ -317,7 +317,8 @@ def simulate(verilog, tb, tools):
         if "PASS" in sim.stdout:
             return None
         line = (sim.stdout.strip().splitlines() or ["no output"])[-1]
-        m = re.match(r"FAIL (\d+)", line)
+        # Icarus may print a line of its own after the testbench's verdict.
+        m = re.search(r"^FAIL (\d+)", sim.stdout, re.M)
         return (f"its outputs are wrong in {m.group(1)} of the clock cycles simulated" if m
                 else "the simulation did not finish: " + line[:200])
 

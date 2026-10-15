@@ -15,8 +15,8 @@ the model is shown the module so far and that menu, and answers with a number.
     python eval/learn_steps.py summary
 
 What the model sees is the design, in a sentence and as the problem's facts;
-the decisions recorded so far; the Verilog so far; and the menu. It sees no
-HDDL. A menu entry is a step with this problem's names, what it says (the
+the facts of the design no step has used yet; the decisions recorded so far;
+the Verilog so far; and the menu. It sees no HDDL. A menu entry is a step with this problem's names, what it says (the
 sentence of each action it comes to, rtl_domain_gloss.json), and the lines of
 Verilog it adds. A step that records a decision adds no code, so it is shown
 with what it is for: the code that comes onto the menu once it is taken, when
@@ -38,7 +38,9 @@ less four kinds of entry:
     write it yet (it uses a port not yet declared), it would come before
     the module header, it would end a block that is not open, it would
     end the module with a block still open, it would put an `else`
-    where no `if` precedes it, or it would use a name before declaring it.
+    where no `if` precedes it, it would use a name before declaring it, it
+    would drive a register from a second block, or it would close a case
+    statement that has no item.
 
 So a list is valid as it is built, in its names, its types and every
 precondition. What the model supplies is the order and the choice: which of
@@ -163,7 +165,7 @@ class Problem:
             return None
         if lines and not lines[0].startswith("module "):
             return None
-        return lines if well_formed(lines) and declared_before_use(lines) else None
+        return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) else None
 
     def menu(self, done):
         """What can be done after `done`: a list of entries, each with its
@@ -221,6 +223,24 @@ class Problem:
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
         return entries
+
+    def unused_facts(self, done):
+        """Facts of the design that an action could use and none has: the
+        parts of the specification no step has dealt with yet. Each action's
+        plain precondition facts, with its arguments filled in, count as
+        used. Facts of a kind only methods read, such as the order states
+        are listed in, are left out: no step uses them directly."""
+        usable = {a[0] for _, pre, _ in self.actions.values()
+                  for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else []))
+                  if a and all(isinstance(x, str) for x in a)}
+        used = set()
+        for name, args in self.plan(done):
+            params, pre, _ = self.actions[name]
+            bind = dict(zip(params, args))
+            for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else [])):
+                if a and all(isinstance(x, str) for x in a):
+                    used.add(tuple(bind.get(x, x) for x in a))
+        return [f for f in map(tuple, self.facts) if f[0] in usable and f not in used]
 
     def needed_for(self, done, entry):
         """What code a decision is needed for: each way a write_* action can
@@ -328,6 +348,7 @@ Answer with the numbered list and nothing else."""
                              + (f" (and {len(needed) - 3} more)" if len(needed) > 3 else ""))
             items.append(f"{i}. ({' '.join([e['step'][0]] + e['step'][1])})\n   Says: {says}\n   Adds:{adds}")
         so_far = "```verilog\n" + "\n".join(lines) + "\n```" if lines else "Nothing is written yet."
+        unused = self.unused_facts(done)
         plan_text, choose = "", ""
         if outline:
             marks = [f"{k + 1}. {text}" + ("    <- the phase you are on" if k == phase else "")
@@ -350,7 +371,11 @@ The same design as facts. {self.legend}
 
 {facts}
 
-{plan_text.strip() + chr(10) + chr(10) if plan_text else ''}DECISIONS RECORDED SO FAR
+{plan_text.strip() + chr(10) + chr(10) if plan_text else ''}FACTS OF THE DESIGN NO STEP HAS USED YET
+
+{chr(10).join('(' + ' '.join(f) + ')' for f in unused) if unused else 'None: every fact a step can use has been used.'}
+
+DECISIONS RECORDED SO FAR
 
 {chr(10).join('- ' + d for d in decided) if decided else 'None yet.'}
 
@@ -362,7 +387,7 @@ WHAT CAN BE DONE NEXT
 
 {chr(10).join(items)}
 
-Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, so choose that step only when everything else is written.{choose}
+Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, so choose that step only when everything else is written: when no fact of the design is left unused.{choose}
 
 Answer with the number of the step and nothing else."""
 
@@ -441,6 +466,36 @@ def well_formed(lines):
 KEYWORDS = {"module", "endmodule", "input", "output", "inout", "reg", "wire", "parameter", "localparam", "assign",
             "always", "initial", "begin", "end", "if", "else", "case", "endcase", "default", "posedge", "negedge",
             "or", "and", "not", "integer", "signed"}
+
+
+def one_driver(lines):
+    """Is each register assigned in one block only, and does every case
+    statement have an item? A register driven from two always blocks is two
+    drivers for one signal, which synthesis refuses; a case with no item is
+    a syntax error. Like the other rules, this is the language, not the
+    design."""
+    owner, block, items = {}, 0, None
+    for line in lines:
+        text = line.strip()
+        if text.startswith("always") or text.startswith("assign"):
+            block += 1
+        if re.match(r"case\s*\(", text):
+            items = 0
+        elif text.startswith("endcase"):
+            if items == 0:
+                return False
+            items = None
+        elif items is not None and CASE_LABEL.match(text):
+            items += 1
+        targets = re.findall(r"(\w+)\s*<?=(?!=)", re.sub(r"^\s*([\w']+|default)\s*:", "", text))
+        if text.startswith("assign"):
+            targets = re.findall(r"assign\s+(\w+)", text)
+        for t in targets:
+            if t in ("parameter", "localparam") or text.startswith(("parameter", "localparam")):
+                continue
+            if owner.setdefault(t, block) != block:
+                return False
+    return True
 
 
 def declared_before_use(lines):
