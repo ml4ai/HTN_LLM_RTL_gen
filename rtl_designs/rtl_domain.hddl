@@ -595,7 +595,7 @@
   (:action analyze_advance
     :parameters (?module - module ?state - fsm_state ?bit - bitval ?next_state - fsm_state)
     :precondition (and (architecture_chosen ?module) (expects ?state ?bit)
-                       (next_prefix ?state ?next_state))
+                       (next_prefix ?state ?next_state) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?next_state) (transition_known ?state ?bit))
   )
 
@@ -603,7 +603,7 @@
   ; stay there.
   (:action analyze_stay_initial
     :parameters (?module - module ?state - fsm_state ?bit - bitval)
-    :precondition (and (initial_state ?module ?state) (not (expects ?state ?bit)))
+    :precondition (and (initial_state ?module ?state) (not (expects ?state ?bit)) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?state) (transition_known ?state ?bit))
   )
 
@@ -613,7 +613,7 @@
     :parameters (?module - module ?state - fsm_state ?bit - bitval
                  ?fallback_state ?next_state - fsm_state)
     :precondition (and (architecture_chosen ?module) (fallback ?state ?fallback_state)
-                       (transition ?fallback_state ?bit ?next_state))
+                       (transition ?fallback_state ?bit ?next_state) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?next_state) (transition_known ?state ?bit))
   )
 
@@ -625,7 +625,7 @@
                  ?fallback_state ?next_state - fsm_state)
     :precondition (and (last_state ?module ?state) (expects ?state ?bit)
                        (fallback ?state ?fallback_state)
-                       (transition ?fallback_state ?bit ?next_state))
+                       (transition ?fallback_state ?bit ?next_state) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?next_state) (transition_known ?state ?bit)
                  (asserts_output ?state ?bit))
   )
@@ -635,7 +635,7 @@
   (:action analyze_match_from_scratch
     :parameters (?module - module ?state - fsm_state ?bit - bitval ?initial_state - fsm_state)
     :precondition (and (last_state ?module ?state) (expects ?state ?bit)
-                       (initial_state ?module ?initial_state))
+                       (initial_state ?module ?initial_state) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?initial_state) (transition_known ?state ?bit)
                  (asserts_output ?state ?bit))
   )
@@ -646,14 +646,14 @@
     :parameters (?module - module ?state - fsm_state ?bit - bitval
                  ?initial_state ?next_state - fsm_state)
     :precondition (and (accept_state ?module ?state) (initial_state ?module ?initial_state)
-                       (transition ?initial_state ?bit ?next_state))
+                       (transition ?initial_state ?bit ?next_state) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?next_state) (transition_known ?state ?bit))
   )
 
   ; ?state has one bit matched; its fallback is the initial state.
   (:action analyze_fallback_first
     :parameters (?module - module ?state ?initial_state - fsm_state)
-    :precondition (and (next_prefix ?initial_state ?state) (initial_state ?module ?initial_state))
+    :precondition (and (next_prefix ?initial_state ?state) (initial_state ?module ?initial_state) (not (fallback_known ?state)))
     :effect (and (fallback ?state ?initial_state) (fallback_known ?state))
   )
 
@@ -665,7 +665,7 @@
     :precondition (and (architecture_chosen ?module) (next_prefix ?previous_state ?state)
                        (expects ?previous_state ?bit)
                        (fallback ?previous_state ?previous_fallback)
-                       (transition ?previous_fallback ?bit ?fallback_state))
+                       (transition ?previous_fallback ?bit ?fallback_state) (not (fallback_known ?state)))
     :effect (and (fallback ?state ?fallback_state) (fallback_known ?state))
   )
 
@@ -857,28 +857,28 @@
   ; In ?state, input ?bit is the next bit of a sequence: go to ?next_state.
   (:action analyze_extend_sequence
     :parameters (?module - module ?state - fsm_state ?bit - bitval ?next_state - fsm_state)
-    :precondition (and (architecture_chosen ?module) (child ?state ?bit ?next_state))
+    :precondition (and (architecture_chosen ?module) (child ?state ?bit ?next_state) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?next_state) (transition_known ?state ?bit))
   )
 
   ; In the start state, no sequence begins with ?bit: stay there.
   (:action analyze_stay_at_start
     :parameters (?module - module ?state - fsm_state ?bit - bitval)
-    :precondition (and (sequence_start ?module ?state) (no_child ?state ?bit))
+    :precondition (and (sequence_start ?module ?state) (no_child ?state ?bit) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?state) (transition_known ?state ?bit))
   )
 
   ; ?state ends a sequence that goes on while ?bit keeps arriving: stay in it.
   (:action analyze_keep_while
     :parameters (?module - module ?state - fsm_state ?bit - bitval)
-    :precondition (and (architecture_chosen ?module) (holds_on ?state ?bit))
+    :precondition (and (architecture_chosen ?module) (holds_on ?state ?bit) (not (transition_known ?state ?bit)))
     :effect (and (transition ?state ?bit ?state) (transition_known ?state ?bit))
   )
 
   ; ?state has matched one bit; its fallback is the start state.
   (:action analyze_sequence_fallback_first
     :parameters (?module - module ?state ?start_state - fsm_state)
-    :precondition (sequence_start ?module ?start_state)
+    :precondition (and (sequence_start ?module ?start_state) (not (fallback_known ?state)))
     :effect (and (fallback ?state ?start_state) (fallback_known ?state))
   )
 
@@ -889,7 +889,7 @@
                  ?previous_fallback ?fallback_state - fsm_state)
     :precondition (and (architecture_chosen ?module) (child ?previous_state ?bit ?state)
                        (fallback ?previous_state ?previous_fallback)
-                       (transition ?previous_fallback ?bit ?fallback_state))
+                       (transition ?previous_fallback ?bit ?fallback_state) (not (fallback_known ?state)))
     :effect (and (fallback ?state ?fallback_state) (fallback_known ?state))
   )
 
