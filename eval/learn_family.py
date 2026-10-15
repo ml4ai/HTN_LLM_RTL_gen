@@ -592,7 +592,10 @@ def proposer_config(cfg):
 def executor(cfg, jobs, batch_path, n):
     if not jobs:
         return
-    if subprocess.run(["pgrep", "-f", "executor_sample"], capture_output=True).returncode == 0:
+    # Only the executor itself, by the path it runs from: a shell whose command
+    # line merely mentions the name, as a check run alongside does, is not one.
+    binary = os.path.join(ROOT, cfg["executor"]["binary"])
+    if subprocess.run(["pgrep", "-f", "^" + re.escape(binary)], capture_output=True).returncode == 0:
         sys.exit("error: an executor_sample process is already running; stop it first")
     with open(batch_path, "w") as f:
         json.dump(jobs, f, indent=1)

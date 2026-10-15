@@ -25,7 +25,7 @@ that is cheap to work out, and always the code steps that use what it records
 
 What is on the menu is everything the planner can carry out at that point,
 action or task, with every choice of the problem's names of the right types,
-less four kinds of entry:
+less five kinds of entry:
 
   - one that changes nothing: no line of code and no new fact;
   - one that does exactly what another does, and says the same (a task is
@@ -34,6 +34,10 @@ less four kinds of entry:
   - an action with an argument that no fact of its precondition mentions,
     when there are more than MAX_FREE ways to fill it in: nothing ties that
     argument down, and each way is a guess;
+  - the step that ends the module, while a fact of the design that a step
+    could use has not been used: the module would leave part of the design
+    out. This is a rule about covering the specification, not about the
+    language. Every correct plan checked uses all such facts;
   - one whose code cannot stand where it would go: the templates cannot
     write it yet (it uses a port not yet declared), it would come before
     the module header, it would end a block that is not open, it would
@@ -218,6 +222,9 @@ class Problem:
                 continue
             seen[same] = entry
             entries.append(entry)
+        # The module is closed only when the whole design has been dealt with:
+        # every fact of it that a step could use, some step has used.
+        entries = [e for e in entries if not e["closes"] or not self.unused_facts(list(done) + [e["step"]])]
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
@@ -387,7 +394,7 @@ WHAT CAN BE DONE NEXT
 
 {chr(10).join(items)}
 
-Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, so choose that step only when everything else is written: when no fact of the design is left unused.{choose}
+Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, which is offered only once every fact of the design has been used.{choose}
 
 Answer with the number of the step and nothing else."""
 
