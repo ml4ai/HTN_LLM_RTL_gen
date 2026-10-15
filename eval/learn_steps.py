@@ -37,8 +37,8 @@ less four kinds of entry:
   - one whose code cannot stand where it would go: the templates cannot
     write it yet (it uses a port not yet declared), it would come before
     the module header, it would end a block that is not open, it would
-    end the module with a block still open, or it would put an `else`
-    where no `if` precedes it.
+    end the module with a block still open, it would put an `else`
+    where no `if` precedes it, or it would use a name before declaring it.
 
 So a list is valid as it is built, in its names, its types and every
 precondition. What the model supplies is the order and the choice: which of
@@ -154,15 +154,16 @@ class Problem:
         """The Verilog the plan comes to, as lines, or None if it cannot
         stand: the templates cannot write it out at that point (a step uses
         a port that is not declared yet), it puts code before the module
-        header, or its blocks could not be the start of a module
-        (well_formed)."""
+        header, its blocks could not be the start of a module
+        (well_formed), or it uses a name before declaring it
+        (declared_before_use)."""
         try:
             lines = plan_to_verilog.render(plan).strip("\n").splitlines()
         except (SystemExit, Exception):
             return None
         if lines and not lines[0].startswith("module "):
             return None
-        return lines if well_formed(lines) else None
+        return lines if well_formed(lines) and declared_before_use(lines) else None
 
     def menu(self, done):
         """What can be done after `done`: a list of entries, each with its
@@ -434,6 +435,43 @@ def well_formed(lines):
                 may_else.append(False)
         else:
             may_else[-1] = is_if                     # "if (c) x <= 1;" may be followed by an else
+    return True
+
+
+KEYWORDS = {"module", "endmodule", "input", "output", "inout", "reg", "wire", "parameter", "localparam", "assign",
+            "always", "initial", "begin", "end", "if", "else", "case", "endcase", "default", "posedge", "negedge",
+            "or", "and", "not", "integer", "signed"}
+
+
+def declared_before_use(lines):
+    """Is every name these lines use declared on an earlier line? A port is
+    declared by its input or output line, a state by its parameter line,
+    a register by its reg line. Verilog refuses a use before the
+    declaration, so this too is syntax: it says nothing of whether the
+    module is right."""
+    declared = set()
+    for line in lines:
+        text = re.sub(r"//.*", "", line).strip()
+        if not text:
+            continue
+        text = re.sub(r"\d+'[bdho][0-9a-fA-FxXzZ_]+", " ", text)    # sized literals
+        if re.match(r"module\s+\w+\s*\(.*\)\s*;", text):
+            continue                                               # the port list: declared below
+        decl = re.match(r"(input|output|inout|reg|wire|parameter|localparam)\b(.*)", text)
+        if decl:
+            body = re.sub(r"\[[^\]]*\]", " ", decl.group(2))     # widths
+            if decl.group(1) in ("parameter", "localparam"):
+                names = re.findall(r"(\w+)\s*=", body)
+                used = set(re.findall(r"=\s*([A-Za-z_]\w*)", body))
+            else:
+                names = [n for n in re.findall(r"[A-Za-z_]\w*", body) if n not in KEYWORDS]
+                used = set()
+            if used - declared - KEYWORDS:
+                return False
+            declared.update(names)
+            continue
+        if {n for n in re.findall(r"[A-Za-z_]\w*", text) if n not in KEYWORDS} - declared:
+            return False                                           # a case label is a use too
     return True
 
 
