@@ -81,6 +81,7 @@ GLOSS = os.path.join(ROOT, "rtl_designs", "rtl_domain_gloss.json")
 MAX_FREE = 2       # ways to fill in an action some of whose arguments nothing ties down
 MAX_TIED = 40      # ways to fill in any other step
 MAX_TURNS = 60
+MAX_TURNS_PHASED = 80  # a move to the next phase takes a turn too
 MAX_LOOKAHEAD = 4  # decisions on a menu for which "makes it possible to write" is worked out
 SYSTEM = "You are a careful digital designer. You answer with one number and nothing else."
 
@@ -275,12 +276,36 @@ class Problem:
                 out.append(e["adds"][0].strip())
         return list(dict.fromkeys(out))
 
-    def prompt(self, done):
+    def facts_text(self):
+        facts = re.search(r"\(:init(.*?)\n  \)", self.compiled, re.S).group(1)
+        return "\n".join(x.strip() for x in facts.splitlines() if x.strip())
+
+    def outline_prompt(self):
+        """The first turn with --phases: the model plans the work as phases,
+        in its own words, before any step is taken."""
+        return f"""You are going to write a Verilog module, one step at a time. Before you start, plan the work.
+
+THE DESIGN
+
+{self.case['what']}
+
+The same design as facts. {self.legend}
+
+{self.facts_text()}
+
+YOUR TASK
+
+Write an outline of the work: a numbered list of phases, in the order they are to be done, one short line each. A phase is a part of the work, such as a group of design decisions to record, or one part of the module to write. Use between 3 and 8 phases.
+
+The module will then be written one phase at a time. At each step you will be shown the phase you are on, the module so far, and the steps that can be taken, and you will choose among them. So order the phases as the work must go: a decision before the code that depends on it, and anything declared before the code that uses it.
+
+Answer with the numbered list and nothing else."""
+
+    def prompt(self, done, outline=None, phase=None):
         before = self.plan(done)
         lines = self.code(before) or []
         decided = [self.says(n, a) for n, a in before if n.startswith("analyze_")]
-        facts = re.search(r"\(:init(.*?)\n  \)", self.compiled, re.S).group(1)
-        facts = "\n".join(x.strip() for x in facts.splitlines() if x.strip())
+        facts = self.facts_text()
         items = []
         menu = self.menu(done)
         decisions = [e for e in menu if not e["adds"]]
@@ -302,6 +327,18 @@ class Problem:
                              + (f" (and {len(needed) - 3} more)" if len(needed) > 3 else ""))
             items.append(f"{i}. ({' '.join([e['step'][0]] + e['step'][1])})\n   Says: {says}\n   Adds:{adds}")
         so_far = "```verilog\n" + "\n".join(lines) + "\n```" if lines else "Nothing is written yet."
+        plan_text, choose = "", ""
+        if outline:
+            marks = [f"{k + 1}. {text}" + ("    <- the phase you are on" if k == phase else "")
+                     for k, text in enumerate(outline)]
+            plan_text = "\n\nYOUR OUTLINE OF THE WORK\n\n" + "\n".join(marks)
+            if phase + 1 < len(outline):
+                items.append(f"{len(menu) + 1}. Phase {phase + 1} is done: go on to phase {phase + 2}, "
+                             f"\"{outline[phase + 1]}\".")
+                choose = (f" You are on phase {phase + 1}, \"{outline[phase]}\". Choose the next step of this "
+                          f"phase or, if the phase is done, entry {len(menu) + 1} to go on to the next.")
+            else:
+                choose = f" You are on the last phase, \"{outline[phase]}\"."
         return f"""You are writing a Verilog module one step at a time. At each turn you are shown the module so far and every step that can be taken next, and you choose one.
 
 THE DESIGN
@@ -312,7 +349,7 @@ The same design as facts. {self.legend}
 
 {facts}
 
-DECISIONS RECORDED SO FAR
+{plan_text.strip() + chr(10) + chr(10) if plan_text else ''}DECISIONS RECORDED SO FAR
 
 {chr(10).join('- ' + d for d in decided) if decided else 'None yet.'}
 
@@ -324,7 +361,7 @@ WHAT CAN BE DONE NEXT
 
 {chr(10).join(items)}
 
-Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, so choose that step only when everything else is written.
+Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, so choose that step only when everything else is written.{choose}
 
 Answer with the number of the step and nothing else."""
 
@@ -428,6 +465,12 @@ def write_request(d, user):
     return path
 
 
+def outline_of(reply):
+    """The phases of a numbered list, or None."""
+    phases = [m.group(1).strip().rstrip(".") for m in re.finditer(r"^\s*\d+[.)]\s*(.+?)\s*$", reply, re.M)]
+    return phases if 2 <= len(phases) <= 12 else None
+
+
 def choice(reply, n):
     """The number the reply gives, as an index into the menu, or None."""
     m = re.search(r"\d+", reply)
@@ -452,6 +495,7 @@ def cmd_run(args, cfg, tools):
     problems = [Problem(family, c, os.path.join(base, c["tag"])) for c in train]
     methods, tasks = lf.removed(family)
     meta = {"created": rtl_eval.now(), "family": family, "runs": args.runs, "policy": args.policy,
+            "phases": args.phases,
             "max_free": MAX_FREE, "max_tied": MAX_TIED, "max_turns": MAX_TURNS,
             "removed_methods": sorted(methods), "removed_tasks": sorted(tasks), "problems": [c["tag"] for c in train],
             "sha256": {"domain": rtl_eval.sha256_file(lf.DOMAIN), "gloss": rtl_eval.sha256_file(GLOSS),
@@ -469,26 +513,46 @@ def cmd_run(args, cfg, tools):
     done = {k: [] for k in keys}
     verdicts, trail = {}, collections.defaultdict(list)
     rng = {k: random.Random(1000 * k[0] + k[1]) for k in keys}
-    for turn in range(1, MAX_TURNS + 1):
+    outline, phase, phase_of = {}, {k: 0 for k in keys}, collections.defaultdict(list)
+    if args.phases:
+        # Turn 0: an outline a list, in the model's own words.
+        jobs = []
+        for p, case in enumerate(train):
+            d = os.path.join(base, case["tag"], "outline")
+            request = write_request(d, problems[p].outline_prompt())
+            if not lf.generated(d, args.runs):
+                jobs.append({"request": request, "out_dir": d})
+        lf.executor(cfg, jobs, os.path.join(base, "batch.json"), args.runs)
+        for p, r in keys:
+            with open(os.path.join(base, train[p]["tag"], "outline", f"sample_{r:02d}.response.txt"),
+                      errors="replace") as f:
+                found = outline_of(f.read())
+            if found:
+                outline[(p, r)] = found
+            else:
+                verdicts[(p, r)] = finish(problems[p], [], tools, "no outline")
+    for turn in range(1, (MAX_TURNS_PHASED if args.phases else MAX_TURNS) + 1):
         active = [k for k in keys if k not in verdicts]
         if not active:
             break
         groups = collections.defaultdict(list)       # lists at the same point share a request
         for p, r in active:
-            groups[(p, tuple((n, tuple(a)) for n, a in done[(p, r)]))].append(r)
+            groups[(p, tuple((n, tuple(a)) for n, a in done[(p, r)]), phase[(p, r)],
+                    tuple(outline.get((p, r), ())))].append(r)
         menus = {g: problems[g[0]].menu(done[(g[0], rs[0])]) for g, rs in groups.items()}
         picks = {}
         if args.policy == "random":
-            for (p, _), rs in groups.items():
+            for g, rs in groups.items():
                 for r in rs:
-                    n = len(menus[(p, _)])
-                    picks[(p, r)] = rng[(p, r)].randrange(n) if n else None
+                    n = len(menus[g])
+                    picks[(g[0], r)] = rng[(g[0], r)].randrange(n) if n else None
         else:
             jobs, where = [], {}
             for g, rs in groups.items():
                 if not menus[g]:
                     continue
-                text = problems[g[0]].prompt(done[(g[0], rs[0])])
+                k0 = (g[0], rs[0])
+                text = problems[g[0]].prompt(done[k0], outline.get(k0), phase[k0])
                 d = os.path.join(base, train[g[0]]["tag"], f"turn_{turn:02d}",
                                  hashlib.sha256(text.encode()).hexdigest()[:12])
                 request = write_request(d, text)
@@ -503,7 +567,8 @@ def cmd_run(args, cfg, tools):
                         continue
                     with open(os.path.join(where[g], f"sample_{r:02d}.response.txt"), errors="replace") as f:
                         reply = f.read()
-                    picks[(g[0], r)] = choice(reply, len(menus[g]))
+                    can_move = (g[0], r) in outline and phase[(g[0], r)] + 1 < len(outline[(g[0], r)])
+                    picks[(g[0], r)] = choice(reply, len(menus[g]) + can_move)
                     trail[(g[0], r)].append({"turn": turn, "reply": reply[:80], "entries": len(menus[g])})
         for g, rs in groups.items():
             for r in rs:
@@ -512,9 +577,12 @@ def cmd_run(args, cfg, tools):
                     verdicts[k] = finish(problems[g[0]], done[k], tools, "nothing can be done")
                 elif picks[k] is None:
                     verdicts[k] = finish(problems[g[0]], done[k], tools, "no valid choice")
+                elif picks[k] == len(menus[g]):        # the entry that moves to the next phase
+                    phase[k] += 1
                 else:
                     entry = menus[g][picks[k]]
                     done[k] = done[k] + [entry["step"]]
+                    phase_of[k].append(phase[k])
                     if entry["closes"]:
                         verdicts[k] = finish(problems[g[0]], done[k], tools)
         print(f"turn {turn}: {len(active)} lists building, {len(verdicts)} finished "
@@ -528,10 +596,12 @@ def cmd_run(args, cfg, tools):
         with open(os.path.join(d, "steps.txt"), "w") as f:
             f.write(lg.show(done[k]) + "\n")
         with open(os.path.join(d, "verdict.json"), "w") as f:
-            json.dump(dict(verdicts[k], trail=trail[k]), f, indent=1)
+            json.dump(dict(verdicts[k], trail=trail[k], outline=outline.get(k), phase_of_step=phase_of[k]), f,
+                      indent=1)
         print(f"{train[k[0]]['tag']} run {k[1]:02d}: {verdicts[k]['stage']} after {len(done[k])} steps", flush=True)
     with open(os.path.join(base, "verdicts.json"), "w") as f:
-        json.dump({f"{train[p]['tag']}/{r}": dict(v, list=lg.show(done[(p, r)]).splitlines())
+        json.dump({f"{train[p]['tag']}/{r}": dict(v, list=lg.show(done[(p, r)]).splitlines(),
+                                                   outline=outline.get((p, r)), phase_of_step=phase_of[(p, r)])
                    for (p, r), v in verdicts.items()}, f, indent=1)
 
 
@@ -579,6 +649,8 @@ def main():
     s.add_argument("--problems", type=int, help="use only the first N training problems (default all)")
     s.add_argument("--policy", choices=["model", "random"], default="model",
                    help="who chooses: the model, or a uniform draw (no model is run)")
+    s.add_argument("--phases", action="store_true",
+                   help="the model first writes an outline of phases; each step is chosen within the phase it is on")
     sub.add_parser("summary")
     args = ap.parse_args()
     global RUNS
