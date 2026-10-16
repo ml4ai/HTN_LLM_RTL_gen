@@ -25,7 +25,7 @@ that is cheap to work out, and always the code steps that use what it records
 
 What is on the menu is everything the planner can carry out at that point,
 action or task, with every choice of the problem's names of the right types,
-less five kinds of entry:
+less six kinds of entry:
 
   - one that changes nothing: no line of code and no new fact;
   - one that does exactly what another does, and says the same (a task is
@@ -38,6 +38,8 @@ less five kinds of entry:
     could use has not been used: the module would leave part of the design
     out. This is a rule about covering the specification, not about the
     language. Every correct plan checked uses all such facts;
+  - one that opens a block after which nothing at all could be done: a dead
+    end, found by looking one step ahead;
   - one whose code cannot stand where it would go: the templates cannot
     write it yet (it uses a port not yet declared), it would come before
     the module header, it would end a block that is not open, it would
@@ -171,10 +173,10 @@ class Problem:
             return None
         return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) else None
 
-    def menu(self, done):
+    def menu(self, done, look_ahead=True):
         """What can be done after `done`: a list of entries, each with its
         step, the plan it leads to, what it says and the code it adds."""
-        key = tuple((n, tuple(a)) for n, a in done)
+        key = (tuple((n, tuple(a)) for n, a in done), look_ahead)
         if key in self._menus:
             return self._menus[key]
         before = self.plan(done)
@@ -227,6 +229,11 @@ class Problem:
         entries = [e for e in entries if not e["closes"] or not self.unused_facts(list(done) + [e["step"]])]
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
+        if look_ahead:
+            # A step that opens a block must leave something to put in it: an
+            # opener after which nothing at all can be done is a dead end.
+            entries = [e for e in entries if not re.search(r"\b(begin|case)\b", " ".join(e["adds"]))
+                       or self.menu(list(done) + [e["step"]], look_ahead=False)]
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
         return entries
