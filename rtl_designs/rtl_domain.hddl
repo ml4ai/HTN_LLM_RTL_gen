@@ -198,6 +198,7 @@
     (state_declared ?s - fsm_state)
     (state_case_written ?s - fsm_state)
     (output_assigned ?p - port)
+    (output_term_written ?p - port ?s - fsm_state)
     (section_written ?m - module)
   )
 
@@ -1449,16 +1450,17 @@
   ; `assign <output> = (ST_cr == <state>);`
   (:action write_moore_output_assign
     :parameters (?module - module ?output - port ?state - fsm_state)
-    :precondition (and (moore ?module) (asserted_in ?output ?state) (state_declared ?state))
-    :effect (output_assigned ?output)
+    :precondition (and (moore ?module) (asserted_in ?output ?state) (state_declared ?state)
+                       (not (output_assigned ?output)))
+    :effect (and (output_assigned ?output) (output_term_written ?output ?state))
   )
 
   ; `... | (ST_cr == <state>)` -- OR-ed into the assignment of <output>.
   (:action write_moore_output_also
     :parameters (?module - module ?output - port ?state - fsm_state)
     :precondition (and (moore ?module) (asserted_in ?output ?state) (state_declared ?state)
-                       (output_assigned ?output))
-    :effect ()
+                       (output_assigned ?output) (not (output_term_written ?output ?state)))
+    :effect (output_term_written ?output ?state)
   )
 
   ; ---- clocked blocks for counters and generators ----
