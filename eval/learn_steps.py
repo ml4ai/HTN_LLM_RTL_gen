@@ -38,8 +38,8 @@ less six kinds of entry:
     could use has not been used: the module would leave part of the design
     out. This is a rule about covering the specification, not about the
     language. Every correct plan checked uses all such facts;
-  - one that opens a block after which nothing at all could be done: a dead
-    end, found by looking one step ahead;
+  - one that opens a block after which no code could be written, only
+    decisions: a dead end, found by looking one step ahead;
   - one whose code cannot stand where it would go: the templates cannot
     write it yet (it uses a port not yet declared), it would come before
     the module header, it would end a block that is not open, it would
@@ -231,9 +231,11 @@ class Problem:
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
         if look_ahead:
             # A step that opens a block must leave something to put in it: an
-            # opener after which nothing at all can be done is a dead end.
+            # opener after which no code at all can be written is a dead end.
+            # Decisions do not count: they write nothing, and cannot make a
+            # declaration possible inside a block.
             entries = [e for e in entries if not re.search(r"\b(begin|case)\b", " ".join(e["adds"]))
-                       or self.menu(list(done) + [e["step"]], look_ahead=False)]
+                       or any(n["adds"] for n in self.menu(list(done) + [e["step"]], look_ahead=False))]
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
         return entries
