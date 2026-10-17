@@ -171,7 +171,8 @@ class Problem:
             return None
         if lines and not lines[0].startswith("module "):
             return None
-        return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) else None
+        return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) \
+            and no_empty_block(lines) else None
 
     def menu(self, done, look_ahead=True):
         """What can be done after `done`: a list of entries, each with its
@@ -511,6 +512,24 @@ def one_driver(lines):
                 continue
             if owner.setdefault(t, block) != block:
                 return False
+    return True
+
+
+def no_empty_block(lines):
+    """Is every block closed with something in it? `begin` followed at once
+    by `end` is legal Verilog and does nothing. It is refused all the same:
+    a plan that opens a clocked block and closes it empty tells the executor
+    to write a block that has no purpose, and a list that does so has only
+    put off the block it needed. This is more than syntax, as the rule that
+    a case has an item is not: it is a rule against code that does nothing."""
+    pending = False
+    for line in lines:
+        text = re.sub(r"//.*", "", line).strip()
+        if not text:
+            continue
+        if pending and re.match(r"end\b", text):
+            return False
+        pending = bool(re.search(r"\bbegin\s*(:\s*\w+)?$", text))
     return True
 
 

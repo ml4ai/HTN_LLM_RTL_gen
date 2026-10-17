@@ -21,6 +21,7 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | `learn_ground.py` | The same, asking for less: the model lists the steps for one problem at a time (below) |
 | `learn_steps.py` | The model builds a step list one step at a time, choosing among the steps that can be taken (below) |
 | `lift.py` | Turns checked step lists into methods, with no model involved (below) |
+| `lift_loops.py` | The same for lists that grow with the problem: recursive methods (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
 | `passk.py` | The estimator, ladders, the syntax/conditional split, bootstrap, McNemar |
@@ -300,9 +301,35 @@ far and that menu and answers with a number. It sees no HDDL.
   other's lack.
 - The methods are tested as `learn_family.py` tests a model's, and then on
   the family's problems from outside the generator.
-- **Not yet:** a list whose length depends on the problem, one step a state,
+- A list whose length depends on the problem, one block of steps a state,
   needs a recursive method. `lift.py` refuses such a family; it does not
-  guess.
+  guess. `lift_loops.py` lifts it.
+
+`lift_loops.py` lifts lists that grow with the problem into recursive methods:
+
+    $PY eval/lift_loops.py table_fsm --from hand     # from the hand-written methods' own lists
+    $PY eval/lift_loops.py table_fsm --from runs     # from the lists the model got right
+
+- **Chains** are the orders the problem's facts define: the states by
+  `first_listed`, `listed_after` and `last_listed`, the ports by
+  `first_port`, `next_port` and `last_port`.
+- **A loop** is a run of steps grouped by elements of a chain. It may hold
+  another loop: for each output port, for each state. A run of decisions is
+  first put in the chain's order, if that leaves the module and the facts
+  unchanged.
+- **Variants** are the groups that do the same thing, such as an output's
+  first state, a later one, and a state it is not 1 in. Each is told apart
+  from the others by facts that hold before all its groups and before none of
+  the others'. First choice is what the group's own actions need; next, for a
+  group of no steps, the element's kind (`input_port`); next, the absence of
+  what the others' actions need. Where an element stands in a chain comes
+  last of all. A fact may name "some" object, read as an `exists`.
+- **Each loop becomes a task** with two methods a variant: one that does the
+  group and recurses on the next element, and one for the last.
+- Methods are learned from one list. Each list is tried, longest first, and
+  the first whose methods pass every training problem is kept. They are then
+  tested on the held-out problems. Each attempt's methods and diagnostic are
+  kept in the run directory.
 
 ## What each check means
 
