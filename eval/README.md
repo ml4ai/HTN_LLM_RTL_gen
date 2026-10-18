@@ -22,6 +22,7 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | `learn_steps.py` | The model builds a step list one step at a time, choosing among the steps that can be taken (below) |
 | `lift.py` | Turns checked step lists into methods, with no model involved (below) |
 | `lift_loops.py` | The same for lists that grow with the problem: recursive methods (below) |
+| `learned_domain.py` | One domain with several learned families in place of their hand-written methods, and its checks (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
 | `passk.py` | The estimator, ladders, the syntax/conditional split, bootstrap, McNemar |
@@ -334,6 +335,20 @@ far and that menu and answers with a number. It sees no HDDL.
   the first whose methods pass every training problem is kept. They are then
   tested on the held-out problems. Each attempt's methods and diagnostic are
   kept in the run directory.
+
+`learned_domain.py` puts learned families together:
+
+    $PY eval/learned_domain.py wrap_counter=eval/runs/steps_lift/wrap_counter_v3/answer.hddl \
+        table_fsm=eval/runs/steps_lift/table_fsm/answer.hddl --out eval/runs/steps_lift/combined
+
+- **The domain** is the full hand-written one less the methods only those
+  families use, with each family's learned methods (an `answer.hddl` from
+  `lift.py` or `lift_loops.py`) added.
+- **Checks:** every training and held-out problem of each learned family
+  passes; its problems from outside the generator plan; and every problem of
+  the other families keeps the plan the hand-written domain gives it.
+- Each family was learned with only its own methods removed. This checks
+  that learned methods leave each other's problems alone.
 
 ## What each check means
 
