@@ -171,8 +171,7 @@ class Problem:
             return None
         if lines and not lines[0].startswith("module "):
             return None
-        return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) \
-            and no_empty_block(lines) else None
+        return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) else None
 
     def menu(self, done, look_ahead=True):
         """What can be done after `done`: a list of entries, each with its
@@ -515,22 +514,22 @@ def one_driver(lines):
     return True
 
 
-def no_empty_block(lines):
-    """Is every block closed with something in it? `begin` followed at once
-    by `end` is legal Verilog and does nothing. It is refused all the same:
-    a plan that opens a clocked block and closes it empty tells the executor
-    to write a block that has no purpose, and a list that does so has only
-    put off the block it needed. This is more than syntax, as the rule that
-    a case has an item is not: it is a rule against code that does nothing."""
-    pending = False
-    for line in lines:
+def empty_blocks(lines):
+    """The blocks closed with nothing in them, as (begin line, end line)
+    index pairs. `begin` followed at once by `end` is legal Verilog and does
+    nothing. The menus do not refuse it: refused there, it sent the model's
+    state-table lists down another path, and 12 of 16 into a dead end
+    (LLM_RTL_code_generation.md 8.6.15). A passing list is cleaned of it
+    afterwards instead (lift_loops.clean)."""
+    out, pending = [], None
+    for k, line in enumerate(lines):
         text = re.sub(r"//.*", "", line).strip()
         if not text:
             continue
-        if pending and re.match(r"end\b", text):
-            return False
-        pending = bool(re.search(r"\bbegin\s*(:\s*\w+)?$", text))
-    return True
+        if pending is not None and re.match(r"end\b", text):
+            out.append((pending, k))
+        pending = k if re.search(r"\bbegin\s*(:\s*\w+)?$", text) else None
+    return out
 
 
 def declared_before_use(lines):

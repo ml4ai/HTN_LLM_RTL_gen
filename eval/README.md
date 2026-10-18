@@ -326,6 +326,10 @@ far and that menu and answers with a number. It sees no HDDL.
   last of all. A fact may name "some" object, read as an `exists`.
 - **Each loop becomes a task** with two methods a variant: one that does the
   group and recurses on the next element, and one for the last.
+- **A passing list is cleaned first** of any block it opens and closes with
+  nothing in it, if what is left still passes. The model's state-table lists
+  open a clocked block before reading the table and close it at once. The
+  menus do not refuse this: refused there, it sent the lists into a dead end.
 - Methods are learned from one list. Each list is tried, longest first, and
   the first whose methods pass every training problem is kept. They are then
   tested on the held-out problems. Each attempt's methods and diagnostic are

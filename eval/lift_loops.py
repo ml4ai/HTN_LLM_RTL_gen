@@ -43,6 +43,10 @@ agree here):
     the next, and one for the last. The top-level method is the list with
     each loop replaced by a call on the chain's first element.
 
+Before lifting, a passing list is cleaned of any block it opens and closes
+with nothing in it, if what is left still passes: the model's state-table
+lists open a clocked block before reading the table and close it at once.
+
 The methods are learned from one list and then tested as lift.py tests
 its methods: on every training problem, the other families' plans, and the
 held-out problems. Each problem's list is tried in turn, longest first, and
@@ -175,6 +179,37 @@ class Example:
                 bind = dict(zip(params, args))
                 out |= {tuple(bind.get(x, x) for x in e) for e in effects}
         return out
+
+
+def clean(family, case, steps, workdir, tools):
+    """The list less any block it opens and closes with nothing in it, as
+    long as what is left still passes, as learn_steps judges a list: it
+    plans, the same under two seeds, and simulates correctly. The model's
+    state-table lists open a clocked block before reading the table and
+    close it at once; lifted, every plan would tell the executor to write
+    that block. Returns the cleaned list and the steps taken out."""
+    problem = ls.Problem(family, case, workdir)
+    steps, removed = list(steps), []
+    while True:
+        plan = problem.plan(steps)
+        lines = problem.code(plan)
+        # Which step writes each line: the lines a prefix of the list comes to.
+        upto = [len(problem.code(problem.plan(steps[:k + 1])) or []) for k in range(len(steps))]
+        writer = lambda n: next(k for k, u in enumerate(upto) if u > n)
+        for begin, end in ls.empty_blocks(lines):
+            a, b = writer(begin), writer(end)
+            # Only steps that write nothing but the block's two lines.
+            if upto[a] - (upto[a - 1] if a else 0) != 1 or upto[b] - upto[b - 1] != 1:
+                continue
+            trial = steps[:a] + steps[a + 1:b] + steps[b + 1:]
+            if problem.plan(trial) is None:
+                continue
+            if ls.finish(problem, trial, tools)["stage"] == "pass":
+                removed += [steps[a], steps[b]]
+                steps = trial
+                break
+        else:
+            return steps, removed
 
 
 def problem_types(compiled):
@@ -659,8 +694,12 @@ def main():
         for c in train:
             if lists.get(c["tag"]):
                 best = collections.Counter(lg.show(s) for s in lists[c["tag"]]).most_common(1)[0][0]
-                examples.append(Example(args.family, c, lg.answer_steps("```\n" + best + "\n```")[0],
-                                        os.path.join(work, c["tag"])))
+                steps = lg.answer_steps("```\n" + best + "\n```")[0]
+                steps, removed = clean(args.family, c, steps, os.path.join(work, c["tag"]), tools)
+                if removed:
+                    print(f"{c['tag']}: taken out, an empty block: " + ", ".join(
+                        "(" + " ".join([n] + list(a)) + ")" for n, a in removed))
+                examples.append(Example(args.family, c, steps, os.path.join(work, c["tag"])))
         print(f"{len(examples)} of {len(train)} training problems have a checked list")
     # Methods are learned from one example. Each is tried, longest first, and
     # the first whose methods pass every training problem is kept: a list
