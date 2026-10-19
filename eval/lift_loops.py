@@ -49,7 +49,7 @@ lists open a clocked block before reading the table and close it at once.
 
 The methods are learned from one list and then tested as lift.py tests
 its methods: on every training problem, the other families' plans, and the
-held-out problems. Each problem's list is tried in turn, longest first, and
+held-out problems. Every distinct passing list is tried in turn, longest first, and
 the first whose methods pass every training problem is kept. A variant that
 the list does not show is not learned.
 """
@@ -92,7 +92,7 @@ class Example:
 
     def __init__(self, family, case, steps, workdir):
         self.problem = ls.Problem(family, case, workdir)
-        self.case = case
+        self.case, self.workdir = case, workdir
         self.plan = self.problem.plan(steps)
         if self.plan is None:
             raise CannotLift(f"{case['tag']}: the list does not plan")
@@ -691,16 +691,23 @@ def main():
             examples.append(Example(args.family, c, lg.frontier(args.family, c), os.path.join(work, c["tag"])))
     else:
         lists = lift.checked_lists(args.family, args.runs_dir)
+        # Every distinct passing list, most frequent first: sampled warmer, a
+        # problem has several, and the most frequent need not be the regular one.
         for c in train:
-            if lists.get(c["tag"]):
-                best = collections.Counter(lg.show(s) for s in lists[c["tag"]]).most_common(1)[0][0]
-                steps = lg.answer_steps("```\n" + best + "\n```")[0]
-                steps, removed = clean(args.family, c, steps, os.path.join(work, c["tag"]), tools)
+            seen = set()
+            for k, (text, _) in enumerate(collections.Counter(lg.show(s) for s in lists.get(c["tag"], [])).most_common()):
+                steps = lg.answer_steps("```\n" + text + "\n```")[0]
+                where = os.path.join(work, c["tag"] if k == 0 else f"{c['tag']}_list{k}")
+                steps, removed = clean(args.family, c, steps, where, tools)
+                if lg.show(steps) in seen:
+                    continue
+                seen.add(lg.show(steps))
                 if removed:
-                    print(f"{c['tag']}: taken out, an empty block: " + ", ".join(
+                    print(f"{c['tag']} list {k}: taken out, an empty block: " + ", ".join(
                         "(" + " ".join([n] + list(a)) + ")" for n, a in removed))
-                examples.append(Example(args.family, c, steps, os.path.join(work, c["tag"])))
-        print(f"{len(examples)} of {len(train)} training problems have a checked list")
+                examples.append(Example(args.family, c, steps, where))
+        print(f"{len({e.case['tag'] for e in examples})} of {len(train)} training problems have a checked list; "
+              f"{len(examples)} distinct lists")
     # Methods are learned from one example. Each is tried, longest first, and
     # the first whose methods pass every training problem is kept: a list
     # whose structure is irregular (one output written apart from the other)
@@ -710,13 +717,13 @@ def main():
         try:
             forms, items = lift_family(args.family, examples, ex)
         except CannotLift as e:
-            attempts.append(f"{ex.case['tag']}: cannot lift: {e}")
+            attempts.append(f"{os.path.basename(ex.workdir)}: cannot lift: {e}")
             print(attempts[-1])
             continue
         verdict = lf.test_answer(args.family, "```hddl\n" + "\n\n".join(forms) + "\n```", work, tools)
-        attempts.append(f"{ex.case['tag']}: {verdict['stage']}")
+        attempts.append(f"{os.path.basename(ex.workdir)}: {verdict['stage']}")
         print(attempts[-1])
-        with open(os.path.join(work, f"attempt_{ex.case['tag']}.txt"), "w") as f:
+        with open(os.path.join(work, f"attempt_{os.path.basename(ex.workdir)}.txt"), "w") as f:
             f.write("\n\n".join(forms) + "\n\n" + verdict["stage"] + "\n" + (verdict.get("diagnostic") or ""))
         if verdict["stage"] == "pass":
             break

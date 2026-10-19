@@ -331,8 +331,9 @@ far and that menu and answers with a number. It sees no HDDL.
   nothing in it, if what is left still passes. The model's state-table lists
   open a clocked block before reading the table and close it at once. The
   menus do not refuse this: refused there, it sent the lists into a dead end.
-- Methods are learned from one list. Each list is tried, longest first, and
-  the first whose methods pass every training problem is kept. They are then
+- Methods are learned from one list. Every distinct passing list is tried,
+  longest first, and the first whose methods pass every training problem is
+  kept. They are then
   tested on the held-out problems. Each attempt's methods and diagnostic are
   kept in the run directory.
 
