@@ -65,6 +65,7 @@ testbench is read.
 import argparse
 import collections
 import difflib
+import glob
 import hashlib
 import itertools
 import json
@@ -229,16 +230,42 @@ class Problem:
         entries = [e for e in entries if not e["closes"] or not self.unused_facts(list(done) + [e["step"]])]
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
+        # Declarations first: no always block is opened while a declaration
+        # that uses a fact of the design no step has used is on offer. Once the
+        # block is open, the declaration cannot go inside it, and the code that
+        # needs it, such as a state's case, could no longer be written: opening
+        # the next-state case before every state was declared was a dead end
+        # (LLM_RTL_code_generation.md 8.6.18). More than syntax: Verilog allows
+        # a declaration after a block, only not inside one.
+        unused = set(self.unused_facts(list(done)))
+        pending = [e for e in entries if e["adds"] and all(DECLARATION.match(x.strip()) for x in e["adds"])
+                   and self.uses(e["plan"][len(before):], unused)]
+        if pending:
+            entries = [e for e in entries if not any(x.strip().startswith("always") for x in e["adds"])]
         if look_ahead:
             # A step that opens a block must leave something to put in it: an
-            # opener after which no code at all can be written is a dead end.
-            # Decisions do not count: they write nothing, and cannot make a
-            # declaration possible inside a block.
+            # opener after which nothing but the block's own closing can be
+            # written is a dead end, or an empty block. Decisions do not count:
+            # they write nothing, and cannot make a declaration possible inside
+            # a block. A block closed empty is legal Verilog that does nothing;
+            # the model's state-table lists opened one first thing and closed it
+            # at once, or would not close it and stopped (8.6.17).
             entries = [e for e in entries if not re.search(r"\b(begin|case)\b", " ".join(e["adds"]))
-                       or any(n["adds"] for n in self.menu(list(done) + [e["step"]], look_ahead=False))]
+                       or any(n["adds"] and not all(CLOSER.match(x.strip()) for x in n["adds"])
+                              for n in self.menu(list(done) + [e["step"]], look_ahead=False))]
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
         return entries
+
+    def uses(self, plan, facts):
+        """Do these actions' plain preconditions use any of `facts`?"""
+        for name, args in plan:
+            params, pre, _ = self.actions[name]
+            bind = dict(zip(params, args))
+            for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else [])):
+                if a and all(isinstance(x, str) for x in a) and tuple(bind.get(x, x) for x in a) in facts:
+                    return True
+        return False
 
     def unused_facts(self, done):
         """Facts of the design that an action could use and none has: the
@@ -410,6 +437,8 @@ Answer with the number of the step and nothing else."""
 
 MODULE_ITEM = re.compile(r"(module|input|output|inout|reg|wire|parameter|localparam|assign|always|initial)\b")
 CASE_LABEL = re.compile(r"([\w']+|default)\s*:(?!=)\s*")
+CLOSER = re.compile(r"(end|endcase)\b")
+DECLARATION = re.compile(r"(input|output|inout|reg|wire|parameter|localparam)\b")
 
 
 def well_formed(lines):
@@ -486,23 +515,27 @@ KEYWORDS = {"module", "endmodule", "input", "output", "inout", "reg", "wire", "p
 
 def one_driver(lines):
     """Is each register assigned in one block only, and does every case
-    statement have an item? A register driven from two always blocks is two
-    drivers for one signal, which synthesis refuses; a case with no item is
-    a syntax error. Like the other rules, this is the language, not the
-    design."""
-    owner, block, items = {}, 0, None
+    statement have an item and at most one default? A register driven from
+    two always blocks is two drivers for one signal, which synthesis
+    refuses; a case with no item, or with two defaults, is a syntax error.
+    Like the other rules, this is the language, not the design."""
+    owner, block, items, defaults = {}, 0, None, 0
     for line in lines:
         text = line.strip()
         if text.startswith("always") or text.startswith("assign"):
             block += 1
         if re.match(r"case\s*\(", text):
-            items = 0
+            items, defaults = 0, 0
         elif text.startswith("endcase"):
             if items == 0:
                 return False
             items = None
         elif items is not None and CASE_LABEL.match(text):
             items += 1
+            if re.match(r"default\s*:", text):
+                defaults += 1
+                if defaults > 1:
+                    return False
         targets = re.findall(r"(\w+)\s*<?=(?!=)", re.sub(r"^\s*([\w']+|default)\s*:", "", text))
         if text.startswith("assign"):
             targets = re.findall(r"assign\s+(\w+)", text)
@@ -612,6 +645,58 @@ def cmd_show(args, cfg, tools):
         done.append(problem.menu(done)[pick - 1]["step"])
     print(problem.prompt(done))
     print(f"\n({len(problem.menu(done))} entries; {len(problem.prompt(done))} characters)")
+
+
+def walk(problem, steps):
+    """Walk a list through the menus: is each of its steps on offer, or an
+    entry that comes to the same plan? Returns (None, menu sizes) or (the
+    first step that is not, its index)."""
+    done, sizes = [], []
+    for k, step in enumerate(steps):
+        target = problem.plan(done + [step])
+        if target is not None and target == problem.plan(done):
+            done.append(step)                 # does nothing here, as menus leave out
+            continue
+        menu = problem.menu(done)
+        if target is None or not any(e["plan"] == target for e in menu):
+            return step, k
+        sizes.append(len(menu))
+        done.append(step)
+    return None, sizes
+
+
+def cmd_check(args, cfg, tools):
+    """The menus checked against lists known to be right: the hand-written
+    methods' own list for each training problem must be reachable through
+    them and pass, and with --lists, so must the model's passing lists of an
+    earlier run. A change to the menus that hides a step a right list needs
+    shows here, before any model is run."""
+    bad = 0
+    for family in args.families or sorted(lf.FAMILIES):
+        train, _ = lf.split(family)
+        for case in train:
+            problem = Problem(family, case, os.path.join(RUNS, "check", family, case["tag"]))
+            lists = [("hand-written", lg.frontier(family, case))]
+            if args.lists:
+                for path in sorted(glob.glob(os.path.join(args.lists, family, case["tag"], "run_*", "round_*",
+                                                          "verdict.json"))):
+                    if json.load(open(path))["stage"] == "pass":
+                        steps, _ = lg.answer_steps("```\n" + open(os.path.join(os.path.dirname(path), "steps.txt")).read()
+                                                   + "```")
+                        if all(lg.show(steps) != lg.show(x) for _, x in lists):
+                            lists.append((path.split(os.sep)[-3], steps))
+            for name, steps in lists:
+                missing, at = walk(problem, steps)
+                if missing:
+                    bad += 1
+                    print(f"{family} {case['tag']} {name}: step {at + 1} not on the menu: "
+                          f"({' '.join([missing[0]] + list(missing[1]))})", flush=True)
+                    continue
+                verdict = finish(problem, steps, tools)
+                bad += verdict["stage"] != "pass"
+                print(f"{family} {case['tag']} {name}: reachable, menus {min(at)}-{max(at)}, {verdict['stage']}",
+                      flush=True)
+    print(f"{bad} lists not reachable or not passing")
 
 
 def cmd_run(args, cfg, tools):
@@ -779,13 +864,16 @@ def main():
     s.add_argument("--phases", action="store_true",
                    help="the model first writes an outline of phases; each step is chosen within the phase it is on")
     sub.add_parser("summary")
+    s = sub.add_parser("check")
+    s.add_argument("families", nargs="*", help="(default every family)")
+    s.add_argument("--lists", metavar="DIR", help="also walk the passing lists of this run (e.g. eval/runs/steps)")
     args = ap.parse_args()
     global RUNS
     if args.tag:
         RUNS += "_" + args.tag
     lf.PROPOSER_CONFIG = args.proposer_config
     cfg, tools = rtl_eval.load_config(os.path.abspath(args.config))
-    {"show": cmd_show, "run": cmd_run, "summary": cmd_summary}[args.cmd](args, cfg, tools)
+    {"show": cmd_show, "run": cmd_run, "summary": cmd_summary, "check": cmd_check}[args.cmd](args, cfg, tools)
 
 
 if __name__ == "__main__":
