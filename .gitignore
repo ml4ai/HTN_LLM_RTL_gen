@@ -159,6 +159,7 @@ cmake-build-debug
 
 # Private research notes -- never push; this repository is public
 /docs/LLM_RTL_code_generation.md
+/docs/HRL_notes.md
 
 # Evaluation runs: generated samples and results, large and machine-specific
 eval/runs/
