@@ -231,16 +231,14 @@ class Problem:
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
         # Declarations first: no always block is opened while a declaration
-        # that uses a fact of the design no step has used is on offer. Once the
+        # could still use a fact of the design no step has used, now or once
+        # the decisions it needs are recorded. Once the
         # block is open, the declaration cannot go inside it, and the code that
         # needs it, such as a state's case, could no longer be written: opening
         # the next-state case before every state was declared was a dead end
         # (LLM_RTL_code_generation.md 8.6.18). More than syntax: Verilog allows
         # a declaration after a block, only not inside one.
-        unused = set(self.unused_facts(list(done)))
-        pending = [e for e in entries if e["adds"] and all(DECLARATION.match(x.strip()) for x in e["adds"])
-                   and self.uses(e["plan"][len(before):], unused)]
-        if pending:
+        if self.declaration_pending(done, state):
             entries = [e for e in entries if not any(x.strip().startswith("always") for x in e["adds"])]
         if look_ahead:
             # A step that opens a block must leave something to put in it: an
@@ -257,14 +255,28 @@ class Problem:
         self._menus[key] = entries
         return entries
 
-    def uses(self, plan, facts):
-        """Do these actions' plain preconditions use any of `facts`?"""
-        for name, args in plan:
+    def declaration_pending(self, done, state):
+        """Could a declaration still use a fact of the design no step has used?
+        A declaring action (plan_to_verilog.DECLARES) whose precondition names
+        an unused fact, with its other plain facts true now or of a kind some
+        step records later: a state's parameter needs the state's transitions
+        recorded first, and is pending before they are."""
+        unused = set(self.unused_facts(list(done)))
+        for name in plan_to_verilog.DECLARES:
+            if name not in self.actions:
+                continue
             params, pre, _ = self.actions[name]
-            bind = dict(zip(params, args))
-            for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else [])):
-                if a and all(isinstance(x, str) for x in a) and tuple(bind.get(x, x) for x in a) in facts:
-                    return True
+            atoms = [p for p in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else []))
+                     if p and all(isinstance(x, str) for x in p)]
+            for a in atoms:
+                for fact in unused:
+                    if fact[0] != a[0] or len(fact) != len(a):
+                        continue
+                    bind = {}
+                    if all(bind.setdefault(x, v) == v if x.startswith("?") else x == v
+                           for x, v in zip(a[1:], fact[1:])):
+                        if next(self._extend(bind, [b for b in atoms if b is not a], state), None) is not None:
+                            return True
         return False
 
     def unused_facts(self, done):
@@ -438,7 +450,6 @@ Answer with the number of the step and nothing else."""
 MODULE_ITEM = re.compile(r"(module|input|output|inout|reg|wire|parameter|localparam|assign|always|initial)\b")
 CASE_LABEL = re.compile(r"([\w']+|default)\s*:(?!=)\s*")
 CLOSER = re.compile(r"(end|endcase)\b")
-DECLARATION = re.compile(r"(input|output|inout|reg|wire|parameter|localparam)\b")
 
 
 def well_formed(lines):
@@ -448,6 +459,7 @@ def well_formed(lines):
 
       - Blocks nest. An `end` closes a `begin` and an `endcase` a `case`, and
         `endmodule` comes with every block closed.
+      - A module has one header.
       - Module items (declarations, `assign`, `always`) stand only at module
         level, and statements only inside a block.
       - Inside a `case`, a statement is a case item, `label: ...`; a case
@@ -455,6 +467,7 @@ def well_formed(lines):
       - An `else` needs an `if`: it may come only straight after an if-branch
         at the same depth, and not after another plain else."""
     stack = []          # open blocks: (kind, may an else follow it once it is closed?)
+    seen_module = False  # a module has one header
     may_else = [False]  # at each depth, may the next statement be an else?
     for line in lines:
         text = line.strip()
@@ -481,8 +494,9 @@ def well_formed(lines):
         if not text:
             continue
         if MODULE_ITEM.match(text):
-            if stack:
+            if stack or (text.startswith("module") and seen_module):
                 return False
+            seen_module = seen_module or text.startswith("module")
         elif not stack:
             return False                             # a statement outside any block
         label = CASE_LABEL.match(text) if stack and not MODULE_ITEM.match(text) else None
@@ -566,12 +580,14 @@ def empty_blocks(lines):
 
 
 def declared_before_use(lines):
-    """Is every name these lines use declared on an earlier line? A port is
-    declared by its input or output line, a state by its parameter line,
-    a register by its reg line. Verilog refuses a use before the
-    declaration, so this too is syntax: it says nothing of whether the
-    module is right."""
+    """Is every name these lines use declared on an earlier line, and none
+    declared twice? A port is declared by its input or output line, a state
+    by its parameter line, a register by its reg line; an output may also be
+    declared a reg on a line of its own, as Verilog-2001 allows. Verilog
+    refuses a use before the declaration, and a second declaration, so this
+    too is syntax: it says nothing of whether the module is right."""
     declared = set()
+    kinds = {}                     # name: the keyword that declared it
     for line in lines:
         text = re.sub(r"//.*", "", line).strip()
         if not text:
@@ -590,6 +606,10 @@ def declared_before_use(lines):
                 used = set()
             if used - declared - KEYWORDS:
                 return False
+            for n in names:
+                if n in kinds and not (decl.group(1) == "reg" and kinds[n] == "output"):
+                    return False
+                kinds[n] = decl.group(1)
             declared.update(names)
             continue
         if {n for n in re.findall(r"[A-Za-z_]\w*", text) if n not in KEYWORDS} - declared:

@@ -49,6 +49,10 @@ def number(obj):
 
 PORT_DECLS = ("write_input_decl", "write_output_reg_decl", "write_output_decl",
               "write_output_reg_vector_decl")
+# The actions whose line is a declaration at module level: ports, registers
+# and state parameters. Training menus use it to keep declarations before
+# the blocks that need them (eval/learn_steps.py).
+DECLARES = PORT_DECLS + ("write_register_decl", "write_state_param", "write_state_regs")
 
 
 def render(steps):
