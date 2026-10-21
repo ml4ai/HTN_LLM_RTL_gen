@@ -70,6 +70,7 @@ import learn_family as lf  # noqa: E402
 import learn_ground as lg  # noqa: E402
 import learn_steps as ls  # noqa: E402
 import lift  # noqa: E402
+import plan_to_verilog  # noqa: E402
 import problem_compiler  # noqa: E402
 import rtl_eval  # noqa: E402
 
@@ -179,6 +180,91 @@ class Example:
                 bind = dict(zip(params, args))
                 out |= {tuple(bind.get(x, x) for x in e) for e in effects}
         return out
+
+
+def chain_ranks(facts):
+    """Each object's place in the chain the problem's facts put it in (the
+    module itself left out): A 0, B 1, ... for the states."""
+    module = next(f[1] for f in facts if f[0] == "first_port")
+    rank = {}
+    for pred in sorted({f[0] for f in facts if len(f) == 3}):
+        edges = {(f[1], f[2]) for f in facts if f[0] == pred and len(f) == 3 and module not in f[1:]}
+        if not edges:
+            continue
+        nxt = dict(edges)
+        heads = set(nxt) - {b for _, b in edges}
+        if len(heads) == 1 and len(nxt) == len(edges):
+            order = [heads.pop()]
+            while order[-1] in nxt and len(order) <= len(edges):
+                order.append(nxt[order[-1]])
+            for k, x in enumerate(order):
+                rank.setdefault(x, k)
+    return rank
+
+
+def normalize(family, case, steps, workdir, tools):
+    """The list with steps that commute put in the chains' order, as long
+    as what results still passes. Made to declare before it opens a block,
+    the model declares states one at a time, between recording transitions
+    and writing output terms, in an order of its own; a lone declaration is
+    tied to nothing the lifter knows (LLM_RTL_code_generation.md 8.6.18).
+
+      1. A task that comes only to declarations becomes those declarations:
+         declaring the states "from D" declares D, then E. Other tasks are
+         kept whole, as the lifter keeps them.
+      2. Decisions and declarations (plan_to_verilog.DECLARES) are sorted
+         by the chain element they are about, decisions first. A
+         declaration may also move ahead of any other step.
+         Each swap must leave the list planning to the same lines of code,
+         in any order.
+      3. The result must pass as a list must (learn_steps.finish).
+
+    Returns the list and how many steps moved."""
+    problem = ls.Problem(family, case, workdir)
+    rank = chain_ranks({tuple(f) for f in problem.facts})
+    out = [(n, list(a)) for n, a in steps]
+    reference = sorted(problem.code(problem.plan(out)) or [])
+    k = 0
+    while k < len(out):
+        name = out[k][0]
+        if problem.known[name][0] == "task":
+            added = problem.plan(out[:k + 1])[len(problem.plan(out[:k])):]
+            if added and all(n in plan_to_verilog.DECLARES for n, _ in added):
+                trial = out[:k] + [(n, list(a)) for n, a in added] + out[k + 1:]
+                if problem.plan(trial) == problem.plan(out):
+                    out = trial
+        k += 1
+
+    def decision(st):
+        return st[0].startswith("analyze_") and problem.known[st[0]][0] != "task"
+
+    def declaration(st):
+        return st[0] in plan_to_verilog.DECLARES
+
+    def key(st):
+        return (next((rank[a] for a in st[1] if a in rank), -1), not decision(st), st[0], tuple(st[1]))
+
+    def holds(trial):
+        plan = problem.plan(trial)
+        lines = problem.code(plan) if plan is not None else None
+        return lines is not None and sorted(lines) == reference
+
+    moved, changed = 0, True
+    while changed:
+        changed = False
+        for i in range(1, len(out)):
+            x, y = out[i - 1], out[i]
+            movable = decision(y) or declaration(y)
+            if not movable:
+                continue
+            if (decision(x) or declaration(x)) and key(y) < key(x) or \
+                    declaration(y) and not (decision(x) or declaration(x)):
+                trial = out[:i - 1] + [y, x] + out[i + 1:]
+                if holds(trial):
+                    out, changed, moved = trial, True, moved + 1
+    if moved and ls.finish(problem, out, tools)["stage"] != "pass":
+        return [(n, list(a)) for n, a in steps], 0
+    return out, moved
 
 
 def clean(family, case, steps, workdir, tools):
@@ -699,6 +785,9 @@ def main():
                 steps = lg.answer_steps("```\n" + text + "\n```")[0]
                 where = os.path.join(work, c["tag"] if k == 0 else f"{c['tag']}_list{k}")
                 steps, removed = clean(args.family, c, steps, where, tools)
+                steps, moved = normalize(args.family, c, steps, where, tools)
+                if moved:
+                    print(f"{c['tag']} list {k}: {moved} steps moved into the chains' order", flush=True)
                 if lg.show(steps) in seen:
                     continue
                 seen.add(lg.show(steps))

@@ -248,12 +248,22 @@ class Problem:
             # a block. A block closed empty is legal Verilog that does nothing;
             # the model's state-table lists opened one first thing and closed it
             # at once, or would not close it and stopped (8.6.17).
+            # Only code that goes inside the block counts: lines after the
+            # opener, not an output term added to an `assign` written earlier,
+            # which once let a block be opened that could only close empty.
             entries = [e for e in entries if not re.search(r"\b(begin|case)\b", " ".join(e["adds"]))
-                       or any(n["adds"] and not all(CLOSER.match(x.strip()) for x in n["adds"])
-                              for n in self.menu(list(done) + [e["step"]], look_ahead=False))]
+                       or any(self.fills(e, n) for n in self.menu(list(done) + [e["step"]], look_ahead=False))]
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
         return entries
+
+    def fills(self, opener, entry):
+        """Does `entry`, taken after `opener`, put code inside the block the
+        opener began: new lines after the module so far, not only the
+        block's own closing?"""
+        before, after = self.code(opener["plan"]) or [], self.code(entry["plan"]) or []
+        new = after[len(before):]
+        return after[:len(before)] == before and any(not CLOSER.match(x.strip()) for x in new)
 
     def declaration_pending(self, done, state):
         """Could a declaration still use a fact of the design no step has used?

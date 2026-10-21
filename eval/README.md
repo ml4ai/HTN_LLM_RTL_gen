@@ -327,6 +327,12 @@ far and that menu and answers with a number. It sees no HDDL.
   last of all. A fact may name "some" object, read as an `exists`.
 - **Each loop becomes a task** with two methods a variant: one that does the
   group and recurses on the next element, and one for the last.
+- **A passing list is normalized first.** A task that comes only to
+  declarations becomes those declarations, and decisions and declarations
+  are sorted into the chains' order: each state's two transitions, then its
+  declaration. Each swap must leave the same lines of code, and the result
+  must still pass. The model declares states one at a time, in its own
+  order, and a lone declaration would tie to nothing.
 - **A passing list is cleaned first** of any block it opens and closes with
   nothing in it, if what is left still passes. The model's state-table lists
   open a clocked block before reading the table and close it at once. The
