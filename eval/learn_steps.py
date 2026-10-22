@@ -230,7 +230,7 @@ class Problem:
         entries = [e for e in entries if not e["closes"] or not self.unused_facts(list(done) + [e["step"]])]
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
-        # Declarations first: no always block is opened while a declaration
+        # Declarations first: no always block or assign is begun while a declaration
         # could still use a fact of the design no step has used, now or once
         # the decisions it needs are recorded. Once the
         # block is open, the declaration cannot go inside it, and the code that
@@ -239,7 +239,9 @@ class Problem:
         # (LLM_RTL_code_generation.md 8.6.18). More than syntax: Verilog allows
         # a declaration after a block, only not inside one.
         if self.declaration_pending(done, state):
-            entries = [e for e in entries if not any(x.strip().startswith("always") for x in e["adds"])]
+            # An `assign` too: later output terms are added to it, and each
+            # names a state that must be declared before it (8.6.18).
+            entries = [e for e in entries if not any(x.strip().startswith(("always", "assign")) for x in e["adds"])]
         if look_ahead:
             # A step that opens a block must leave something to put in it: an
             # opener after which nothing but the block's own closing can be
