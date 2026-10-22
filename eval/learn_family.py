@@ -606,6 +606,29 @@ def executor(cfg, jobs, batch_path, n):
         sys.exit("error: the executor failed; see its message above. Rerun to resume.")
 
 
+def scorer_executor(cfg, jobs, batch_path):
+    """executor_score on these requests: the log-probability of each
+    candidate reply. Beside executor_sample, with the same configuration."""
+    if not jobs:
+        return
+    binary = os.path.join(ROOT, os.path.dirname(cfg["executor"]["binary"]), "executor_score")
+    with open(batch_path, "w") as f:
+        json.dump(jobs, f, indent=1)
+    print(f"{len(jobs)} request(s) to the model, scored", flush=True)
+    if subprocess.run([binary, "--batch", batch_path, "--config", proposer_config(cfg)],
+                      stdout=subprocess.DEVNULL).returncode != 0:
+        sys.exit("error: executor_score failed; see its message above. Rerun to resume.")
+
+
+def scored(d):
+    """Is the score request in `d` done?"""
+    gen = os.path.join(d, "gen.json")
+    if not os.path.exists(gen):
+        return False
+    g = json.load(open(gen))
+    return g.get("mode") == "score" and g.get("request_sha256") == rtl_eval.sha256_file(os.path.join(d, "request.json"))
+
+
 def generated(d, n):
     gen = os.path.join(d, "gen.json")
     if not os.path.exists(gen):

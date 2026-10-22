@@ -69,6 +69,7 @@ import glob
 import hashlib
 import itertools
 import json
+import math
 import os
 import random
 import re
@@ -765,6 +766,157 @@ def cmd_check(args, cfg, tools):
     print(f"{bad} lists not reachable or not passing")
 
 
+def build_lists(problems, train, keys, base, cfg, tools, policy="model", runs=1, phases=False, starts=None,
+                scorer=None, weight=0.0):
+    """Build lists by choosing from menus: one for each key (problem
+    index, run, ...), from the steps in `starts` (default none), until a step
+    writes endmodule or the list cannot go on. Returns the lists, their
+    verdicts, and the trail, outline and phase of each.
+
+    Who chooses (`policy`):
+      model     the model's sampled reply. Lists at the same point share one
+                request, and run r takes its sample r.
+      random    a uniform draw.
+      combined  a draw from softmax((log p + weight * score) / T): log p the
+                model's probability of each entry's number (executor_score),
+                score the scorer's, T the sampling temperature of the
+                configuration. Weight 0 is the model alone, held to the menu.
+      scorer    the entry the scorer rates highest.
+    Every draw is from the list's own seeded generator."""
+    done = {k: [(n, list(a)) for n, a in (starts or {}).get(k, [])] for k in keys}
+    verdicts, trail = {}, collections.defaultdict(list)
+    rng = {k: random.Random(1000 * k[0] + k[1] + sum(1000003 * x for x in k[2:])) for k in keys}
+    outline, phase, phase_of = {}, {k: 0 for k in keys}, collections.defaultdict(list)
+    if phases:
+        # Turn 0: an outline a list, in the model's own words.
+        jobs = []
+        for p, case in enumerate(train):
+            d = os.path.join(base, case["tag"], "outline")
+            request = write_request(d, problems[p].outline_prompt())
+            if not lf.generated(d, runs):
+                jobs.append({"request": request, "out_dir": d})
+        lf.executor(cfg, jobs, os.path.join(base, "batch.json"), runs)
+        for p, r in keys:
+            with open(os.path.join(base, train[p]["tag"], "outline", f"sample_{r:02d}.response.txt"),
+                      errors="replace") as f:
+                found = outline_of(f.read())
+            if found:
+                outline[(p, r)] = found
+            else:
+                verdicts[(p, r)] = finish(problems[p], [], tools, "no outline")
+    for turn in range(1, (MAX_TURNS_PHASED if phases else MAX_TURNS) + 1):
+        for k in keys:
+            if k not in verdicts and len(done[k]) >= MAX_TURNS:
+                verdicts[k] = finish(problems[k[0]], done[k], tools, "not finished")
+        active = [k for k in keys if k not in verdicts]
+        if not active:
+            break
+        groups = collections.defaultdict(list)       # lists at the same point share a request
+        for k in active:
+            groups[(k[0], tuple((n, tuple(a)) for n, a in done[k]), phase[k],
+                    tuple(outline.get(k, ())))].append(k)
+        menus = {g: problems[g[0]].menu(done[ks[0]]) for g, ks in groups.items()}
+        picks = {}
+        if policy == "random":
+            for g, ks in groups.items():
+                for k in ks:
+                    n = len(menus[g])
+                    picks[k] = rng[k].randrange(n) if n else None
+        elif policy in ("combined", "scorer"):
+            # The model's preference over each menu, one batch for the turn.
+            where, jobs = {}, []
+            if policy == "combined":
+                for g, ks in groups.items():
+                    if menus[g]:
+                        d, job = score_request(base, train[g[0]]["tag"], len(done[ks[0]]) + 1,
+                                               problems[g[0]].prompt(done[ks[0]]), len(menus[g]))
+                        where[g] = d
+                        jobs += [job] if job else []
+                lf.scorer_executor(cfg, jobs, os.path.join(base, "score_batch.json"))
+            for g, ks in groups.items():
+                if menus[g]:
+                    k0 = ks[0]
+                    lp = [x["logprob"] for x in json.load(open(os.path.join(where[g], "scores.json")))] \
+                        if g in where else None
+                    rewards = scorer.rate(problems[g[0]], done[k0], menus[g], lp) if scorer else [0.0] * len(menus[g])
+                    if policy == "combined":
+                        logits = [(a + weight * b) / temperature(cfg) for a, b in zip(lp, rewards)]
+                    else:
+                        logits = rewards
+                for k in ks:
+                    if not menus[g]:
+                        picks[k] = None
+                    elif policy == "scorer":
+                        picks[k] = max(range(len(logits)), key=lambda i: logits[i])
+                    else:
+                        top = max(logits)
+                        w = [math.exp(x - top) for x in logits]
+                        picks[k] = rng[k].choices(range(len(w)), weights=w)[0]
+                    if menus[g]:
+                        trail[k].append({"turn": turn, "pick": picks[k] + 1, "entries": len(menus[g])})
+        else:
+            jobs, where = [], {}
+            for g, ks in groups.items():
+                if not menus[g]:
+                    continue
+                k0 = ks[0]
+                text = problems[g[0]].prompt(done[k0], outline.get(k0), phase[k0])
+                d = os.path.join(base, train[g[0]]["tag"], f"turn_{len(done[k0]) + 1 if starts else turn:02d}",
+                                 hashlib.sha256(text.encode()).hexdigest()[:12])
+                request = write_request(d, text)
+                where[g] = d
+                if not lf.generated(d, runs):
+                    jobs.append({"request": request, "out_dir": d})
+            lf.executor(cfg, jobs, os.path.join(base, "batch.json"), runs)
+            for g, ks in groups.items():
+                for k in ks:
+                    if g not in where:
+                        picks[k] = None
+                        continue
+                    with open(os.path.join(where[g], f"sample_{k[1]:02d}.response.txt"), errors="replace") as f:
+                        reply = f.read()
+                    can_move = k in outline and phase[k] + 1 < len(outline[k])
+                    picks[k] = choice(reply, len(menus[g]) + can_move)
+                    trail[k].append({"turn": turn, "reply": reply[:80], "entries": len(menus[g])})
+        for g, ks in groups.items():
+            for k in ks:
+                if not menus[g]:
+                    verdicts[k] = finish(problems[g[0]], done[k], tools, "nothing can be done")
+                elif picks[k] is None:
+                    verdicts[k] = finish(problems[g[0]], done[k], tools, "no valid choice")
+                elif picks[k] == len(menus[g]):        # the entry that moves to the next phase
+                    phase[k] += 1
+                else:
+                    entry = menus[g][picks[k]]
+                    done[k] = done[k] + [entry["step"]]
+                    phase_of[k].append(phase[k])
+                    if entry["closes"]:
+                        verdicts[k] = finish(problems[g[0]], done[k], tools)
+        print(f"turn {turn}: {len(active)} lists building, {len(verdicts)} finished "
+              f"({sum(v['stage'] == 'pass' for v in verdicts.values())} pass)", flush=True)
+    return done, verdicts, trail, outline, phase_of
+
+
+def temperature(cfg):
+    """The sampling temperature of the configuration the model runs under."""
+    with open(lf.proposer_config(cfg)) as f:
+        return json.load(f)["ladder_sampling"]["temperature"]
+
+
+def score_request(base, tag, turn, text, n):
+    """A request for the model's log-probability of each of the n entries'
+    numbers as its reply to this menu prompt (executor_score), cached by the
+    prompt. Returns its directory, and the job if it is not done yet."""
+    d = os.path.join(base, tag, f"turn_{turn:02d}", hashlib.sha256(text.encode()).hexdigest()[:12] + "_scores")
+    os.makedirs(d, exist_ok=True)
+    request = os.path.join(d, "request.json")
+    body = json.dumps({"system": SYSTEM, "user": text, "candidates": [str(i) for i in range(1, n + 1)]}, indent=1)
+    if not os.path.exists(request) or open(request).read() != body:
+        with open(request, "w") as f:
+            f.write(body)
+    return d, (None if lf.scored(d) else {"request": request, "out_dir": d})
+
+
 def cmd_run(args, cfg, tools):
     family, base = args.family, os.path.join(RUNS, args.family)
     os.makedirs(base, exist_ok=True)
@@ -780,7 +932,10 @@ def cmd_run(args, cfg, tools):
                        "learn_steps": rtl_eval.sha256_file(os.path.abspath(__file__)),
                        "learn_ground": rtl_eval.sha256_file(os.path.join(HERE, "learn_ground.py")),
                        "learn_family": rtl_eval.sha256_file(os.path.join(HERE, "learn_family.py"))}}
-    if args.policy == "model":
+    if args.scorer:
+        meta["scorer"] = {"path": os.path.abspath(args.scorer), "sha256": rtl_eval.sha256_file(args.scorer),
+                          "weight": args.weight}
+    if args.policy in ("model", "combined"):
         with open(lf.proposer_config(cfg)) as f:
             meta["proposer"] = {"config": lf.proposer_config(cfg), "sampling": json.load(f)["ladder_sampling"]}
         meta["sha256"]["proposer_config"] = rtl_eval.sha256_file(lf.proposer_config(cfg))
@@ -788,83 +943,14 @@ def cmd_run(args, cfg, tools):
         json.dump(meta, f, indent=1)
 
     keys = [(p, r) for p in range(len(train)) for r in range(args.runs)]
-    done = {k: [] for k in keys}
-    verdicts, trail = {}, collections.defaultdict(list)
-    rng = {k: random.Random(1000 * k[0] + k[1]) for k in keys}
-    outline, phase, phase_of = {}, {k: 0 for k in keys}, collections.defaultdict(list)
-    if args.phases:
-        # Turn 0: an outline a list, in the model's own words.
-        jobs = []
-        for p, case in enumerate(train):
-            d = os.path.join(base, case["tag"], "outline")
-            request = write_request(d, problems[p].outline_prompt())
-            if not lf.generated(d, args.runs):
-                jobs.append({"request": request, "out_dir": d})
-        lf.executor(cfg, jobs, os.path.join(base, "batch.json"), args.runs)
-        for p, r in keys:
-            with open(os.path.join(base, train[p]["tag"], "outline", f"sample_{r:02d}.response.txt"),
-                      errors="replace") as f:
-                found = outline_of(f.read())
-            if found:
-                outline[(p, r)] = found
-            else:
-                verdicts[(p, r)] = finish(problems[p], [], tools, "no outline")
-    for turn in range(1, (MAX_TURNS_PHASED if args.phases else MAX_TURNS) + 1):
-        active = [k for k in keys if k not in verdicts]
-        if not active:
-            break
-        groups = collections.defaultdict(list)       # lists at the same point share a request
-        for p, r in active:
-            groups[(p, tuple((n, tuple(a)) for n, a in done[(p, r)]), phase[(p, r)],
-                    tuple(outline.get((p, r), ())))].append(r)
-        menus = {g: problems[g[0]].menu(done[(g[0], rs[0])]) for g, rs in groups.items()}
-        picks = {}
-        if args.policy == "random":
-            for g, rs in groups.items():
-                for r in rs:
-                    n = len(menus[g])
-                    picks[(g[0], r)] = rng[(g[0], r)].randrange(n) if n else None
-        else:
-            jobs, where = [], {}
-            for g, rs in groups.items():
-                if not menus[g]:
-                    continue
-                k0 = (g[0], rs[0])
-                text = problems[g[0]].prompt(done[k0], outline.get(k0), phase[k0])
-                d = os.path.join(base, train[g[0]]["tag"], f"turn_{turn:02d}",
-                                 hashlib.sha256(text.encode()).hexdigest()[:12])
-                request = write_request(d, text)
-                where[g] = d
-                if not lf.generated(d, args.runs):
-                    jobs.append({"request": request, "out_dir": d})
-            lf.executor(cfg, jobs, os.path.join(base, "batch.json"), args.runs)
-            for g, rs in groups.items():
-                for r in rs:
-                    if g not in where:
-                        picks[(g[0], r)] = None
-                        continue
-                    with open(os.path.join(where[g], f"sample_{r:02d}.response.txt"), errors="replace") as f:
-                        reply = f.read()
-                    can_move = (g[0], r) in outline and phase[(g[0], r)] + 1 < len(outline[(g[0], r)])
-                    picks[(g[0], r)] = choice(reply, len(menus[g]) + can_move)
-                    trail[(g[0], r)].append({"turn": turn, "reply": reply[:80], "entries": len(menus[g])})
-        for g, rs in groups.items():
-            for r in rs:
-                k = (g[0], r)
-                if not menus[g]:
-                    verdicts[k] = finish(problems[g[0]], done[k], tools, "nothing can be done")
-                elif picks[k] is None:
-                    verdicts[k] = finish(problems[g[0]], done[k], tools, "no valid choice")
-                elif picks[k] == len(menus[g]):        # the entry that moves to the next phase
-                    phase[k] += 1
-                else:
-                    entry = menus[g][picks[k]]
-                    done[k] = done[k] + [entry["step"]]
-                    phase_of[k].append(phase[k])
-                    if entry["closes"]:
-                        verdicts[k] = finish(problems[g[0]], done[k], tools)
-        print(f"turn {turn}: {len(active)} lists building, {len(verdicts)} finished "
-              f"({sum(v['stage'] == 'pass' for v in verdicts.values())} pass)", flush=True)
+    chooser = None
+    if args.policy == "scorer" or (args.policy == "combined" and args.weight):
+        if not args.scorer:
+            sys.exit("error: --policy scorer, or combined with a weight, needs --scorer")
+        import scorer as scorer_module
+        chooser = scorer_module.Scorer(args.scorer)
+    done, verdicts, trail, outline, phase_of = build_lists(problems, train, keys, base, cfg, tools, args.policy,
+                                                           args.runs, args.phases, scorer=chooser, weight=args.weight)
     for k in keys:
         if k not in verdicts:
             verdicts[k] = finish(problems[k[0]], done[k], tools, "not finished")
@@ -925,8 +1011,11 @@ def main():
     s.add_argument("family", choices=sorted(lf.FAMILIES))
     s.add_argument("--runs", type=int, default=4, help="lists a problem (default 4)")
     s.add_argument("--problems", type=int, help="use only the first N training problems (default all)")
-    s.add_argument("--policy", choices=["model", "random"], default="model",
-                   help="who chooses: the model, or a uniform draw (no model is run)")
+    s.add_argument("--policy", choices=["model", "random", "combined", "scorer"], default="model",
+                   help="who chooses: the model's sampled reply; a uniform draw (no model is run); the model's "
+                        "probabilities combined with a scorer's; or the scorer alone (see build_lists)")
+    s.add_argument("--scorer", help="a scorer trained by eval/scorer.py, for --policy combined or scorer")
+    s.add_argument("--weight", type=float, default=0.0, help="the scorer's weight, for --policy combined")
     s.add_argument("--phases", action="store_true",
                    help="the model first writes an outline of phases; each step is chosen within the phase it is on")
     sub.add_parser("summary")

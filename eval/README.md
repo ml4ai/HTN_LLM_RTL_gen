@@ -25,6 +25,7 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | `learned_domain.py` | One domain with several learned families in place of their hand-written methods, and its checks (below) |
 | `menu_data.py` | Menu states from every logged step-list run, with each entry's outcomes and features: a scorer's training data (below) |
 | `scorer.py` | A Bradley–Terry scorer over menu entries, after the MR reward model of `gp_reward-priors` (below) |
+| `rollouts.py` | Values of competing menu entries by rollouts from them: cleaner labels for the scorer (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
 | `passk.py` | The estimator, ladders, the syntax/conditional split, bootstrap, McNemar |
@@ -377,6 +378,31 @@ far and that menu and answers with a number. It sees no HDDL.
 - **`evaluate`** reports pairwise accuracy on pairs never trained on, leaving
   out one problem and one family at a time, beside a coin and a one-feature
   heuristic.
+
+`rollouts.py` labels by value instead of by whole lists:
+
+    $PY eval/rollouts.py mealy_detector --runs-dir eval/runs/steps_r60_t085 --dry-run
+    $PY eval/rollouts.py mealy_detector --runs-dir eval/runs/steps_r60_t085
+    $PY eval/scorer.py evaluate mealy_detector --data eval/runs/rollouts --with-llm
+
+- At every state a run's lists passed through, the model's probability of
+  each entry (`executor_score`). Where its likeliest entry is under 0.9, the
+  list is finished several times from each of the likeliest entries, by the
+  model at the evaluation temperature, under the current menus.
+- An entry's pass rate over its rollouts estimates its value. The data has
+  `menu_data.py`'s form, with the model's log-probability of each entry,
+  which `scorer.py --with-llm` uses as a feature.
+
+`learn_steps.py run` can choose with a scorer:
+
+    $PY eval/learn_steps.py run mealy_detector --policy combined --scorer M.pt --weight 1.0
+    $PY eval/learn_steps.py run mealy_detector --policy combined            # weight 0: the model alone, on the menu
+    $PY eval/learn_steps.py run mealy_detector --policy scorer --scorer M.pt
+
+- **`combined`** draws from softmax((log p + weight × score) / T), with log p
+  the model's probability of each entry's number and T the configuration's
+  temperature. **`scorer`** takes the entry the scorer rates highest. Every
+  draw is seeded by the list.
 
 ## What each check means
 

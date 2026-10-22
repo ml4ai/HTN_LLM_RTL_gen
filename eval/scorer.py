@@ -72,8 +72,19 @@ class Reward(nn.Module):
         return self.out(x).squeeze(-1)
 
 
-def load(families):
-    return [json.load(open(os.path.join(DATA, f"{f}.json"))) for f in families]
+WITH_LLM = False      # set by --with-llm: the model's log-probability of the entry as one more feature
+
+
+def load(families, data_dir=None):
+    return [json.load(open(os.path.join(data_dir or DATA, f"{f}.json"))) for f in families]
+
+
+def row(entry):
+    if WITH_LLM:
+        if "logprob" not in entry:
+            sys.exit("error: --with-llm needs data with the model's log-probabilities (rollouts.py)")
+        return entry["features"] + [entry["logprob"]]
+    return entry["features"]
 
 
 def pair_arrays(datasets, keep=lambda family, tag: True):
@@ -83,8 +94,8 @@ def pair_arrays(datasets, keep=lambda family, tag: True):
         for i, a, b in menu_data.pairs(data):
             state = data["states"][i]
             if keep(data["family"], state["tag"]):
-                better.append(state["entries"][a]["features"])
-                worse.append(state["entries"][b]["features"])
+                better.append(row(state["entries"][a]))
+                worse.append(row(state["entries"][b]))
                 where.append((data["family"], state["tag"]))
     return np.array(better, dtype=np.float32), np.array(worse, dtype=np.float32), where
 
@@ -119,13 +130,14 @@ def accuracy(net, mean, std, better, worse):
 
 
 def heuristic(better, worse):
-    """Prefer the entry that uses more unused facts; a tie counts half."""
+    """Prefer the entry that uses more unused facts; a tie counts half. (With
+    --with-llm the model's log-probability is the last column, after it.)"""
     k = menu_data.FEATURES.index("uses_unused")
     return float(np.mean(np.where(better[:, k] > worse[:, k], 1.0, np.where(better[:, k] == worse[:, k], 0.5, 0.0))))
 
 
 def cmd_evaluate(args):
-    datasets = load(args.families)
+    datasets = load(args.families, args.data)
     hidden = tuple(args.hidden)
     groups = sorted({w for d in datasets for w in pair_arrays([d])[2]})
     print(f"model: {'linear' if not hidden else 'MLP ' + str(list(hidden))}; "
@@ -160,12 +172,13 @@ def cmd_evaluate(args):
 
 
 def cmd_train(args):
-    datasets = load(args.families)
+    datasets = load(args.families, args.data)
     b, w, _ = pair_arrays(datasets)
     net, mean, std = fit(b, w, tuple(args.hidden), args.epochs)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     torch.save({"net": net.state_dict(), "hidden": list(args.hidden), "mean": mean.tolist(), "std": std.tolist(),
-                "features": menu_data.FEATURES, "families": args.families, "pairs": len(b),
+                "features": menu_data.FEATURES + (["llm_logprob"] if WITH_LLM else []), "with_llm": WITH_LLM,
+                "data": os.path.abspath(args.data or DATA), "families": args.families, "pairs": len(b),
                 "epochs": args.epochs, "seed": SEED}, args.out)
     print(f"trained on {len(b)} pairs of {', '.join(args.families)}; training accuracy "
           f"{accuracy(net, mean, std, b, w):.2f}; written to {args.out}")
@@ -176,8 +189,11 @@ class Scorer:
 
     def __init__(self, path):
         saved = torch.load(path, weights_only=False)
-        if saved["features"] != menu_data.FEATURES:
+        self.with_llm = saved.get("with_llm", False)
+        if saved["features"] != menu_data.FEATURES + (["llm_logprob"] if self.with_llm else []):
             sys.exit(f"error: {path} was trained on other features")
+        self.path = path
+        self._usable = {}
         self.net = Reward(len(saved["features"]), tuple(saved["hidden"]))
         self.net.load_state_dict(saved["net"])
         self.net.eval()
@@ -188,6 +204,19 @@ class Scorer:
         with torch.no_grad():
             return self.net(torch.tensor(x, dtype=torch.float32)).tolist()
 
+    def rate(self, problem, done, menu, logprobs=None):
+        """The score of each entry of a menu after `done`. A scorer trained
+        with the model's log-probability as a feature needs `logprobs`."""
+        tag = problem.case["tag"]
+        if tag not in self._usable:
+            self._usable[tag] = len(problem.unused_facts([]))
+        rows = [menu_data.features(problem, list(done), e["step"], self._usable[tag]) for e in menu]
+        if self.with_llm:
+            if logprobs is None:
+                sys.exit(f"error: {self.path} needs the model's log-probabilities")
+            rows = [r + [lp] for r, lp in zip(rows, logprobs)]
+        return self(rows)
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -197,9 +226,14 @@ def main():
         s.add_argument("families", nargs="+", help="families whose menu data (menu_data.py) to use")
         s.add_argument("--hidden", type=int, nargs="*", default=[], help="hidden layer sizes (default: linear)")
         s.add_argument("--epochs", type=int, default=300)
+        s.add_argument("--data", help=f"where the data is (default {DATA}; rollouts.py writes eval/runs/rollouts)")
+        s.add_argument("--with-llm", action="store_true",
+                       help="add the model's log-probability of each entry as a feature (data from rollouts.py)")
         if name == "train":
             s.add_argument("--out", required=True)
     args = ap.parse_args()
+    global WITH_LLM
+    WITH_LLM = args.with_llm
     {"evaluate": cmd_evaluate, "train": cmd_train}[args.cmd](args)
 
 
