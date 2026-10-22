@@ -783,7 +783,108 @@ public:
     return out;
   }
 
+  //The log-probability of each candidate as the whole reply: its tokens, then
+  //the end of the turn, after the prompt. Deterministic: one fresh context,
+  //no sampling. The prompt is decoded once; each candidate is decoded after
+  //it and then taken out of the cache again. Used to read the model's
+  //preference over a menu's entries (eval/learn_steps.py).
+  std::vector<double> score(std::string const& sys, std::string const& user,
+                            std::vector<std::string> const& candidates) {
+    json const& cx = cfg_["context"];
+    const llama_vocab* vocab = llama_model_get_vocab(model_);
+    std::vector<llama_token> toks = tokenize(format(sys, user));
+    int const n = (int)toks.size();
+    std::vector<std::vector<llama_token>> cand;
+    size_t longest = 0;
+    for (auto const& c : candidates) {
+      int k = -llama_tokenize(vocab, c.c_str(), c.size(), nullptr, 0, false, false);
+      std::vector<llama_token> ct(k);
+      llama_tokenize(vocab, c.c_str(), c.size(), ct.data(), k, false, false);
+      ct.push_back(end_of_turn());
+      longest = std::max(longest, ct.size());
+      cand.push_back(std::move(ct));
+    }
+    int const n_ctx = cx["n_ctx"];
+    if (n + (int)longest > n_ctx) {
+      throw std::runtime_error("prompt is " + std::to_string(n) + " tokens, past n_ctx " +
+                               std::to_string(n_ctx));
+    }
+    auto cp = llama_context_default_params();
+    cp.n_ctx = n_ctx;
+    cp.n_batch = cx["n_batch"];
+    cp.n_ubatch = cx["n_ubatch"];
+    cp.n_seq_max = 1;
+    cp.n_threads = cx["n_threads"];
+    cp.n_threads_batch = cx["n_threads_batch"];
+    cp.flash_attn_type = flash_attn(cx["flash_attn"]);
+    cp.type_k = kv_type(cx["type_k"]);
+    cp.type_v = kv_type(cx["type_v"]);
+    cp.offload_kqv = cx["offload_kqv"];
+    llama_context* ctx = llama_init_from_model(model_, cp);
+    if (!ctx) {
+      throw std::runtime_error("could not create a context");
+    }
+    int const n_vocab = llama_vocab_n_tokens(vocab);
+    auto log_softmax_at = [&](float const* logits, llama_token t) {
+      double mx = logits[0];
+      for (int v = 1; v < n_vocab; v++) mx = std::max(mx, (double)logits[v]);
+      double sum = 0.0;
+      for (int v = 0; v < n_vocab; v++) sum += std::exp((double)logits[v] - mx);
+      return (double)logits[t] - mx - std::log(sum);
+    };
+    std::vector<double> out;
+    llama_batch batch = llama_batch_init((int32_t)longest, 0, 1);
+    try {
+      size_t const n_batch = cx["n_batch"].get<size_t>();
+      size_t off = 0;
+      while (toks.size() - off > n_batch) {
+        if (llama_decode(ctx, llama_batch_get_one(toks.data() + off, n_batch))) {
+          throw std::runtime_error("llama_decode failed on the prompt");
+        }
+        off += n_batch;
+      }
+      if (llama_decode(ctx, llama_batch_get_one(toks.data() + off, toks.size() - off))) {
+        throw std::runtime_error("llama_decode failed on the prompt");
+      }
+      float const* last = llama_get_logits_ith(ctx, -1);
+      std::vector<float> first(last, last + n_vocab);
+      llama_memory_t mem = llama_get_memory(ctx);
+      for (auto const& ct : cand) {
+        double lp = log_softmax_at(first.data(), ct[0]);
+        if (ct.size() > 1) {
+          batch.n_tokens = 0;
+          for (size_t j = 0; j + 1 < ct.size(); j++) {
+            batch_add(batch, ct[j], n + (int)j, 0, true);
+          }
+          if (llama_decode(ctx, batch)) {
+            throw std::runtime_error("llama_decode failed on a candidate");
+          }
+          for (size_t j = 1; j < ct.size(); j++) {
+            lp += log_softmax_at(llama_get_logits_ith(ctx, (int32_t)j - 1), ct[j]);
+          }
+          llama_memory_seq_rm(mem, 0, n, -1);
+        }
+        out.push_back(lp);
+      }
+    }
+    catch (...) {
+      llama_batch_free(batch);
+      llama_free(ctx);
+      throw;
+    }
+    llama_batch_free(batch);
+    llama_free(ctx);
+    return out;
+  }
+
 private:
+  //The token that ends the assistant's turn in the model's chat template.
+  llama_token end_of_turn() const {
+    const llama_vocab* vocab = llama_model_get_vocab(model_);
+    llama_token t = llama_vocab_eot(vocab);
+    return t != LLAMA_TOKEN_NULL ? t : llama_vocab_eos(vocab);
+  }
+
   std::vector<llama_token> tokenize(std::string const& prompt) const {
     const llama_vocab* vocab = llama_model_get_vocab(model_);
     int n = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), nullptr, 0, true, true);

@@ -11,6 +11,7 @@ planner will.
 | `executor.h` | The executor itself, header-only: loads the config and model, checks the pins and the GPU, generates greedily, extracts the Verilog |
 | `run_prompt.cpp` | `executor_run`: a prompt file in, the model's Verilog out |
 | `sample_request.cpp` | `executor_sample`: n samples of one request, for the evaluation harness (`eval/`) |
+| `score_request.cpp` | `executor_score`: the log-probability of each candidate reply to a request, deterministic; for reading the model's preference over a training menu's entries |
 | `smoke_test.cpp` | `executor_smoke`: checks the setup end to end |
 | `CMakeLists.txt` | Builds both, from the main build or on its own |
 

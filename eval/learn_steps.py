@@ -272,8 +272,11 @@ class Problem:
         A declaring action (plan_to_verilog.DECLARES) whose precondition names
         an unused fact, with its other plain facts true now or of a kind some
         step records later: a state's parameter needs the state's transitions
-        recorded first, and is pending before they are."""
+        recorded first, and is pending before they are. A declaration of a
+        name already declared is not pending: it can never be written, and
+        counting it would bar every block for good."""
         unused = set(self.unused_facts(list(done)))
+        declared = declared_names(self.code(self.plan(list(done))) or [])
         for name in plan_to_verilog.DECLARES:
             if name not in self.actions:
                 continue
@@ -287,8 +290,9 @@ class Problem:
                     bind = {}
                     if all(bind.setdefault(x, v) == v if x.startswith("?") else x == v
                            for x, v in zip(a[1:], fact[1:])):
-                        if next(self._extend(bind, [b for b in atoms if b is not a], state), None) is not None:
-                            return True
+                        for full in self._extend(bind, [b for b in atoms if b is not a], state):
+                            if not {full.get(x) for x in params} & declared:
+                                return True
         return False
 
     def unused_facts(self, done):
@@ -540,14 +544,27 @@ KEYWORDS = {"module", "endmodule", "input", "output", "inout", "reg", "wire", "p
 
 
 def one_driver(lines):
-    """Is each register assigned in one block only, and does every case
-    statement have an item and at most one default? A register driven from
-    two always blocks is two drivers for one signal, which synthesis
-    refuses; a case with no item, or with two defaults, is a syntax error.
-    Like the other rules, this is the language, not the design."""
+    """Is each register assigned in one block only, by an assignment the
+    language allows, and does every case statement have an item and at
+    most one default? A register driven from two always blocks is two
+    drivers for one signal, which synthesis refuses; an always block may
+    assign only what is declared a reg; a case with no item, or with two
+    defaults, is a syntax error. Like the other rules, this is the
+    language, not the design."""
     owner, block, items, defaults = {}, 0, None, 0
+    regs, nets = set(), set()          # declared reg, and declared but not reg
     for line in lines:
         text = line.strip()
+        decl = re.match(r"(input|output|inout|reg|wire)\b(.*)", text)
+        if decl:
+            names = [n for n in re.findall(r"[A-Za-z_]\w*", re.sub(r"\[[^\]]*\]", " ", decl.group(2)))
+                     if n not in KEYWORDS]
+            if decl.group(1) == "reg" or re.match(r"output\s+reg\b", text):
+                regs.update(names)
+                nets.difference_update(names)
+            else:
+                nets.update(n for n in names if n not in regs)
+            continue
         if text.startswith("always") or text.startswith("assign"):
             block += 1
         if re.match(r"case\s*\(", text):
@@ -568,6 +585,8 @@ def one_driver(lines):
         for t in targets:
             if t in ("parameter", "localparam") or text.startswith(("parameter", "localparam")):
                 continue
+            if not text.startswith("assign") and t in nets:
+                return False                   # a procedural assignment to a net
             if owner.setdefault(t, block) != block:
                 return False
     return True
@@ -588,6 +607,21 @@ def empty_blocks(lines):
         if pending is not None and re.match(r"end\b", text):
             out.append((pending, k))
         pending = k if re.search(r"\bbegin\s*(:\s*\w+)?$", text) else None
+    return out
+
+
+def declared_names(lines):
+    """The names these lines declare: ports, registers, state parameters."""
+    out = set()
+    for line in lines:
+        text = re.sub(r"//.*", "", line).strip()
+        decl = re.match(r"(input|output|inout|reg|wire|parameter|localparam)\b(.*)", text)
+        if decl:
+            body = re.sub(r"\[[^\]]*\]", " ", decl.group(2))
+            if decl.group(1) in ("parameter", "localparam"):
+                out.update(re.findall(r"(\w+)\s*=", body))
+            else:
+                out.update(n for n in re.findall(r"[A-Za-z_]\w*", body) if n not in KEYWORDS)
     return out
 
 

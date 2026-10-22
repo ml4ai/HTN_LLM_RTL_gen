@@ -23,6 +23,8 @@ syntactically valid and functionally correct, on **VerilogEval v2**
 | `lift.py` | Turns checked step lists into methods, with no model involved (below) |
 | `lift_loops.py` | The same for lists that grow with the problem: recursive methods (below) |
 | `learned_domain.py` | One domain with several learned families in place of their hand-written methods, and its checks (below) |
+| `menu_data.py` | Menu states from every logged step-list run, with each entry's outcomes and features: a scorer's training data (below) |
+| `scorer.py` | A Bradley–Terry scorer over menu entries, after the MR reward model of `gp_reward-priors` (below) |
 | `benchmarks.py` | Per benchmark: problems, prompt template, code extraction, golden reference, functional test |
 | `checks.py` | Icarus Verilog and Yosys: syntax, compile-and-simulate, synthesis, the stuck-at-0 stub |
 | `passk.py` | The estimator, ladders, the syntax/conditional split, bootstrap, McNemar |
@@ -356,6 +358,25 @@ far and that menu and answers with a number. It sees no HDDL.
   the other families keeps the plan the hand-written domain gives it.
 - Each family was learned with only its own methods removed. This checks
   that learned methods leave each other's problems alone.
+
+`menu_data.py` and `scorer.py` are the first pieces of a learned chooser
+(`docs/HRL_notes.md` §5, not in the repo):
+
+    $PY eval/menu_data.py table_fsm                 # eval/runs/menu_data/table_fsm.json
+    $PY eval/scorer.py evaluate wrap_counter table_fsm
+    $PY eval/scorer.py train wrap_counter table_fsm --out eval/runs/scorer/model.pt
+
+- **The data:** every distinct list of every run of a family's training
+  problems, pooled into menu states. For each entry taken at a state, how
+  many lists through it passed and failed, and 15 features that name no
+  family. Two entries at a state with different pass rates make a preference
+  pair. An entry the current menu rules would not offer is left out.
+- **The model:** a reward per entry from its features, an MLP or (the
+  default) linear, trained by Bradley–Terry cross-entropy over pairs. CPU,
+  seeded.
+- **`evaluate`** reports pairwise accuracy on pairs never trained on, leaving
+  out one problem and one family at a time, beside a coin and a one-feature
+  heuristic.
 
 ## What each check means
 

@@ -79,6 +79,12 @@ add_executable(executor_sample sample_request.cpp)
 target_link_libraries(executor_sample PRIVATE htn::llama)
 target_compile_options(executor_sample PRIVATE -Wall -Wextra)
 
+# The log-probability of each candidate reply (score_request.cpp), for the
+# training menus' choosers in eval/learn_steps.py.
+add_executable(executor_score score_request.cpp)
+target_link_libraries(executor_score PRIVATE htn::llama)
+target_compile_options(executor_score PRIVATE -Wall -Wextra)
+
 # Off by default: the smoke test loads the ~35 GB model and takes 15 s or more,
 # which a routine `ctest` should not. Select it with `ctest -L llm`.
 option(HTN_LLAMA_TESTS "Register the executor smoke test with ctest (loads the model)" OFF)
