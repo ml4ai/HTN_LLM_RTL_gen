@@ -154,7 +154,8 @@ def pairs(data):
     state whose lists' pass rates differ."""
     out = []
     for i, s in enumerate(data["states"]):
-        rate = [e["pass"] / (e["pass"] + e["fail"]) for e in s["entries"]]
+        # An entry's value from rollouts, where there is one; else its lists' pass rate.
+        rate = [e["value"] if "value" in e else e["pass"] / (e["pass"] + e["fail"]) for e in s["entries"]]
         for a in range(len(rate)):
             for b in range(len(rate)):
                 if rate[a] > rate[b]:

@@ -697,17 +697,20 @@ def finish(problem, done, tools, why=None):
     """The verdict on a finished, or abandoned, list."""
     v = {"steps": len(done)}
     if why:
-        return dict(v, stage=why, diagnostic=why)
+        return dict(v, stage=why, diagnostic=why, reward=0.0)
     plan = problem.plan(done)
     lines = problem.code(plan)
     wrong = lf.simulate("\n".join(lines) + "\n", problem.case["tb"], tools)
     if wrong:
-        return dict(v, stage="simulate", diagnostic=wrong, plan_steps=len(plan))
+        # A graded reward beside the verdict, for training only: how close
+        # the module came (learn_family.graded).
+        reward, _ = lf.graded("\n".join(lines) + "\n", problem.case["tb"], tools)
+        return dict(v, stage="simulate", diagnostic=wrong, plan_steps=len(plan), reward=reward)
     other = lf.plan(problem.domain_path, lg.with_steps(problem.compiled, list(done)), seed=2)[0]
     if other != plan:
-        return dict(v, stage="ambiguous", diagnostic="two seeds, two plans", plan_steps=len(plan))
+        return dict(v, stage="ambiguous", diagnostic="two seeds, two plans", plan_steps=len(plan), reward=0.0)
     full, _, _ = lf.plan(lf.DOMAIN, problem.compiled)
-    return dict(v, stage="pass", diagnostic="", plan_steps=len(plan), same_plan_as_hand_written=plan == full,
+    return dict(v, stage="pass", diagnostic="", reward=1.0, plan_steps=len(plan), same_plan_as_hand_written=plan == full,
                 tasks_used=sum(problem.known[n][0] == "task" for n, _ in done))
 
 

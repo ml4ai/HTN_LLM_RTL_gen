@@ -323,6 +323,38 @@ def simulate(verilog, tb, tools):
                 else "the simulation did not finish: " + line[:200])
 
 
+CHECK = re.compile(r"if \((\w+)\s*!==\s*([^)]+?)\)\s*err\s*=\s*err\s*\+\s*1;")
+
+
+def graded(verilog, tb, tools):
+    """A graded reward for a module, for training only (HRL_notes.md §5.1):
+    the balanced accuracy of its outputs over the testbench's checks. The
+    testbench is run with each check, `if (OUT!==V) err=err+1;`, preceded
+    by a line that prints the output and V. For each value an output should
+    take, the fraction of those cycles it takes it; the reward is the mean.
+    An output tied to one value scores one over the number of values (a
+    detector tied to 0 scores 0.5); a module that does not compile, or a
+    simulation that does not finish, scores 0; a correct module 1. Returns
+    (reward, how many checks)."""
+    trace = CHECK.sub(lambda m: f'$display("CHK %0d %0d", {m.group(1)}, {m.group(2)}); {m.group(0)}', tb)
+    with tempfile.TemporaryDirectory() as w:
+        for name, text in (("dut.v", verilog), ("tb.v", trace)):
+            with open(os.path.join(w, name), "w") as f:
+                f.write(text)
+        comp = subprocess.run([tools["iverilog"], "-o", "sim.out", "dut.v", "tb.v"], cwd=w,
+                              capture_output=True, text=True)
+        if comp.returncode:
+            return 0.0, 0
+        sim = subprocess.run([tools["vvp"], "sim.out"], cwd=w, capture_output=True, text=True)
+    rows = re.findall(r"^CHK (\S+) (\S+)$", sim.stdout, re.M)
+    if not rows or not re.search(r"^(PASS|FAIL \d+)", sim.stdout, re.M):
+        return 0.0, len(rows)
+    by_value = collections.defaultdict(list)
+    for got, want in rows:
+        by_value[want].append(got == want)
+    return sum(sum(v) / len(v) for v in by_value.values()) / len(by_value), len(rows)
+
+
 def show(steps):
     return "\n".join("(" + " ".join([name] + list(args)) + ")" for name, args in steps)
 

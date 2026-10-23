@@ -18,8 +18,11 @@ From the lists of a run made with the current menus:
     sampled under the configuration given (default the executor's, T 0.85,
     the evaluation temperature, HRL_notes.md §4.1), with the current menus.
 
-An entry's value is the fraction of its rollouts that pass: an estimate of
-Q(s, a) under the model's own policy. The output has menu_data.py's form,
+An entry's value is the mean graded reward of its rollouts
+(learn_family.graded: 1 for a list that passes, the balanced accuracy of a
+module that simulates wrong, 0 for no module): an estimate of Q(s, a) under
+the model's own policy. Graded, because where no list passes, as on the
+detector family, pass rates would be 0 everywhere. The output has menu_data.py's form,
 pass and fail counts now from rollouts, and each entry also carries the
 model's log-probability, so scorer.py trains on it as on menu_data's.
 Everything is seeded and cached by request, so a run can be resumed.
@@ -128,9 +131,10 @@ def main():
             for i in top:
                 j = next(j for j, w in where.items() if w == (tag, s, i))
                 passed = sum(verdicts[(cases[tag], r, j)]["stage"] == "pass" for r in range(args.rollouts))
+                value = sum(verdicts[(cases[tag], r, j)].get("reward", 0.0) for r in range(args.rollouts)) / args.rollouts
                 feats = menu_data.features(problems[cases[tag]], done, menu[i]["step"], usable)
                 entries.append({"step": [menu[i]["step"][0], list(menu[i]["step"][1])], "pass": passed,
-                                "fail": args.rollouts - passed, "features": feats, "logprob": lp[i]})
+                                "fail": args.rollouts - passed, "value": value, "features": feats, "logprob": lp[i]})
             out_states.append({"tag": tag, "done": done, "entries": entries})
     data = {"family": args.family, "features": menu_data.FEATURES, "states": out_states,
             "source": {"runs_dir": os.path.abspath(args.runs_dir), "unsure": args.unsure, "top": args.top,
