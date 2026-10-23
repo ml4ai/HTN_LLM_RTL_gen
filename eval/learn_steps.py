@@ -173,7 +173,8 @@ class Problem:
             return None
         if lines and not lines[0].startswith("module "):
             return None
-        return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) else None
+        return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) \
+            and no_repeat(lines) else None
 
     def menu(self, done, look_ahead=True):
         """What can be done after `done`: a list of entries, each with its
@@ -590,6 +591,34 @@ def one_driver(lines):
                 return False                   # a procedural assignment to a net
             if owner.setdefault(t, block) != block:
                 return False
+    return True
+
+
+def no_repeat(lines):
+    """Does no statement repeat an earlier one of the same block word for
+    word? A repeated statement is legal Verilog and does nothing: a
+    detector's list wrote its output's reset clause to the turn limit, and a
+    counter's alternated its reset and hold lines. Openers and closers are
+    not statements here: correct plans open `always @(*) begin` twice and
+    close many blocks with `end`. More than syntax: a rule against code
+    that does nothing."""
+    blocks = [set()]
+    for line in lines:
+        text = re.sub(r"//.*", "", line).strip()
+        if not text:
+            continue
+        closes = len(re.findall(r"\b(end|endcase)\b", text))
+        opens = len(re.findall(r"\b(begin|case)\b", text))
+        statement = text if not (CLOSER.match(text) or opens) and not MODULE_ITEM.match(text) else None
+        if statement and len(blocks) > 1:
+            if statement in blocks[-1]:
+                return False
+            blocks[-1].add(statement)
+        for _ in range(closes):
+            if len(blocks) > 1:
+                blocks.pop()
+        for _ in range(opens):
+            blocks.append(set())
     return True
 
 
