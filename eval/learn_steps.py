@@ -229,7 +229,11 @@ class Problem:
             entries.append(entry)
         # The module is closed only when the whole design has been dealt with:
         # every fact of it that a step could use, some step has used.
-        entries = [e for e in entries if not e["closes"] or not self.unused_facts(list(done) + [e["step"]])]
+        # And every decision the list recorded that code could use, code has:
+        # a detector's list recorded when its output is 1 and closed the module
+        # without the step that writes it (HRL_notes.md 5.1).
+        entries = [e for e in entries if not e["closes"] or not (self.unused_facts(list(done) + [e["step"]])
+                                                                  or self.unused_decisions(list(done) + [e["step"]]))]
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
         # Declarations first: no always block or assign is begun while a declaration
@@ -314,6 +318,27 @@ class Problem:
                 if a and all(isinstance(x, str) for x in a):
                     used.add(tuple(bind.get(x, x) for x in a))
         return [f for f in map(tuple, self.facts) if f[0] in usable and f not in used]
+
+    def unused_decisions(self, done):
+        """Facts the list's own decisions recorded that code could use and no
+        code has: a decision made and not yet written, such as when the
+        detector's output is 1. A decision is an analyze_* action; code is a
+        write_* action, and it uses a fact its plain precondition names."""
+        plan = self.plan(done) or []
+        wanted = {a[0] for n, (_, pre, _) in self.actions.items() if n.startswith("write_")
+                  for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else []))
+                  if a and all(isinstance(x, str) for x in a)}
+        recorded, used = [], set()
+        for name, args in plan:
+            params, pre, effects = self.actions[name]
+            bind = dict(zip(params, args))
+            if name.startswith("analyze_"):
+                recorded += [tuple(bind.get(x, x) for x in e) for e in effects]
+            elif name.startswith("write_"):
+                used |= {tuple(bind.get(x, x) for x in a)
+                         for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else []))
+                         if a and all(isinstance(x, str) for x in a)}
+        return [f for f in dict.fromkeys(recorded) if f[0] in wanted and f not in used]
 
     def needed_for(self, done, entry):
         """What code a decision is needed for: each way a write_* action can
@@ -422,6 +447,7 @@ Answer with the numbered list and nothing else."""
             items.append(f"{i}. ({' '.join([e['step'][0]] + e['step'][1])})\n   Says: {says}\n   Adds:{adds}")
         so_far = "```verilog\n" + "\n".join(lines) + "\n```" if lines else "Nothing is written yet."
         unused = self.unused_facts(done)
+        unwritten = self.unused_decisions(done)
         plan_text, choose = "", ""
         if outline:
             marks = [f"{k + 1}. {text}" + ("    <- the phase you are on" if k == phase else "")
@@ -448,6 +474,10 @@ The same design as facts. {self.legend}
 
 {chr(10).join('(' + ' '.join(f) + ')' for f in unused) if unused else 'None: every fact a step can use has been used.'}
 
+DECISIONS RECORDED THAT NO CODE HAS USED YET
+
+{chr(10).join('(' + ' '.join(f) + ')' for f in unwritten) if unwritten else 'None: every decision recorded so far has been written into the code.'}
+
 DECISIONS RECORDED SO FAR
 
 {chr(10).join('- ' + d for d in decided) if decided else 'None yet.'}
@@ -460,7 +490,7 @@ WHAT CAN BE DONE NEXT
 
 {chr(10).join(items)}
 
-Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, which is offered only once every fact of the design has been used.{choose}
+Choose the one step that should come next, so that the finished module is complete, is correct, and does exactly what the design says. Some of the steps listed belong to other kinds of design: do not choose a step this design has no use for. A step that records a decision adds no code; code that depends on a decision is not offered until the decision is recorded, so if the code you need next is not listed, look for the decision that makes it possible. The module is finished by the step that adds `endmodule`, which is offered only once every fact of the design, and every decision recorded, has been used.{choose}
 
 Answer with the number of the step and nothing else."""
 
