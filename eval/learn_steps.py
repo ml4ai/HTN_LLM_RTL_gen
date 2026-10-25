@@ -261,6 +261,25 @@ class Problem:
             # which once let a block be opened that could only close empty.
             entries = [e for e in entries if not re.search(r"\b(begin|case)\b", " ".join(e["adds"]))
                        or any(self.fills(e, n) for n in self.menu(list(done) + [e["step"]], look_ahead=False))]
+        if look_ahead:
+            # A decision that code could write now stays writable: no other
+            # code is offered after which it no longer could be. A detector's
+            # list wrote its output's "otherwise 0" branch before the branch
+            # its own decision called for, and after a plain else there is no
+            # more branch (HRL_notes.md 5.1). Decisions are never held back.
+            pending = set(self.unused_decisions(list(done)))
+
+            def writes(prefix, step):
+                return set(self.unused_decisions(prefix)) - set(self.unused_decisions(prefix + [step]))
+            writable = set().union(*[writes(list(done), e["step"]) for e in entries]) if pending else set()
+
+            def keeps(e):
+                if not writable or not e["adds"] or writes(list(done), e["step"]):
+                    return True
+                after = list(done) + [e["step"]]
+                still = set().union(*[writes(after, n["step"]) for n in self.menu(after, look_ahead=False)])
+                return writable <= still
+            entries = [e for e in entries if keeps(e)]
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
         return entries
