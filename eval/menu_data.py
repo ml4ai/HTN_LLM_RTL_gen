@@ -56,6 +56,13 @@ FEATURES = [
     "depth",           # blocks open after it
     "progress",        # steps taken so far, over the turn limit
 ]
+# What the added code says, in the language's own words: how often each
+# keyword occurs in the lines the entry adds. "output reg" and "output" are
+# otherwise the same entry to every feature above, and a detector's lists
+# live or die by which of the two they take (HRL_notes.md 5.1).
+KEYWORDS = ["output", "input", "reg", "wire", "parameter", "always", "assign", "if", "else", "case", "default",
+            "posedge", "negedge"]
+FEATURES += [f"kw_{k}" for k in KEYWORDS]
 
 
 def runs_of(family):
@@ -112,7 +119,30 @@ def features(problem, done, step, usable):
         "depth": float(depth(new_lines)),
         "progress": len(done) / ls.MAX_TURNS,
     }
+    words = re.findall(r"[A-Za-z_]\w*", " ".join(adds))
+    f.update({f"kw_{k}": float(words.count(k)) for k in KEYWORDS})
     return [f[k] for k in FEATURES]
+
+
+def refeaturize(data, workdir):
+    """The data with every entry's features recomputed under the current
+    FEATURES, from the state and step it records. For data written before
+    the features last changed."""
+    if data.get("features") == FEATURES:
+        return data
+    train, _ = lf.split(data["family"])
+    cases = {c["tag"]: c for c in train}
+    problems, usable = {}, {}
+    for state in data["states"]:
+        tag = state["tag"]
+        if tag not in problems:
+            problems[tag] = ls.Problem(data["family"], cases[tag], os.path.join(workdir, data["family"], tag))
+            usable[tag] = len(problems[tag].unused_facts([]))
+        done = [(n, list(a)) for n, a in state["done"]]
+        for e in state["entries"]:
+            e["features"] = features(problems[tag], done, (e["step"][0], list(e["step"][1])), usable[tag])
+    data["features"] = FEATURES
+    return data
 
 
 def build(family, workdir):

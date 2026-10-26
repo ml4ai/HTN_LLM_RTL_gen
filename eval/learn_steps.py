@@ -1001,11 +1001,17 @@ def score_request(base, tag, turn, text, n):
 def cmd_run(args, cfg, tools):
     family, base = args.family, os.path.join(RUNS, args.family)
     os.makedirs(base, exist_ok=True)
-    train, _ = lf.split(family)
+    train, held = lf.split(family)
+    # The family's training problems, or its generated held-out ones from
+    # --offset on: those choose a chooser's weight, and test it, never seen
+    # in training (HRL_notes.md 4.1).
+    train = train if args.split == "train" else held[args.offset::args.stride]
     train = train[:args.problems] if args.problems else train
     problems = [Problem(family, c, os.path.join(base, c["tag"])) for c in train]
     methods, tasks = lf.removed(family)
-    meta = {"created": rtl_eval.now(), "family": family, "runs": args.runs, "policy": args.policy,
+    meta = {"created": rtl_eval.now(), "family": family, "split": args.split, "offset": args.offset,
+            "stride": args.stride,
+            "runs": args.runs, "policy": args.policy,
             "phases": args.phases,
             "max_free": MAX_FREE, "max_tied": MAX_TIED, "max_turns": MAX_TURNS,
             "removed_methods": sorted(methods), "removed_tasks": sorted(tasks), "problems": [c["tag"] for c in train],
@@ -1091,7 +1097,13 @@ def main():
     s = sub.add_parser("run")
     s.add_argument("family", choices=sorted(lf.FAMILIES))
     s.add_argument("--runs", type=int, default=4, help="lists a problem (default 4)")
-    s.add_argument("--problems", type=int, help="use only the first N training problems (default all)")
+    s.add_argument("--problems", type=int, help="use only the first N problems (default all)")
+    s.add_argument("--split", choices=["train", "heldout"], default="train",
+                   help="the family's training problems (default) or its generated held-out ones")
+    s.add_argument("--offset", type=int, default=0, help="with --split heldout, start at this held-out problem")
+    s.add_argument("--stride", type=int, default=1,
+                   help="with --split heldout, take every Nth held-out problem from --offset (they are ordered "
+                        "by size, so a stride spreads them)")
     s.add_argument("--policy", choices=["model", "random", "combined", "scorer"], default="model",
                    help="who chooses: the model's sampled reply; a uniform draw (no model is run); the model's "
                         "probabilities combined with a scorer's; or the scorer alone (see build_lists)")

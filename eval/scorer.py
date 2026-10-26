@@ -76,7 +76,18 @@ WITH_LLM = False      # set by --with-llm: the model's log-probability of the en
 
 
 def load(families, data_dir=None):
-    return [json.load(open(os.path.join(data_dir or DATA, f"{f}.json"))) for f in families]
+    """Each family's data, its features recomputed if they changed since it
+    was written (and written back)."""
+    out = []
+    for f in families:
+        path = os.path.join(data_dir or DATA, f"{f}.json")
+        data = json.load(open(path))
+        if data.get("features") != menu_data.FEATURES:
+            data = menu_data.refeaturize(data, os.path.join(menu_data.OUT, "work"))
+            with open(path, "w") as out_file:
+                json.dump(data, out_file)
+        out.append(data)
+    return out
 
 
 def row(entry):
