@@ -328,14 +328,18 @@ CHECK = re.compile(r"if \((\w+)\s*!==\s*([^)]+?)\)\s*err\s*=\s*err\s*\+\s*1;")
 
 def graded(verilog, tb, tools):
     """A graded reward for a module, for training only (HRL_notes.md §5.1):
-    the balanced accuracy of its outputs over the testbench's checks. The
-    testbench is run with each check, `if (OUT!==V) err=err+1;`, preceded
-    by a line that prints the output and V. For each value an output should
-    take, the fraction of those cycles it takes it; the reward is the mean.
-    An output tied to one value scores one over the number of values (a
-    detector tied to 0 scores 0.5); a module that does not compile, or a
-    simulation that does not finish, scores 0; a correct module 1. Returns
-    (reward, how many checks)."""
+    the balanced accuracy of its outputs over the testbench's checks,
+    corrected for chance. The testbench is run with each check,
+    `if (OUT!==V) err=err+1;`, preceded by a line that prints the output and
+    V. For each value an output should take, the fraction of those cycles it
+    takes it; the balanced accuracy BA is the mean. An output tied to one
+    value has BA one over the number of values N (0.5 for a detector), so
+    the reward is (BA - 1/N) / (1 - 1/N), floored at 0: a tied output scores
+    0, as a list with no module does, and finishing a module is worth
+    nothing in itself (a scorer trained on the uncorrected BA learned to
+    finish degenerate detectors at 0.5). With N = 1 the reward is BA. A
+    module that does not compile, or a simulation that does not finish,
+    scores 0; a correct module 1. Returns (reward, how many checks)."""
     trace = CHECK.sub(lambda m: f'$display("CHK %0d %0d", {m.group(1)}, {m.group(2)}); {m.group(0)}', tb)
     with tempfile.TemporaryDirectory() as w:
         for name, text in (("dut.v", verilog), ("tb.v", trace)):
@@ -352,7 +356,9 @@ def graded(verilog, tb, tools):
     by_value = collections.defaultdict(list)
     for got, want in rows:
         by_value[want].append(got == want)
-    return sum(sum(v) / len(v) for v in by_value.values()) / len(by_value), len(rows)
+    n = len(by_value)
+    ba = sum(sum(v) / len(v) for v in by_value.values()) / n
+    return (max(0.0, (ba - 1 / n) / (1 - 1 / n)) if n > 1 else ba), len(rows)
 
 
 def show(steps):

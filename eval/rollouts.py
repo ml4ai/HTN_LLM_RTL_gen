@@ -20,7 +20,8 @@ From the lists of a run made with the current menus:
 
 An entry's value is the mean graded reward of its rollouts
 (learn_family.graded: 1 for a list that passes, the balanced accuracy of a
-module that simulates wrong, 0 for no module): an estimate of Q(s, a) under
+module that simulates wrong corrected for chance, so that an output tied to
+one value scores 0, and 0 for no module): an estimate of Q(s, a) under
 the model's own policy. Graded, because where no list passes, as on the
 detector family, pass rates would be 0 everywhere. The output has menu_data.py's form,
 pass and fail counts now from rollouts, and each entry also carries the
