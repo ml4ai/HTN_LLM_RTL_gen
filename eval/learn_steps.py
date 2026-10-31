@@ -37,7 +37,8 @@ less six kinds of entry:
   - the step that ends the module, while a fact of the design that a step
     could use has not been used: the module would leave part of the design
     out. This is a rule about covering the specification, not about the
-    language. Every correct plan checked uses all such facts;
+    language. Every correct plan checked uses all such facts. Nor while a
+    register the code reads has no driver (undriven);
   - one that opens a block after which no code could be written, only
     decisions: a dead end, found by looking one step ahead;
   - one whose code cannot stand where it would go: the templates cannot
@@ -232,8 +233,10 @@ class Problem:
         # And every decision the list recorded that code could use, code has:
         # a detector's list recorded when its output is 1 and closed the module
         # without the step that writes it (HRL_notes.md 5.1).
+        # And every register the code reads has a driver (undriven).
         entries = [e for e in entries if not e["closes"] or not (self.unused_facts(list(done) + [e["step"]])
-                                                                  or self.unused_decisions(list(done) + [e["step"]]))]
+                                                                  or self.unused_decisions(list(done) + [e["step"]])
+                                                                  or undriven(self.code(e["plan"])))]
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
         # Declarations first: no always block or assign is begun while a declaration
@@ -641,6 +644,39 @@ def one_driver(lines):
             if owner.setdefault(t, block) != block:
                 return False
     return True
+
+
+def undriven(lines):
+    """The registers these lines read and never assign: names declared `reg`
+    (or `output reg`) that appear on the right of an assignment, in a
+    condition or in a `case (...)`, and are the target of no `=` or `<=`.
+    An undriven register is legal Verilog and stays x: a detector's list
+    read its state register in the next-state case and closed the module
+    with no step that updates it, so the output could never assert
+    (HRL_notes.md 5.1). More than syntax: a rule about a module being
+    complete."""
+    regs, read, assigned = set(), set(), set()
+    for line in lines:
+        text = re.sub(r"//.*", "", line).strip()
+        text = re.sub(r"\d*'[bdho][0-9a-fA-FxXzZ_]+", " ", text)    # sized literals
+        decl = re.match(r"(input|output|inout|reg|wire|parameter|localparam)\b(.*)", text)
+        if decl:
+            if decl.group(1) == "reg" or re.match(r"output\s+reg\b", text):
+                body = re.sub(r"\[[^\]]*\]", " ", decl.group(2))
+                regs.update(n for n in re.findall(r"[A-Za-z_]\w*", body) if n not in KEYWORDS)
+            continue
+        if text.startswith("module"):
+            continue
+        text = re.sub(r"@\s*\([^)]*\)", " ", text)                 # a sensitivity list
+        text = re.sub(r"^\s*([\w']+|default)\s*:(?!=)", " ", text)  # a case label
+        if text.startswith("assign"):
+            targets = re.findall(r"assign\s+(\w+)", text)
+        else:
+            targets = re.findall(r"(\w+)\s*<?=(?!=)", text)
+        assigned.update(targets)
+        rest = re.sub(r"(\w+)\s*<?=(?!=)", " ", re.sub(r"assign\s+\w+\s*=", " ", text))
+        read.update(n for n in re.findall(r"[A-Za-z_]\w*", rest) if n not in KEYWORDS)
+    return sorted((read & regs) - assigned)
 
 
 def no_repeat(lines):
