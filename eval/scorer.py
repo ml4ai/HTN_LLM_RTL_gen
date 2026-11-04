@@ -41,6 +41,7 @@ import menu_data  # noqa: E402
 
 DATA = menu_data.OUT
 SEED = 0
+CONSTANT = 1e-5   # a standardization std at or under this is a constant feature (the floor is 1e-6)
 
 
 class Linear(nn.Module):
@@ -111,6 +112,19 @@ def pair_arrays(datasets, keep=lambda family, tag: True):
     return np.array(better, dtype=np.float32), np.array(worse, dtype=np.float32), where
 
 
+def standardize(rows, mean, std):
+    """Rows standardized by the training rows' mean and std. A feature that
+    was constant there (std at the 1e-6 floor) is 0: nothing was learned of
+    it, its weight is what is left of the random initial one, and dividing by
+    the floor multiplied that a millionfold. The detector's rollout states
+    all came before any `else` was written, so kw_else was constant, and the
+    scorer gave every entry that writes an `else` about -62,000: the state
+    register's update and the output's default were never chosen
+    (HRL_notes.md 5.1)."""
+    z = (np.asarray(rows, dtype=np.float32) - mean) / std
+    return np.where(np.asarray(std) > CONSTANT, z, 0.0).astype(np.float32)
+
+
 def fit(better, worse, hidden=(), epochs=300, lr=0.01, weight_decay=1e-3):
     """A reward model trained by Bradley-Terry cross-entropy on the pairs,
     with the features standardized by the training rows. Returns the model
@@ -118,8 +132,8 @@ def fit(better, worse, hidden=(), epochs=300, lr=0.01, weight_decay=1e-3):
     torch.manual_seed(SEED)
     rows = np.concatenate([better, worse])
     mean, std = rows.mean(0), rows.std(0) + 1e-6
-    xb = torch.tensor((better - mean) / std)
-    xw = torch.tensor((worse - mean) / std)
+    xb = torch.tensor(standardize(better, mean, std))
+    xw = torch.tensor(standardize(worse, mean, std))
     net = Reward(xb.shape[1], hidden)
     opt = torch.optim.Adam(net.parameters(), lr=lr, weight_decay=weight_decay)
     target = torch.zeros(len(xb), dtype=torch.long)       # the first of each pair is preferred
@@ -135,8 +149,8 @@ def fit(better, worse, hidden=(), epochs=300, lr=0.01, weight_decay=1e-3):
 
 def accuracy(net, mean, std, better, worse):
     with torch.no_grad():
-        rb = net(torch.tensor((better - mean) / std))
-        rw = net(torch.tensor((worse - mean) / std))
+        rb = net(torch.tensor(standardize(better, mean, std)))
+        rw = net(torch.tensor(standardize(worse, mean, std)))
     return float((rb > rw).float().mean())
 
 
@@ -211,7 +225,7 @@ class Scorer:
         self.mean, self.std = np.array(saved["mean"]), np.array(saved["std"])
 
     def __call__(self, rows):
-        x = (np.array(rows, dtype=np.float32) - self.mean) / self.std
+        x = standardize(rows, self.mean, self.std)
         with torch.no_grad():
             return self.net(torch.tensor(x, dtype=torch.float32)).tolist()
 
