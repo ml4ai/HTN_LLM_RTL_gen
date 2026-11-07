@@ -13,6 +13,9 @@ From the lists of a run made with the current menus:
  3. The states where the model is unsure, its likeliest entry under
     --unsure (default 0.9), at most --states of them a problem, earliest
     first: there the choice is open, and there a scorer could change it.
+    With --spread, evenly spaced by depth instead: the earliest states
+    alone never reach a list's late choices, and a scorer trained on them
+    extrapolated there badly (HRL_notes.md 5.1).
  4. At each, for each of its --top likeliest entries (default 3), the list
     is finished --rollouts times (default 4) from that entry by the model,
     sampled under the configuration given (default the executor's, T 0.85,
@@ -62,12 +65,25 @@ def visited(family, runs_dir, cases):
     return out
 
 
+def spread(n, k):
+    """k of the indices 0..n-1, evenly spaced, the first and the last among
+    them; all of them if there are no more than k."""
+    if n <= k:
+        return list(range(n))
+    if k == 1:
+        return [0]
+    return [round(i * (n - 1) / (k - 1)) for i in range(k)]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("family", choices=sorted(lf.FAMILIES))
     ap.add_argument("--runs-dir", required=True, help="a run made with the current menus (eval/runs/steps_TAG)")
     ap.add_argument("--unsure", type=float, default=0.9)
     ap.add_argument("--states", type=int, default=6, help="states a problem, at most")
+    ap.add_argument("--spread", action="store_true",
+                    help="take a problem's unsure states evenly spaced by depth, the first and the deepest among "
+                         "them, in place of the earliest: the late choices of a list get labels too")
     ap.add_argument("--top", type=int, default=3)
     ap.add_argument("--rollouts", type=int, default=4)
     ap.add_argument("--config", default=os.path.join(HERE, "eval_config.json"))
@@ -95,13 +111,16 @@ def main():
         jobs += [job] if job else []
     lf.scorer_executor(cfg, jobs, os.path.join(base, "score_batch.json"))
 
-    # 3. The states where the model is unsure.
-    chosen = collections.defaultdict(list)
+    # 3. The states where the model is unsure: the earliest of each problem,
+    # or with --spread, states evenly spaced by depth.
+    unsure = collections.defaultdict(list)
     for key, (done, menu, d) in sorted(info.items()):
         lp = [x["logprob"] for x in json.load(open(os.path.join(d, "scores.json")))]
-        if max(math.exp(x) for x in lp) < args.unsure and len(chosen[key[0]]) < args.states:
+        if max(math.exp(x) for x in lp) < args.unsure:
             top = sorted(range(len(lp)), key=lambda i: -lp[i])[:args.top]
-            chosen[key[0]].append((done, menu, lp, top))
+            unsure[key[0]].append((done, menu, lp, top))
+    chosen = {tag: [items[i] for i in spread(len(items), args.states)] if args.spread else items[:args.states]
+              for tag, items in unsure.items()}
     n_states = sum(len(v) for v in chosen.values())
     print(f"{len(info)} states with a choice; {n_states} where the model's likeliest entry is under {args.unsure}; "
           f"{n_states * args.top * args.rollouts} rollouts to run")
@@ -138,7 +157,8 @@ def main():
                                 "fail": args.rollouts - passed, "value": value, "features": feats, "logprob": lp[i]})
             out_states.append({"tag": tag, "done": done, "entries": entries})
     data = {"family": args.family, "features": menu_data.FEATURES, "states": out_states,
-            "source": {"runs_dir": os.path.abspath(args.runs_dir), "unsure": args.unsure, "top": args.top,
+            "source": {"runs_dir": os.path.abspath(args.runs_dir), "unsure": args.unsure, "spread": args.spread,
+                       "top": args.top,
                        "rollouts": args.rollouts, "proposer_config": lf.proposer_config(cfg)},
             "lists": {"distinct": len(keys), "passing": sum(v["stage"] == "pass" for v in verdicts.values()),
                       "stages": dict(collections.Counter(v["stage"] for v in verdicts.values())), "sources": []},
