@@ -46,8 +46,9 @@ less six kinds of entry:
     the module header, it would end a block that is not open, it would
     end the module with a block still open, it would put an `else`
     where no `if` precedes it, it would use a name before declaring it, it
-    would drive a register from a second block, or it would close a case
-    statement that has no item.
+    would drive a register from a second block, it would close a case
+    statement that has no item, or it would make an earlier assignment
+    in its block dead (no_dead_assignment).
 
 So a list is valid as it is built, in its names, its types and every
 precondition. What the model supplies is the order and the choice: which of
@@ -175,7 +176,7 @@ class Problem:
         if lines and not lines[0].startswith("module "):
             return None
         return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) \
-            and no_repeat(lines) else None
+            and no_repeat(lines) and no_dead_assignment(lines) else None
 
     def menu(self, done, look_ahead=True):
         """What can be done after `done`: a list of entries, each with its
@@ -270,18 +271,32 @@ class Problem:
             # list wrote its output's "otherwise 0" branch before the branch
             # its own decision called for, and after a plain else there is no
             # more branch (HRL_notes.md 5.1). Decisions are never held back.
+            # "Could write now" includes just inside a block an entry opens:
+            # once a counter's reset clause is written, its wrap can only go
+            # inside the else begin (no_dead_assignment), and looking one step
+            # ahead lost it, dropping the reset clause itself (5.1).
             pending = set(self.unused_decisions(list(done)))
 
             def writes(prefix, step):
                 return set(self.unused_decisions(prefix)) - set(self.unused_decisions(prefix + [step]))
-            writable = set().union(*[writes(list(done), e["step"]) for e in entries]) if pending else set()
+
+            def reach(prefix, menu):
+                """Decisions some entry of the menu writes, or some entry after
+                one of its openers does."""
+                out = set()
+                for n in menu:
+                    out |= writes(prefix, n["step"])
+                    if re.search(r"\bbegin\b", " ".join(n["adds"])):
+                        inside = prefix + [n["step"]]
+                        out |= set().union(*[writes(inside, m["step"]) for m in self.menu(inside, look_ahead=False)])
+                return out
+            writable = reach(list(done), entries) if pending else set()
 
             def keeps(e):
                 if not writable or not e["adds"] or writes(list(done), e["step"]):
                     return True
                 after = list(done) + [e["step"]]
-                still = set().union(*[writes(after, n["step"]) for n in self.menu(after, look_ahead=False)])
-                return writable <= still
+                return writable <= reach(after, self.menu(after, look_ahead=False))
             entries = [e for e in entries if keeps(e)]
         entries.sort(key=lambda e: " ".join([e["step"][0]] + e["step"][1]))
         self._menus[key] = entries
@@ -677,6 +692,105 @@ def undriven(lines):
         rest = re.sub(r"(\w+)\s*<?=(?!=)", " ", re.sub(r"assign\s+\w+\s*=", " ", text))
         read.update(n for n in re.findall(r"[A-Za-z_]\w*", rest) if n not in KEYWORDS)
     return sorted((read & regs) - assigned)
+
+
+def no_dead_assignment(lines):
+    """Does no statement assign, on every path, a register that an earlier
+    statement at the same depth of its block assigns? The earlier
+    assignment would then never take effect: the counter's lists wrote
+    `if (rst) q <= 1;` and then the wrap's if/else, which assigns q on every
+    path, so the reset did nothing (HRL_notes.md 5.1). Legal Verilog, and
+    more than syntax: a rule against code that does nothing, like
+    no_repeat. What a statement assigns on every path only grows as code is
+    added (a case counts only once it is closed, since a later item could
+    shrink it), so no prefix of a module that would pass is refused."""
+    items = []                                     # the lines, split where a closer starts one
+    for line in lines:
+        text = re.sub(r"//.*", "", line).strip()
+        while True:
+            m = re.match(r"(endcase|end)\b\s*", text)
+            if not m or text.startswith("endmodule"):
+                break
+            items.append(m.group(1))
+            text = text[m.end():]
+        if text:
+            items.append(text)
+    pos = 0
+
+    def statement(text):
+        """(assigns on every path, assigns on some path) of a statement that
+        starts with `text`, reading further items as it needs."""
+        nonlocal pos
+        label = CASE_LABEL.match(text)
+        if label and not text.startswith(("if", "else")):
+            text = text[label.end():]
+        if re.match(r"case\s*\(", text):
+            every, some, closed, default = None, set(), False, False
+            while pos < len(items):
+                item = items[pos]
+                pos += 1
+                if item == "endcase":
+                    closed = True
+                    break
+                default = default or re.match(r"default\s*:", item) is not None
+                e, s = statement(item)
+                every = e if every is None else every & e
+                some |= s
+            return (every or set()) if closed and default else set(), some
+        if re.match(r"begin\b", text):
+            return block()
+        m = re.match(r"if\s*\(", text)
+        if m:
+            depth, k = 1, m.end()                     # the condition's closing parenthesis
+            while k < len(text) and depth:
+                depth += {"(": 1, ")": -1}.get(text[k], 0)
+                k += 1
+            rest = text[k:].strip()
+            branches, has_else = [], False
+            inline = re.search(r";\s*else\b\s*", rest)
+            if inline and not re.match(r"begin\b", rest):  # `if (c) a; else b;` on one line
+                branches.append(statement(rest[:inline.start() + 1]))
+                branches.append(statement(rest[inline.end():]))   # an else-if chain answers for itself
+                return set.intersection(*[b[0] for b in branches]), set().union(*[b[1] for b in branches])
+            branches.append(statement(rest) if rest else (set(), set()))
+            if pos < len(items) and re.match(r"else\b", items[pos]):
+                tail = re.sub(r"^else\b\s*", "", items[pos])
+                pos += 1
+                has_else = True                           # an else-if chain answers for itself
+                branches.append(statement(tail) if tail else (set(), set()))
+            every = set.intersection(*[b[0] for b in branches]) if has_else else set()
+            return every, set().union(*[b[1] for b in branches])
+        targets = set(re.findall(r"^(\w+)\s*<?=(?!=)", text))
+        return targets, targets
+
+    def block():
+        nonlocal pos
+        every, some = set(), set()
+        while pos < len(items):
+            item = items[pos]
+            pos += 1
+            if item == "end":
+                break
+            e, s = statement(item)
+            if e & some:
+                raise _Dead()
+            every |= e
+            some |= s
+        return every, some
+
+    try:
+        while pos < len(items):
+            item = items[pos]
+            pos += 1
+            if re.match(r"always\b", item) and re.search(r"\bbegin\s*$", item):
+                block()
+    except _Dead:
+        return False
+    return True
+
+
+class _Dead(Exception):
+    """A dead assignment found (no_dead_assignment)."""
 
 
 def no_repeat(lines):
