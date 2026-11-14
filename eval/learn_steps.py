@@ -25,7 +25,7 @@ that is cheap to work out, and always the code steps that use what it records
 
 What is on the menu is everything the planner can carry out at that point,
 action or task, with every choice of the problem's names of the right types,
-less six kinds of entry:
+less seven kinds of entry:
 
   - one that changes nothing: no line of code and no new fact;
   - one that does exactly what another does, and says the same (a task is
@@ -39,6 +39,9 @@ less six kinds of entry:
     out. This is a rule about covering the specification, not about the
     language. Every correct plan checked uses all such facts. Nor while a
     register the code reads has no driver (undriven);
+  - a decision that records a fact code must use before the module ends,
+    when no code step of this problem could use it: the module could then
+    never end (unusable);
   - one that opens a block after which no code could be written, only
     decisions: a dead end, found by looking one step ahead;
   - one whose code cannot stand where it would go: the templates cannot
@@ -47,8 +50,9 @@ less six kinds of entry:
     end the module with a block still open, it would put an `else`
     where no `if` precedes it, it would use a name before declaring it, it
     would drive a register from a second block, it would close a case
-    statement that has no item, or it would make an earlier assignment
-    in its block dead (no_dead_assignment).
+    statement that has no item, it would make an earlier assignment
+    in its block dead (no_dead_assignment), or it would test a condition
+    an enclosing branch has settled (no_settled_branch).
 
 So a list is valid as it is built, in its names, its types and every
 precondition. What the model supplies is the order and the choice: which of
@@ -117,8 +121,11 @@ class Problem:
             gloss = json.load(f)
         self.sentences, self.legend = gloss["actions"], gloss["legend"]
         self._plans, self._menus = {(): []}, {}
-        # The kinds of fact some step records.
+        # The kinds of fact some step records, and those some code step's plain precondition names.
         self.recorded = {e[0] for _, _, effects in self.actions.values() for e in effects}
+        self.wanted = {a[0] for n, (_, pre, _) in self.actions.items() if n.startswith("write_")
+                       for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else []))
+                       if a and all(isinstance(x, str) for x in a)}
         # Actions with a parameter that no plain fact of the precondition mentions.
         self.free = set()
         for name, (params, pre, _) in self.actions.items():
@@ -176,7 +183,7 @@ class Problem:
         if lines and not lines[0].startswith("module "):
             return None
         return lines if well_formed(lines) and declared_before_use(lines) and one_driver(lines) \
-            and no_repeat(lines) and no_dead_assignment(lines) else None
+            and no_repeat(lines) and no_dead_assignment(lines) and no_settled_branch(lines) else None
 
     def menu(self, done, look_ahead=True):
         """What can be done after `done`: a list of entries, each with its
@@ -238,6 +245,10 @@ class Problem:
         entries = [e for e in entries if not e["closes"] or not (self.unused_facts(list(done) + [e["step"]])
                                                                   or self.unused_decisions(list(done) + [e["step"]])
                                                                   or undriven(self.code(e["plan"])))]
+        # A decision is offered only if code here could use what it records:
+        # otherwise the coverage rule above would bar endmodule for good. More
+        # than syntax: a rule about what the list can still finish (unusable).
+        entries = [e for e in entries if not self.unusable(done, e)]
         count = collections.Counter(e["step"][0] for e in entries)
         entries = [e for e in entries if count[e["step"][0]] <= (MAX_FREE if e["step"][0] in self.free else MAX_TIED)]
         # Declarations first: no always block or assign is begun while a declaration
@@ -376,6 +387,42 @@ class Problem:
                          for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else []))
                          if a and all(isinstance(x, str) for x in a)}
         return [f for f in dict.fromkeys(recorded) if f[0] in wanted and f not in used]
+
+    def unusable(self, done, entry):
+        """Facts the entry's decisions record that code must use before
+        endmodule (unused_decisions) and that no code step of this problem
+        could ever use (usable_fact). Such a decision can only dead-end the
+        list: the detector's menus offered analyze_turn_point, a triangle
+        wave's decision, and 55 lists of a 1-bit detector took it; none
+        passed (HRL_notes.md 9.6)."""
+        before = len(self.plan(done) or [])
+        state = self.state(entry["plan"])
+        out = []
+        for name, args in entry["plan"][before:]:
+            if name.startswith("analyze_"):
+                params, _, effects = self.actions[name]
+                bind = dict(zip(params, args))
+                out += [f for f in (tuple(bind.get(x, x) for x in e) for e in effects)
+                        if f[0] in self.wanted and not self.usable_fact(f, state)]
+        return out
+
+    def usable_fact(self, fact, state):
+        """Could some write_* action use this fact: a plain precondition of it
+        matches the fact, and its other plain preconditions are true in
+        `state` or of a kind some step records later?"""
+        for name, (params, pre, _) in self.actions.items():
+            if not name.startswith("write_"):
+                continue
+            atoms = [a for a in (pre[1:] if pre[:1] == ["and"] else ([pre] if pre else []))
+                     if a and all(isinstance(x, str) for x in a)]
+            for a in atoms:
+                if a[0] != fact[0] or len(a) != len(fact):
+                    continue
+                bind = {}
+                if all(bind.setdefault(x, v) == v if x.startswith("?") else x == v for x, v in zip(a[1:], fact[1:])):
+                    if next(self._extend(bind, [b for b in atoms if b is not a], state), None) is not None:
+                        return True
+        return False
 
     def needed_for(self, done, entry):
         """What code a decision is needed for: each way a write_* action can
@@ -704,6 +751,24 @@ def no_dead_assignment(lines):
     no_repeat. What a statement assigns on every path only grows as code is
     added (a case counts only once it is closed, since a later item could
     shrink it), so no prefix of a module that would pass is refused."""
+    return "dead" not in _block_findings(lines)
+
+
+def no_settled_branch(lines):
+    """Does no `if` test a condition that an enclosing branch has already
+    settled? In the else of `if (!rst)`, `if (!rst)` can never be taken: a
+    counter's menu offered its reset clause again there (HRL_notes.md 9.6).
+    A condition and its plain negation (`!x`, `~x`) count as the same test.
+    Legal Verilog that does nothing, like no_repeat; once written, such an
+    `if` stays, so no prefix of a module that would pass is refused."""
+    return "settled" not in _block_findings(lines)
+
+
+def _block_findings(lines):
+    """What no_dead_assignment and no_settled_branch look for, in the always
+    blocks of these lines: "dead", "settled", both or neither. Each block is
+    read as statements: if/else chains, case statements, begin/end blocks
+    and assignments."""
     items = []                                     # the lines, split where a closer starts one
     for line in lines:
         text = re.sub(r"//.*", "", line).strip()
@@ -715,11 +780,18 @@ def no_dead_assignment(lines):
             text = text[m.end():]
         if text:
             items.append(text)
-    pos = 0
+    pos, found = 0, set()
 
-    def statement(text):
+    def test(cond):
+        """A condition as (the name or expression tested, the truth it asks for)."""
+        cond = re.sub(r"\s+", "", cond)
+        m = re.fullmatch(r"[!~](\w+)", cond)
+        return (m.group(1), False) if m else (cond, True)
+
+    def statement(text, known):
         """(assigns on every path, assigns on some path) of a statement that
-        starts with `text`, reading further items as it needs."""
+        starts with `text`, reading further items as it needs. `known` holds
+        the conditions enclosing branches have settled."""
         nonlocal pos
         label = CASE_LABEL.match(text)
         if label and not text.startswith(("if", "else")):
@@ -733,37 +805,41 @@ def no_dead_assignment(lines):
                     closed = True
                     break
                 default = default or re.match(r"default\s*:", item) is not None
-                e, s = statement(item)
+                e, s = statement(item, known)
                 every = e if every is None else every & e
                 some |= s
             return (every or set()) if closed and default else set(), some
         if re.match(r"begin\b", text):
-            return block()
+            return block(known)
         m = re.match(r"if\s*\(", text)
         if m:
             depth, k = 1, m.end()                     # the condition's closing parenthesis
             while k < len(text) and depth:
                 depth += {"(": 1, ")": -1}.get(text[k], 0)
                 k += 1
+            name, truth = test(text[m.end():k - 1])
+            if name in known:
+                found.add("settled")
+            then, other = dict(known, **{name: truth}), dict(known, **{name: not truth})
             rest = text[k:].strip()
             branches, has_else = [], False
             inline = re.search(r";\s*else\b\s*", rest)
             if inline and not re.match(r"begin\b", rest):  # `if (c) a; else b;` on one line
-                branches.append(statement(rest[:inline.start() + 1]))
-                branches.append(statement(rest[inline.end():]))   # an else-if chain answers for itself
+                branches.append(statement(rest[:inline.start() + 1], then))
+                branches.append(statement(rest[inline.end():], other))   # an else-if chain answers for itself
                 return set.intersection(*[b[0] for b in branches]), set().union(*[b[1] for b in branches])
-            branches.append(statement(rest) if rest else (set(), set()))
+            branches.append(statement(rest, then) if rest else (set(), set()))
             if pos < len(items) and re.match(r"else\b", items[pos]):
                 tail = re.sub(r"^else\b\s*", "", items[pos])
                 pos += 1
                 has_else = True                           # an else-if chain answers for itself
-                branches.append(statement(tail) if tail else (set(), set()))
+                branches.append(statement(tail, other) if tail else (set(), set()))
             every = set.intersection(*[b[0] for b in branches]) if has_else else set()
             return every, set().union(*[b[1] for b in branches])
         targets = set(re.findall(r"^(\w+)\s*<?=(?!=)", text))
         return targets, targets
 
-    def block():
+    def block(known):
         nonlocal pos
         every, some = set(), set()
         while pos < len(items):
@@ -771,26 +847,19 @@ def no_dead_assignment(lines):
             pos += 1
             if item == "end":
                 break
-            e, s = statement(item)
+            e, s = statement(item, known)
             if e & some:
-                raise _Dead()
+                found.add("dead")
             every |= e
             some |= s
         return every, some
 
-    try:
-        while pos < len(items):
-            item = items[pos]
-            pos += 1
-            if re.match(r"always\b", item) and re.search(r"\bbegin\s*$", item):
-                block()
-    except _Dead:
-        return False
-    return True
-
-
-class _Dead(Exception):
-    """A dead assignment found (no_dead_assignment)."""
+    while pos < len(items):
+        item = items[pos]
+        pos += 1
+        if re.match(r"always\b", item) and re.search(r"\bbegin\s*$", item):
+            block({})
+    return found
 
 
 def no_repeat(lines):
